@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Dart/Flutter — появится на Этапе 0, но пусть лежит заранее
+.dart_tool/
+.packages
+build/
+# Приложение, не библиотека — но до первого релиза фиксировать версии
+# нечего; снять этот пункт, когда появится CI-сборка релиза
+pubspec.lock
+*.iml
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Подпись релизных сборок — ключи в репозиторий не попадают никогда
+android/key.properties
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+
+# Python-сайдкар: собирается скриптом, в репозиторий не коммитится
+# (см. docs/python-sidecar.md)
+sidecar/python/
+sidecar/lib/
+sidecar/dist/
+
+# Claude Code: локальный конфиг и launch-профили, они per-machine
+.claude/settings.local.json
+.claude/launch.json
