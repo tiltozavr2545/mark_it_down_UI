@@ -18,8 +18,9 @@
 
 ## Статус
 
-**Этап 0 в работе** — [docs/implementation-plan.md](docs/implementation-plan.md).
-Каркас (`app/` + `core/`), CI и распознавание типа написаны и проверены
+**Этап 2 закрыт** — [docs/implementation-plan.md](docs/implementation-plan.md).
+Каркас, конвейер конвертации и текстовые форматы (Этап 0–1), затем Office —
+`docx`/`xlsx`/`pptx`/`epub`/`zip`/`ipynb` (Этап 2) написаны и проверены
 (`make verify`). Собирается и проверяется живьём пока только Android: на
 машине автора не ставится Xcode, так что macOS-сборка отложена до появления
 рабочего Xcode — подробнее в [docs/future-development.md](docs/future-development.md#macos-сборка).

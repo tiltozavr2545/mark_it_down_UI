@@ -6,10 +6,16 @@ import 'conversion_limits.dart';
 import 'conversion_request.dart';
 import 'conversion_result.dart';
 import 'converters/csv_converter.dart';
+import 'converters/docx_converter.dart';
+import 'converters/epub_converter.dart';
 import 'converters/html_converter.dart';
+import 'converters/ipynb_converter.dart';
 import 'converters/json_converter.dart';
 import 'converters/plain_text_converter.dart';
+import 'converters/pptx_converter.dart';
+import 'converters/xlsx_converter.dart';
 import 'converters/xml_converter.dart';
+import 'converters/zip_converter.dart';
 import 'document_converter.dart';
 
 /// Итог прогона через реестр: либо результат, либо один из трёх понятных
@@ -40,13 +46,20 @@ class ConverterRegistry {
     : _converters = [...converters]
         ..sort((a, b) => a.priority.compareTo(b.priority));
 
-  /// Пять текстовых конвертеров Этапа 1, в правильном порядке приоритетов.
-  /// Office/PDF/сайдкар добавятся на следующих этапах — реестр это не
-  /// хардкодит, фабрика просто называет то, что уже реализовано.
+  /// Пять текстовых конвертеров Этапа 1 и шесть форматов Этапа 2, в
+  /// правильном порядке приоритетов. PDF/сайдкар добавятся на следующих
+  /// этапах — реестр это не хардкодит, фабрика просто называет то, что уже
+  /// реализовано.
   factory ConverterRegistry.defaultRegistry() => ConverterRegistry([
     const CsvConverter(),
     const JsonConverter(),
     const XmlConverter(),
+    const IpynbConverter(),
+    const DocxConverter(),
+    const XlsxConverter(),
+    const PptxConverter(),
+    const EpubConverter(),
+    const ZipConverter(),
     const HtmlConverter(),
     const PlainTextConverter(),
   ]);
@@ -56,6 +69,25 @@ class ConverterRegistry {
     StreamInfo info, {
     ConversionLimits limits = ConversionLimits.defaults,
     int depth = 0,
+  }) => _convert(
+    bytes,
+    info,
+    limits: limits,
+    depth: depth,
+    budget: _RecursionBudget(),
+  );
+
+  /// Делает всё то же, что [convert], но делит один [_RecursionBudget] со
+  /// всеми вложенными вызовами через `recurse` — иначе `maxFilesInArchive` и
+  /// суммарный распакованный объём считались бы заново на каждом уровне
+  /// вложенности, а не по всему дереву (`zip` в `zip`). См.
+  /// `docs/conversion-pipeline.md#3-конвертация`.
+  Future<ConversionOutcome> _convert(
+    Uint8List bytes,
+    StreamInfo info, {
+    required ConversionLimits limits,
+    required int depth,
+    required _RecursionBudget budget,
   }) async {
     if (depth > limits.maxRecursionDepth) {
       return ConversionError(
@@ -74,6 +106,25 @@ class ConverterRegistry {
       );
     }
 
+    budget.filesVisited++;
+    if (budget.filesVisited > limits.maxFilesInArchive) {
+      return ConversionError(
+        LimitExceededFailure(
+          'число файлов в архиве превышает предел ${limits.maxFilesInArchive}',
+        ),
+      );
+    }
+
+    budget.extractedBytes += info.lengthBytes;
+    if (budget.extractedBytes > limits.maxInMemoryBytes) {
+      return ConversionError(
+        LimitExceededFailure(
+          'суммарный распакованный размер ${_megabytes(budget.extractedBytes)} МБ '
+          'превышает предел ${_megabytes(limits.maxInMemoryBytes)} МБ',
+        ),
+      );
+    }
+
     final converter = _converters.firstWhereOrNull(
       (c) => c.accepts(info, bytes),
     );
@@ -85,8 +136,13 @@ class ConverterRegistry {
       bytes: bytes,
       info: info,
       limits: limits,
-      recurse: (nestedBytes, nestedInfo) =>
-          convert(nestedBytes, nestedInfo, limits: limits, depth: depth + 1),
+      recurse: (nestedBytes, nestedInfo) => _convert(
+        nestedBytes,
+        nestedInfo,
+        limits: limits,
+        depth: depth + 1,
+        budget: budget,
+      ),
     );
 
     final stopwatch = Stopwatch()..start();
@@ -97,6 +153,8 @@ class ConverterRegistry {
       return ConversionError(
         CorruptedFileFailure(converterId: converter.id, reason: e.reason),
       );
+    } on ConversionLimitExceededException catch (e) {
+      return ConversionError(LimitExceededFailure(e.reason));
     } catch (_) {
       return ConversionError(
         CorruptedFileFailure(
@@ -106,6 +164,12 @@ class ConverterRegistry {
       );
     }
   }
+}
+
+/// Общий на всё дерево рекурсии счётчик — см. [ConverterRegistry._convert].
+class _RecursionBudget {
+  int filesVisited = 0;
+  int extractedBytes = 0;
 }
 
 String _megabytes(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);

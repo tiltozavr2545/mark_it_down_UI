@@ -37,3 +37,16 @@ class ConversionCorruptedException implements Exception {
   @override
   String toString() => reason;
 }
+
+/// Конвертер бросает это, когда рекурсия (`zip`/`epub`) наткнулась на
+/// [ConversionLimits], уже превышенный вложенным файлом — реестр превращает
+/// это в [LimitExceededFailure], а не в generic «файл повреждён». [reason] —
+/// уже человекочитаемое описание лимита.
+class ConversionLimitExceededException implements Exception {
+  final String reason;
+
+  const ConversionLimitExceededException(this.reason);
+
+  @override
+  String toString() => reason;
+}
