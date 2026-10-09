@@ -7,8 +7,13 @@ plugins {
 
 android {
     namespace = "com.example.markitdown_ui"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // desktop_drop требует compileSdk 36, выше Flutter-дефолта; обратно
+    // совместим.
+    compileSdk = 36
+    // Плагины (file_picker, super_native_extensions, receive_sharing_intent и
+    // др.) требуют 27.0.12077973 — выше, чем Flutter-дефолт; NDK обратно
+    // совместим, поэтому берём максимум сразу.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -22,9 +27,9 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.markitdown_ui"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // super_native_extensions (зависимость super_clipboard, см. Этап 1)
+        // требует minSdk 23 — Flutter-дефолт (21) не собирается.
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
