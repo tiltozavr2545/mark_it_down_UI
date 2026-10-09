@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  FLUTTER_VERSION: 3.32.8
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: make verify
+        run: make verify
+
+      # Главная гарантия продукта — см. docs/offline-and-privacy.md. Ловим
+      # сетевую зависимость, как только она приезжает транзитивно, а не
+      # когда их наберётся тридцать.
+      #
+      # web_socket_channel/http_parser/http_multi_server/shelf* сюда не
+      # попадают намеренно: это внутренняя инфраструктура package:test,
+      # которую тянет riverpod (прямая, не dev-зависимость, см. его
+      # pubspec.yaml) — тестовый раннер, а не сетевой клиент приложения.
+      - name: нет сетевых пакетов в зависимостях app/
+        working-directory: app
+        run: |
+          if dart pub deps --no-dev --style=list | grep -E '^- (http|dio|grpc|sentry|firebase)[^a-zA-Z0-9_]'; then
+            echo "::error::Найден сетевой пакет в зависимостях app/"
+            exit 1
+          fi
+
+      - name: нет сетевых пакетов в зависимостях core/
+        working-directory: core
+        run: |
+          if dart pub deps --no-dev --style=list | grep -E '^- (http|dio|grpc|sentry|firebase)[^a-zA-Z0-9_]'; then
+            echo "::error::Найден сетевой пакет в зависимостях core/"
+            exit 1
+          fi
+
+      - name: нет android.permission.INTERNET в манифесте
+        run: |
+          if grep -q 'android.permission.INTERNET' app/android/app/src/main/AndroidManifest.xml; then
+            echo "::error::AndroidManifest.xml запрашивает INTERNET"
+            exit 1
+          fi

@@ -18,8 +18,11 @@
 
 ## Статус
 
-**Проект на нуле.** Написана документация, кода нет. Первый шаг — Этап 0 из
-[docs/implementation-plan.md](docs/implementation-plan.md).
+**Этап 0 в работе** — [docs/implementation-plan.md](docs/implementation-plan.md).
+Каркас (`app/` + `core/`), CI и распознавание типа написаны и проверены
+(`make verify`). Собирается и проверяется живьём пока только Android: на
+машине автора не ставится Xcode, так что macOS-сборка отложена до появления
+рабочего Xcode — подробнее в [docs/future-development.md](docs/future-development.md#macos-сборка).
 
 ## Что значит «без интернета»
 
@@ -51,9 +54,10 @@
 
 ## Стек
 
-- **UI:** Flutter / Dart — macOS и Android; Windows, Linux и iOS отложены, и
-  причина в машине, а не в приоритетах (см.
-  [docs/future-development.md](docs/future-development.md))
+- **UI:** Flutter / Dart — целевые платформы macOS и Android, но прямо
+  сейчас в работе и под реальной проверкой только Android: на машине автора
+  не ставится Xcode. Windows, Linux и iOS отложены по той же причине — одна
+  машина (см. [docs/future-development.md](docs/future-development.md))
 - **Состояние:** Riverpod · **Навигация:** `go_router`
 - **Ядро конвертации:** отдельный Dart-пакет без зависимости от Flutter —
   тестируется как `dart test`, уезжает в изолят, при необходимости становится
