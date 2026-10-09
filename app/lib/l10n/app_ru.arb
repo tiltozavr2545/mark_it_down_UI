@@ -1,0 +1,23 @@
+{
+  "@@locale": "ru",
+
+  "dropHint": "Перетащите файл сюда",
+  "pickFileButton": "Выбрать файл",
+  "pickAnotherButton": "Выбрать другой файл",
+  "noFilename": "(без имени)",
+
+  "convertingLabel": "Конвертируется…",
+
+  "copyButton": "Скопировать",
+  "copiedConfirmation": "Скопировано в буфер обмена",
+  "saveAsButton": "Сохранить как .md",
+  "savedConfirmation": "Сохранено",
+  "warningsLabel": "Предупреждения",
+
+  "errorUnsupportedTitle": "Формат не поддерживается",
+  "errorUnsupportedBody": "{format} — такой формат пока не умеем конвертировать.",
+  "errorCorruptedTitle": "Файл повреждён",
+  "errorCorruptedBody": "Не удалось прочитать содержимое: {reason}",
+  "errorLimitTitle": "Превышен лимит",
+  "errorLimitBody": "{description}"
+}

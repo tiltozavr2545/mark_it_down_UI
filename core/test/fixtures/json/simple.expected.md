@@ -1,0 +1,12 @@
+```json
+{
+  "name": "Anna",
+  "age": 30,
+  "tags": [
+    "a",
+    "b"
+  ],
+  "active": true,
+  "meta": null
+}
+```

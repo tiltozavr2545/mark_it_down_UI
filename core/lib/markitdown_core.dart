@@ -2,6 +2,12 @@
 /// `flutter/` — см. `docs/client-architecture.md` в корне репозитория.
 library;
 
+export 'src/conversion/conversion_failure.dart';
+export 'src/conversion/conversion_limits.dart';
+export 'src/conversion/conversion_request.dart';
+export 'src/conversion/conversion_result.dart';
+export 'src/conversion/converter_registry.dart';
+export 'src/conversion/document_converter.dart';
 export 'src/stream_info.dart';
 export 'src/type_detection/detected_type.dart';
 export 'src/type_detection/type_detector.dart';

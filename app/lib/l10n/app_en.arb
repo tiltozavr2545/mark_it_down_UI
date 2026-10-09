@@ -1,0 +1,37 @@
+{
+  "@@locale": "en",
+
+  "dropHint": "Drop a file here",
+  "@dropHint": {"description": "Shown in the empty drop zone before any file is accepted"},
+  "pickFileButton": "Choose file",
+  "pickAnotherButton": "Choose another file",
+  "noFilename": "(unnamed)",
+
+  "convertingLabel": "Converting…",
+  "@convertingLabel": {"description": "Shown next to the spinner while conversion runs"},
+
+  "copyButton": "Copy",
+  "copiedConfirmation": "Copied to clipboard",
+  "saveAsButton": "Save as .md",
+  "savedConfirmation": "Saved",
+  "warningsLabel": "Warnings",
+
+  "errorUnsupportedTitle": "Format not supported",
+  "errorUnsupportedBody": "{format} isn't supported yet.",
+  "@errorUnsupportedBody": {
+    "description": "Shown when no converter accepted the detected format",
+    "placeholders": {"format": {"type": "String"}}
+  },
+  "errorCorruptedTitle": "File is corrupted",
+  "errorCorruptedBody": "Couldn't read the content: {reason}",
+  "@errorCorruptedBody": {
+    "description": "Shown when the format is recognized but the content can't be parsed",
+    "placeholders": {"reason": {"type": "String"}}
+  },
+  "errorLimitTitle": "Limit exceeded",
+  "errorLimitBody": "{description}",
+  "@errorLimitBody": {
+    "description": "Shown when a ConversionLimits value is exceeded",
+    "placeholders": {"description": {"type": "String"}}
+  }
+}

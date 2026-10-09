@@ -1,0 +1,12 @@
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog>
+  <book id="1">
+    <title>Война и мир</title>
+    <author>Толстой</author>
+  </book>
+  <book id="2">
+    <title>Noise</title>
+  </book>
+</catalog>
+```

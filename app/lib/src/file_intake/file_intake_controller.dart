@@ -1,31 +1,56 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markitdown_core/markitdown_core.dart';
 
+import '../conversion/isolated_convert.dart';
 import 'picked_file.dart';
 
-class FileIntakeState {
-  final StreamInfo? info;
+enum FileIntakePhase { idle, converting, ready, failed }
 
-  const FileIntakeState({this.info});
+class FileIntakeState {
+  final FileIntakePhase phase;
+  final StreamInfo? info;
+  final ConversionResult? result;
+  final ConversionFailure? failure;
+
+  const FileIntakeState._(this.phase, {this.info, this.result, this.failure});
+
+  const FileIntakeState.idle() : this._(FileIntakePhase.idle);
+
+  const FileIntakeState.converting(StreamInfo info)
+    : this._(FileIntakePhase.converting, info: info);
+
+  const FileIntakeState.ready(StreamInfo info, ConversionResult result)
+    : this._(FileIntakePhase.ready, info: info, result: result);
+
+  const FileIntakeState.failed(StreamInfo info, ConversionFailure failure)
+    : this._(FileIntakePhase.failed, info: info, failure: failure);
 }
 
-/// Единая точка приёма файла — см. [PickedFile]. На этапе 0 распознаёт тип
-/// и показывает его; конвертация появится на этапе 1.
+/// Единая точка приёма файла — см. [PickedFile]. Конвертация запускается
+/// автоматически сразу после приёма, без отдельной кнопки — см. план Этапа 1.
 class FileIntakeController extends Notifier<FileIntakeState> {
   @override
-  FileIntakeState build() => const FileIntakeState();
+  FileIntakeState build() => const FileIntakeState.idle();
 
-  void accept(PickedFile file) {
-    state = FileIntakeState(
-      info: StreamInfo.fromHead(
-        file.bytes,
-        filename: file.filename,
-        mimeType: file.mimeType,
-      ),
+  Future<void> accept(PickedFile file) async {
+    final info = StreamInfo.fromHead(
+      file.bytes,
+      filename: file.filename,
+      mimeType: file.mimeType,
     );
+    state = FileIntakeState.converting(info);
+
+    final outcome = await isolatedConvert(file.bytes, info);
+
+    switch (outcome) {
+      case ConversionSuccess(result: final result):
+        state = FileIntakeState.ready(info, result);
+      case ConversionError(failure: final failure):
+        state = FileIntakeState.failed(info, failure);
+    }
   }
 
-  void clear() => state = const FileIntakeState();
+  void clear() => state = const FileIntakeState.idle();
 }
 
 final fileIntakeControllerProvider =
