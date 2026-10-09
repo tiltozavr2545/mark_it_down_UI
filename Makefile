@@ -1,4 +1,4 @@
-.PHONY: verify pub-get format analyze test
+.PHONY: verify pub-get format analyze test fetch-pdfium
 
 verify: pub-get format analyze test
 
@@ -14,6 +14,12 @@ analyze:
 	cd app && flutter analyze
 	cd core && dart analyze
 
-test:
+# Качает shared-библиотеку PDFium для хоста (macOS/Linux) и для Android —
+# см. pdfium/fetch.sh. Не отдельный шаг CI: вызывается из test, тот же
+# make verify гоняет и CI.
+fetch-pdfium:
+	./pdfium/fetch.sh
+
+test: fetch-pdfium
 	cd app && flutter test
-	cd core && dart test
+	cd core && MARKITDOWN_PDFIUM_PATH=$(CURDIR)/pdfium/native/host/libpdfium.$(if $(filter Darwin,$(shell uname -s)),dylib,so) dart test

@@ -26,6 +26,11 @@ sidecar/python/
 sidecar/lib/
 sidecar/dist/
 
+# PDFium: качается скриптом pdfium/fetch.sh, в репозиторий не коммитится
+# (см. docs/format-coverage.md#pdf-чем-извлекать-текст)
+pdfium/native/
+app/android/app/src/main/jniLibs/
+
 # Claude Code: локальный конфиг и launch-профили, они per-machine
 .claude/settings.local.json
 .claude/launch.json

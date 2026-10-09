@@ -18,12 +18,15 @@
 
 ## Статус
 
-**Этап 2 закрыт** — [docs/implementation-plan.md](docs/implementation-plan.md).
-Каркас, конвейер конвертации и текстовые форматы (Этап 0–1), затем Office —
-`docx`/`xlsx`/`pptx`/`epub`/`zip`/`ipynb` (Этап 2) написаны и проверены
-(`make verify`). Собирается и проверяется живьём пока только Android: на
-машине автора не ставится Xcode, так что macOS-сборка отложена до появления
-рабочего Xcode — подробнее в [docs/future-development.md](docs/future-development.md#macos-сборка).
+**Этап 3 закрыт** — [docs/implementation-plan.md](docs/implementation-plan.md).
+Каркас, конвейер конвертации и текстовые форматы (Этап 0–1), Office —
+`docx`/`xlsx`/`pptx`/`epub`/`zip`/`ipynb` (Этап 2), затем `pdf` через свои
+FFI-биндинги на PDFium (Этап 3) написаны и проверены (`make verify`).
+Собирается и проверяется живьём пока только Android: на машине автора не
+ставится Xcode, так что macOS-сборка отложена до появления рабочего Xcode —
+подробнее в [docs/future-development.md](docs/future-development.md#macos-сборка).
+PDF на Android стоит ≈6,3 МБ бандла (нативная `libpdfium`) — подробный замер в
+[docs/format-coverage.md](docs/format-coverage.md#решения-этапа-3).
 
 ## Что значит «без интернета»
 
@@ -45,7 +48,8 @@
   регулярно называется `document` без расширения
 - Текстовые форматы: `txt`, `md`, `csv`, `tsv`, `json`, `xml`, `html`
 - Office: `docx`, `xlsx`, `pptx`, `epub`, `ipynb`, `zip` с рекурсией
-- `pdf` — извлечение текста; `.xls` и `.msg` — через сайдкар на десктопе
+- `pdf` — извлечение текста через PDFium; `.xls` и `.msg` — через сайдкар на
+  десктопе
 - Изображения: EXIF и офлайн-OCR; аудио: метаданные
 - Предпросмотр сырого Markdown и копирование одним действием — в `text/plain`
   и `text/markdown` сразу
@@ -64,7 +68,8 @@
   тестируется как `dart test`, уезжает в изолят, при необходимости становится
   CLI
 - **Разбор форматов:** `archive` + `xml` (OOXML и EPUB — это zip с XML
-  внутри), `csv`, `html` + `html2md`
+  внутри), `csv`, `html` + `html2md`, `pdf` — PDFium через свои FFI-биндинги
+  (`dart:ffi`, нативная библиотека не коммитится — см. `pdfium/`)
 - **Буфер обмена:** `super_clipboard` — умеет положить несколько
   представлений сразу
 - **На десктопе:** настоящий markitdown с упакованным Python, вызываемый
@@ -86,6 +91,8 @@ core/                 — конвейер конвертации: отдель�
                         «злые» файлы (zip в zip, .docx под именем .pdf)
 sidecar/              — сборка Python-бандла с настоящим markitdown
                         (только десктоп, см. docs/python-sidecar.md)
+pdfium/               — fetch.sh качает libpdfium для хоста и для Android;
+                        сама библиотека не коммитится
 docs/                 — документация
 ```
 
@@ -117,7 +124,7 @@ cd app && flutter pub get && flutter run -d macos
   сборке, как это проверить, чего в приложении нет
 - [Эксплуатация](docs/operations.md) — сборка, подпись, релиз, проверки в CI
 - [Отложенное и открытые вопросы](docs/future-development.md) — название,
-  движок PDF, транскрипция, Windows/Linux
+  транскрипция аудио, Windows/Linux
 - [Changelog](CHANGELOG.md) — что появилось в какой версии
 
 Историческое — как проект задумывался, а не как устроен:

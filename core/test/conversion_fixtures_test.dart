@@ -61,6 +61,18 @@ const _fixtures = [
   _Fixture('zip/simple.zip', 'zip/simple.expected.md'),
   _Fixture('zip/nested.zip', 'zip/nested.expected.md'), // zip в zip
   _Fixture('ipynb/simple.ipynb', 'ipynb/simple.expected.md'),
+  // Этап 3 — PDF.
+  _Fixture('pdf/simple.pdf', 'pdf/simple.expected.md'),
+  _Fixture(
+    'pdf/scanned.pdf',
+    'pdf/scanned.expected.md',
+    expectedWarningContains: 'выглядят как изображения',
+  ), // страницы 2–3 — картинка без текста, похоже на скан
+  _Fixture(
+    'pdf/blank.pdf',
+    'pdf/blank.expected.md',
+    expectedWarningContains: 'не найдено текста',
+  ), // страница есть, текста и объектов на ней нет вовсе
 ];
 
 void main() {
@@ -100,10 +112,12 @@ void main() {
 
   group('ошибки конвертации', () {
     test('неподдерживаемый формат — нет совпавшего конвертера', () async {
-      // PDF распознаётся по магическим байтам (FileKind.pdf), но конвертера
-      // для него в реестре пока нет — появится на Этапе 3.
-      final bytes = Uint8List.fromList('%PDF-1.4\n...'.codeUnits);
-      final info = StreamInfo.fromHead(bytes, filename: 'file.pdf');
+      // Ни одна сигнатура не совпадает, и доля управляющих байт достаточно
+      // высока, чтобы не быть принятым за текст (`_looksBinary`) — файл
+      // уходит в FileKind.unknown, как `.sketch` в примере из
+      // docs/conversion-pipeline.md#ошибки.
+      final bytes = Uint8List.fromList(List.generate(64, (i) => i % 32));
+      final info = StreamInfo.fromHead(bytes, filename: 'file.sketch');
 
       final outcome = await registry.convert(bytes, info);
 
@@ -112,6 +126,20 @@ void main() {
         (outcome as ConversionError).failure,
         isA<UnsupportedFormatFailure>(),
       );
+    });
+
+    test('битый PDF — распознанный формат, нечитаемые байты', () async {
+      // `%PDF-` узнаётся по магическим байтам, но дальше не PDF вовсе —
+      // PDFium не откроет документ.
+      final bytes = Uint8List.fromList('%PDF-1.4\nне PDF дальше'.codeUnits);
+      final info = StreamInfo.fromHead(bytes, filename: 'broken.pdf');
+
+      final outcome = await registry.convert(bytes, info);
+
+      expect(outcome, isA<ConversionError>());
+      final failure = (outcome as ConversionError).failure;
+      expect(failure, isA<CorruptedFileFailure>());
+      expect((failure as CorruptedFileFailure).converterId, 'pdf');
     });
 
     test('битый файл — распознанный формат, сломанное содержимое', () async {

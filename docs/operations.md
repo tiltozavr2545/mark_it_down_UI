@@ -92,8 +92,16 @@ cd app && flutter build macos --release
 ### Android
 
 ```bash
+make fetch-pdfium  # кладёт libpdfium.so в jniLibs/arm64-v8a — один раз
 cd app && flutter build appbundle --release
 ```
+
+Без этого шага приложение всё равно собирается, но PDF падает в рантайме с
+«не удалось прочитать файл»: `DynamicLibrary.open('libpdfium.so')` просто не
+находит библиотеку. `make verify`/`make test` фетчат её сами для тестов
+`core/`, но тестовый `.so` для хоста (macOS/Linux) не тот же файл, что нужен
+в APK (Android-библиотека — `arm64`, кладётся туда же скриптом) — см.
+`pdfium/fetch.sh`.
 
 `compileSdk`/`targetSdk` держать на том, что требует Play; значения прибивать
 числом в `android/app/build.gradle.kts`, а не через переменные — чтобы при

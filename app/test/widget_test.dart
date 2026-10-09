@@ -81,12 +81,15 @@ void main() {
   testWidgets('неподдерживаемый формат показывает экран ошибки', (
     tester,
   ) async {
+    // `.sketch` — тот же пример, что в
+    // docs/conversion-pipeline.md#ошибки: сигнатуры не совпадают, и это
+    // честно «не поддерживается», а не PDF, который с Этапа 3 умеем.
     final fakeInfo = StreamInfo(
-      filename: 'скан.pdf',
-      extension: 'pdf',
+      filename: 'макет.sketch',
+      extension: 'sketch',
       mimeType: null,
       lengthBytes: 2048,
-      detectedType: const DetectedType(FileKind.pdf, 'PDF'),
+      detectedType: const DetectedType(FileKind.unknown, 'Неизвестный формат'),
     );
 
     await tester.pumpWidget(
@@ -96,7 +99,7 @@ void main() {
             () => _FakeFileIntakeController(
               FileIntakeState.failed(
                 fakeInfo,
-                const UnsupportedFormatFailure('PDF'),
+                const UnsupportedFormatFailure('Неизвестный формат'),
               ),
             ),
           ),
@@ -107,7 +110,9 @@ void main() {
 
     expect(find.text('Формат не поддерживается'), findsOneWidget);
     expect(
-      find.text('PDF — такой формат пока не умеем конвертировать.'),
+      find.text(
+        'Неизвестный формат — такой формат пока не умеем конвертировать.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Выбрать другой файл'), findsOneWidget);

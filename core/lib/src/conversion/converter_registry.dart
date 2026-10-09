@@ -11,6 +11,7 @@ import 'converters/epub_converter.dart';
 import 'converters/html_converter.dart';
 import 'converters/ipynb_converter.dart';
 import 'converters/json_converter.dart';
+import 'converters/pdf_converter.dart';
 import 'converters/plain_text_converter.dart';
 import 'converters/pptx_converter.dart';
 import 'converters/xlsx_converter.dart';
@@ -46,9 +47,9 @@ class ConverterRegistry {
     : _converters = [...converters]
         ..sort((a, b) => a.priority.compareTo(b.priority));
 
-  /// Пять текстовых конвертеров Этапа 1 и шесть форматов Этапа 2, в
-  /// правильном порядке приоритетов. PDF/сайдкар добавятся на следующих
-  /// этапах — реестр это не хардкодит, фабрика просто называет то, что уже
+  /// Пять текстовых конвертеров Этапа 1, шесть форматов Этапа 2 и `pdf`
+  /// Этапа 3, в правильном порядке приоритетов. Сайдкар добавится на Этапе
+  /// 4 — реестр это не хардкодит, фабрика просто называет то, что уже
   /// реализовано.
   factory ConverterRegistry.defaultRegistry() => ConverterRegistry([
     const CsvConverter(),
@@ -60,6 +61,7 @@ class ConverterRegistry {
     const PptxConverter(),
     const EpubConverter(),
     const ZipConverter(),
+    const PdfConverter(),
     const HtmlConverter(),
     const PlainTextConverter(),
   ]);
