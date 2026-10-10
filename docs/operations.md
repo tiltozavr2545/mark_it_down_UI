@@ -4,6 +4,10 @@
 Отдельно от [client-architecture.md](client-architecture.md), потому что это не
 устройство приложения: тот файл отвечает «как работает», этот — «что нажать».
 
+Целевые платформы — Windows и Android; macOS вторична (разделы про неё
+рабочие, но в приоритете не стоят). Windows собирается только в CI на
+`windows-latest` — на машине разработки (Mac) Flutter его собрать не может.
+
 Пока проект на нуле, большая часть разделов — **заготовки**: они размечены
 так, чтобы рабочие команды вписывались в них по ходу этапов, а не искались
 заново. Где команды ещё не проверены, это сказано прямо.
@@ -23,12 +27,22 @@ make verify
 
 ## CI
 
-GitHub Actions, два workflow:
+GitHub Actions
+([репозиторий](https://github.com/tiltozavr2545/mark_it_down_UI)), два
+workflow; `release.yml` пока не написан:
 
 | workflow | когда | что делает |
 |---|---|---|
-| `ci.yml` | push, PR | `make verify` + проверка «нет сети» + проверка бампа версии в PR |
-| `release.yml` | тег `v*` | сборка macOS (DMG) и Android (`.aab`), прикрепление к GitHub Release |
+| `ci.yml` | push, PR | `make verify` + проверка «нет сети» + проверка бампа версии в PR (раннер ubuntu); **с Этапа 5** — отдельный джоб на `windows-latest`: проверки, `flutter build windows --release`, артефакт для скачивания |
+| `release.yml` | тег `v*` | Windows (формат — решение Этапа 5, п. 6) и Android (`.aab`), прикрепление к GitHub Release; macOS (DMG) — только по отдельному запросу |
+
+**Windows-джоб** (план — [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
+п. 2): шаги идут в `shell: bash` (Git Bash), потому что `run:` на Windows по
+умолчанию PowerShell. Гонять ли в нём `make` или отдельные команды — решение
+Этапа 5; пока рекомендация — отдельные шаги, потому что `make` на раннере может
+не быть, а Makefile и `pdfium/fetch.sh` не знают `uname` Git Bash. Артефакт из
+этого джоба и есть то, что автор скачивает и проверяет руками на своём
+Windows-компьютере. Ручная проверка — чек-лист в п. 8 Этапа 5.
 
 **Проверка «нет сети»** — не формальность, а главная гарантия продукта (см.
 [offline-and-privacy.md](offline-and-privacy.md)). Два шага, оба падающие:
@@ -43,7 +57,10 @@ aapt dump permissions build/app/outputs/flutter-apk/app-release.apk \
 ```
 
 Второй шаг гоняется на сборке, то есть в `release.yml`; первый — на каждом PR,
-потому что именно там сетевая зависимость и приезжает транзитивно.
+потому что именно там сетевая зависимость и приезжает транзитивно. Для
+Windows аналог — шаг на манифест MSIX (нет `internetClient`), если упаковка
+будет MSIX; без MSIX гарантии уровня ОС нет — см. Этап 5, п. 7, и
+[offline-and-privacy.md](offline-and-privacy.md).
 
 ## Версия
 
@@ -75,13 +92,31 @@ make verify-version BASE_REF=origin/main
 | что | где лежит | для чего |
 |---|---|---|
 | Android keystore | вне репозитория, путь в `android/key.properties` (в `.gitignore`) | подпись `.aab` |
+| Сертификат Authenticode (Windows) | **нет** — открытый вопрос Этапа 5, п. 6 | подпись `.exe`/MSIX; без него SmartScreen предупреждает при первом запуске |
 | Apple Developer ID cert | Keychain сборочной машины | подпись macOS-бандла |
 | App-specific password / notarytool profile | Keychain (`xcrun notarytool store-credentials`) | нотаризация |
 | те же в CI | GitHub Secrets | `release.yml` |
 
 ## Сборка
 
-### macOS
+### Windows
+
+Собирается **только в CI** на `windows-latest` (на Mac Flutter Windows не
+собирает):
+
+```bash
+cd app && flutter build windows --release
+# → app/build/windows/x64/runner/Release/  (markitdown_ui.exe + DLL + data/)
+```
+
+Рядом с `.exe` должны лежать `pdfium.dll` и `sidecar/` (см.
+[implementation-plan.md](implementation-plan.md#этап-5--windows-05), п. 3–4;
+сайдкар собирается отдельным джобом `make sidecar` на том же раннере).
+Упаковка — zip, Inno Setup или MSIX — решение Этапа 5, п. 6; **не написано,
+команды появятся здесь, когда решение будет принято**. Подписи Authenticode
+нет (сертификата нет), SmartScreen на неподписанной сборке предупредит.
+
+### macOS (вторичная платформа)
 
 ```bash
 cd app && flutter build macos --release
@@ -227,7 +262,8 @@ cd app && flutter build appbundle --release
 Без этого шага приложение всё равно собирается, но PDF падает в рантайме с
 «не удалось прочитать файл»: `DynamicLibrary.open('libpdfium.so')` просто не
 находит библиотеку. `make verify`/`make test` фетчат её сами для тестов
-`core/`, но тестовый `.so` для хоста (macOS/Linux) не тот же файл, что нужен
+`core/`, но тестовый `.so` для хоста (macOS/Linux; для Windows — `pdfium.dll`,
+Этап 5) не тот же файл, что нужен
 в APK (Android-библиотека — `arm64`, кладётся туда же скриптом) — см.
 `pdfium/fetch.sh`.
 
@@ -249,8 +285,10 @@ macOS 12 слишком стар, `ITMS-90111`). Путь, если понадо
 3. Тег `vX.Y.Z` → `release.yml` собирает и прикрепляет артефакты.
 4. **Размер бандла по платформам записать в README.** Он — честная цена
    офлайна, и пользователь имеет право увидеть её до скачивания, а не после.
-5. Android — в Play; macOS — DMG в GitHub Releases (Mac App Store — отдельное
-   решение, см. [python-sidecar.md](python-sidecar.md#про-app-store)).
+5. Android — в Play; Windows — в GitHub Releases в формате, выбранном в
+   Этапе 5; macOS (вторичная) — DMG в GitHub Releases, только по отдельному
+   запросу (Mac App Store — отдельное решение, см.
+   [python-sidecar.md](python-sidecar.md#про-app-store)).
 
 ## Чего здесь нет
 

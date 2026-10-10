@@ -49,7 +49,7 @@ bool _isWebp(Uint8List head) {
 }
 
 /// Сигнатуры картинок — дёшево отличить от прочих бинарных форматов, даже
-/// если конвертер для них появится только на этапе 5.
+/// если конвертер для них появится только на этапе 6.
 DetectedType? detectImageSignature(Uint8List head) {
   if (_startsWith(head, _pngSignature)) {
     return const DetectedType(FileKind.png, 'PNG');

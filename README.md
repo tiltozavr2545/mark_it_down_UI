@@ -18,14 +18,18 @@
 
 ## Статус
 
-**Этап 4 закрыт** — [docs/implementation-plan.md](docs/implementation-plan.md).
+**Этапы 0–4 закрыты, следующий — Этап 5, Windows** —
+[docs/implementation-plan.md](docs/implementation-plan.md). Целевые платформы —
+**Windows и Android**; macOS вторична.
 Каркас, конвейер конвертации и текстовые форматы (Этап 0–1), Office —
 `docx`/`xlsx`/`pptx`/`epub`/`zip`/`ipynb` (Этап 2), `pdf` через свои
 FFI-биндинги на PDFium (Этап 3) и Python-сайдкар на десктопе с настоящим
 markitdown (Этап 4: `.xls`, `.msg` и эталон для сверки) написаны и проверены
-(`make verify`). Собирается и проверяется живьём пока только Android: на машине
-автора не ставится Xcode, так что macOS-сборка и встраивание сайдкара в неё
-отложены до появления рабочего Xcode — подробнее в
+(`make verify`). Живьём сейчас проверяется только Android. Windows ещё не
+собирается: Flutter собирает его только на Windows, поэтому он пойдёт через
+CI на `windows-latest`, а руками будет проверен на Windows-компьютере автора —
+Этап 5. macOS вторична: на машине автора не ставится Xcode, её соберут позже
+на другом Маке — подробнее в
 [docs/future-development.md](docs/future-development.md#macos-сборка).
 PDF на Android стоит ≈6,3 МБ бандла (нативная `libpdfium`) — подробный замер в
 [docs/format-coverage.md](docs/format-coverage.md#решения-этапа-3); сайдкара в
@@ -63,10 +67,10 @@ Android-сборке нет вовсе
 
 ## Стек
 
-- **UI:** Flutter / Dart — целевые платформы macOS и Android, но прямо
-  сейчас в работе и под реальной проверкой только Android: на машине автора
-  не ставится Xcode. Windows, Linux и iOS отложены по той же причине — одна
-  машина (см. [docs/future-development.md](docs/future-development.md))
+- **UI:** Flutter / Dart — целевые платформы Windows и Android; macOS
+  вторична (на машине автора не ставится Xcode), прямо сейчас под реальной
+  проверкой только Android. iOS заблокирована той же машиной, Linux отложен
+  (см. [docs/future-development.md](docs/future-development.md))
 - **Состояние:** Riverpod · **Навигация:** `go_router`
 - **Ядро конвертации:** отдельный Dart-пакет без зависимости от Flutter —
   тестируется как `dart test`, уезжает в изолят, при необходимости становится
@@ -76,8 +80,8 @@ Android-сборке нет вовсе
   (`dart:ffi`, нативная библиотека не коммитится — см. `pdfium/`)
 - **Буфер обмена:** `super_clipboard` — умеет положить несколько
   представлений сразу
-- **На десктопе:** настоящий markitdown с упакованным Python, вызываемый
-  подпроцессом
+- **На десктопе (Windows; macOS вторична):** настоящий markitdown с
+  упакованным Python, вызываемый подпроцессом
 - **Чего в стеке нет:** любого сетевого клиента, аналитики, крэш-репортинга
 
 Конвейер конвертации — [docs/conversion-pipeline.md](docs/conversion-pipeline.md),
@@ -103,8 +107,13 @@ docs/                 — документация
 ## Запуск локально
 
 ```bash
-cd app && flutter pub get && flutter run -d macos
+cd app && flutter pub get && flutter run -d macos    # macOS, вторичная платформа
 ```
+
+Windows так запустить нельзя: Flutter собирает его только на Windows, а
+разработка идёт на Mac. Сборка — в CI (`windows-latest`, Этап 5), на
+Windows-компьютере запускается артефакт оттуда. Android — `flutter run -d
+<телефон>` или APK; эмулятор на машине автора не запускается.
 
 ### Сайдкар (только десктоп)
 
@@ -113,8 +122,8 @@ make sidecar            # sidecar/dist/<host>/, нужен интернет пр
 make compare-sidecar    # сверка Dart-ядра с настоящим markitdown
 ```
 
-Настоящий markitdown с упакованным Python весит ≈242 МБ (macOS x86_64) и нужен
-только десктопу; на Android его нет, и в `make verify` он не входит. Без
+Настоящий markitdown с упакованным Python весит ≈242 МБ (macOS x86_64; Windows
+ещё не собирался) и нужен только десктопу; на Android его нет, и в `make verify` он не входит. Без
 собранного сайдкара приложение работает на одном Dart-ядре, кроме `.xls` и
 `.msg` — они читаются только через сайдкар. Устройство, размеры и подпись —
 [docs/python-sidecar.md](docs/python-sidecar.md).
@@ -141,11 +150,11 @@ make compare-sidecar    # сверка Dart-ядра с настоящим marki
   сборке, как это проверить, чего в приложении нет
 - [Эксплуатация](docs/operations.md) — сборка, подпись, релиз, проверки в CI
 - [Отложенное и открытые вопросы](docs/future-development.md) — название,
-  транскрипция аудио, Windows/Linux
+  транскрипция аудио, Linux
 - [Changelog](CHANGELOG.md) — что появилось в какой версии
 
 Историческое — как проект задумывался, а не как устроен:
 
 - [Бриф проекта](docs/project-brief.md) — зачем, механика, объём 0.1, стек
-- [План реализации](docs/implementation-plan.md) — этапы 0–6 (живой, пока план
+- [План реализации](docs/implementation-plan.md) — этапы 0–7 (живой, пока план
   не закрыт)

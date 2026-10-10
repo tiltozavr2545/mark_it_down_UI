@@ -145,14 +145,17 @@ Dart-конвертеров там, где настоящий markitdown зав�
 **Где ищется.** `SidecarConverter.discover()`: на Android/iOS всегда `null`;
 на десктопе — `MARKITDOWN_SIDECAR_DIR` (разработка и тесты, по образцу
 `MARKITDOWN_PDFIUM_PATH`; если задана, другие места не смотрятся), иначе на
-macOS `Contents/Resources/sidecar` рядом с исполняемым файлом бандла. Нет
+macOS `Contents/Resources/sidecar` рядом с исполняемым файлом бандла. На
+Windows пока только переменная; поиск `sidecar/` рядом с `.exe` — Этап 5, п. 4
+([implementation-plan.md](implementation-plan.md#этап-5--windows-05)). Нет
 каталога — просто не регистрируется. Поиск идёт внутри изолята конвертации
 (`isolated_convert.dart`), конвертер между изолятами не пересылается.
 
 **Подмена в тестах.** Команда запуска собирается в одном месте —
 `SidecarCommandBuilder` (путь входного файла + id формата → исполняемый файл
 и аргументы). `SidecarConverter.fromDirectory` строит стандартную
-(`python/bin/python3 -I -B run.py --in … --format …`); тесты либо кладут в
+(`python/bin/python3 -I -B run.py --in … --format …`, на Windows —
+`python/python.exe`); тесты либо кладут в
 каталог shell-скрипт вместо интерпретатора, либо передают свой builder
 в конструктор.
 
