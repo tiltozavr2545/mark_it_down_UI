@@ -18,8 +18,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_DIR="${ROOT_DIR}/pdfium/native/host"
 JNI_DIR="${ROOT_DIR}/app/android/app/src/main/jniLibs/arm64-v8a"
 
+# subdir — где лежит библиотека внутри архива: у Windows-сборки DLL в bin/,
+# у остальных — в lib/ (в lib/ Windows-архива — только import-библиотека
+# pdfium.dll.lib для линковки, нам не нужная: грузим через FFI).
 fetch() {
-  local asset="$1" dest_dir="$2" lib_name="$3"
+  local asset="$1" dest_dir="$2" lib_name="$3" subdir="${4:-lib}"
   if [[ -f "${dest_dir}/${lib_name}" ]]; then
     echo "pdfium: уже есть ${dest_dir}/${lib_name}"
     return
@@ -31,14 +34,17 @@ fetch() {
   echo "pdfium: качаю ${asset}"
   curl -sL -o "${tmp}/pkg.tgz" "${BASE_URL}/${asset}"
   tar xzf "${tmp}/pkg.tgz" -C "${tmp}"
-  cp "${tmp}/lib/${lib_name}" "${dest_dir}/${lib_name}"
+  cp "${tmp}/${subdir}/${lib_name}" "${dest_dir}/${lib_name}"
   echo "pdfium: готово ${dest_dir}/${lib_name}"
 }
 
-# Для dev/test на хост-машине — macOS (dart test) или Linux (CI).
+# Для dev/test на хост-машине — macOS (dart test), Linux (CI) или Windows
+# (CI на windows-latest, Git Bash: uname -s там MINGW64_NT-…/MSYS_NT-…).
+# Эту же копию app/windows/CMakeLists.txt кладёт в сборку рядом с .exe.
 case "$(uname -s)" in
   Darwin) fetch "pdfium-mac-x64.tgz" "${HOST_DIR}" "libpdfium.dylib" ;;
   Linux) fetch "pdfium-linux-x64.tgz" "${HOST_DIR}" "libpdfium.so" ;;
+  MINGW* | MSYS*) fetch "pdfium-win-x64.tgz" "${HOST_DIR}" "pdfium.dll" "bin" ;;
   *)
     echo "pdfium: неизвестная платформа для dev-сборки: $(uname -s)" >&2
     exit 1

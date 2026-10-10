@@ -33,16 +33,21 @@ workflow; `release.yml` пока не написан:
 
 | workflow | когда | что делает |
 |---|---|---|
-| `ci.yml` | push, PR | `make verify` + проверка «нет сети» + проверка бампа версии в PR (раннер ubuntu); **с Этапа 5** — отдельный джоб на `windows-latest`: проверки, `flutter build windows --release`, артефакт для скачивания |
-| `release.yml` | тег `v*` | Windows (формат — решение Этапа 5, п. 6) и Android (`.aab`), прикрепление к GitHub Release; macOS (DMG) — только по отдельному запросу |
+| `ci.yml` | push, PR | джоб `verify` (ubuntu): `make verify` + проверка «нет сети» + проверка бампа версии в PR; джоб `windows` (`windows-latest`): те же проверки, `flutter build windows --release`, артефакт `markitdown_ui-windows-x64` (zip каталога `Release/`) |
+| `release.yml` | тег `v*` | Windows (zip; окончательный формат — Этап 7) и Android (`.aab`), прикрепление к GitHub Release; macOS (DMG) — только по отдельному запросу |
 
 **Windows-джоб** (план — [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
 п. 2): шаги идут в `shell: bash` (Git Bash), потому что `run:` на Windows по
-умолчанию PowerShell. Гонять ли в нём `make` или отдельные команды — решение
-Этапа 5; пока рекомендация — отдельные шаги, потому что `make` на раннере может
-не быть, а Makefile и `pdfium/fetch.sh` не знают `uname` Git Bash. Артефакт из
-этого джоба и есть то, что автор скачивает и проверяет руками на своём
-Windows-компьютере. Ручная проверка — чек-лист в п. 8 Этапа 5.
+умолчанию PowerShell. Это **отдельные шаги, а не `make`**: в Git Bash раннера
+`make` нет, а в Makefile ветки только Darwin/Linux. Цена — список проверок
+живёт в двух местах; при правке `make verify` править и джоб (напоминание
+стоит у цели `verify` в Makefile). `pdfium/fetch.sh` Git Bash знает
+(`MINGW*|MSYS*` → `pdfium.dll`). Первый шаг джоба проверяет, что чекаут
+выписан с LF (`.gitattributes`), иначе `dart format` и побайтные фикстуры
+упали бы по причине, к коду не относящейся. Артефакт из этого джоба и есть
+то, что автор скачивает и проверяет руками на своём Windows-компьютере
+(Actions → запуск → Artifacts → распаковать → `markitdown_ui.exe`). Ручная
+проверка — чек-лист в п. 8 Этапа 5.
 
 **Проверка «нет сети»** — не формальность, а главная гарантия продукта (см.
 [offline-and-privacy.md](offline-and-privacy.md)). Два шага, оба падающие:
@@ -58,8 +63,10 @@ aapt dump permissions build/app/outputs/flutter-apk/app-release.apk \
 
 Второй шаг гоняется на сборке, то есть в `release.yml`; первый — на каждом PR,
 потому что именно там сетевая зависимость и приезжает транзитивно. Для
-Windows аналог — шаг на манифест MSIX (нет `internetClient`), если упаковка
-будет MSIX; без MSIX гарантии уровня ОС нет — см. Этап 5, п. 7, и
+Windows аналога нет: упаковка пока zip, а zip о разрешениях не знает. Шаг
+`нет сетевых библиотек в app/windows/` ловит только то, что мы добавили сами
+(`ws2_32`, `winhttp`, `wininet`, `internetClient`); если в Этапе 7 выберут
+MSIX — добавится grep по его манифесту. См. Этап 5, п. 7, и
 [offline-and-privacy.md](offline-and-privacy.md).
 
 ## Версия
@@ -92,7 +99,7 @@ make verify-version BASE_REF=origin/main
 | что | где лежит | для чего |
 |---|---|---|
 | Android keystore | вне репозитория, путь в `android/key.properties` (в `.gitignore`) | подпись `.aab` |
-| Сертификат Authenticode (Windows) | **нет** — открытый вопрос Этапа 5, п. 6 | подпись `.exe`/MSIX; без него SmartScreen предупреждает при первом запуске |
+| Сертификат Authenticode (Windows) | **нет** — открытый вопрос (Этап 5, п. 6 → Этап 7) | подпись `.exe`/MSIX; без него SmartScreen предупреждает при первом запуске |
 | Apple Developer ID cert | Keychain сборочной машины | подпись macOS-бандла |
 | App-specific password / notarytool profile | Keychain (`xcrun notarytool store-credentials`) | нотаризация |
 | те же в CI | GitHub Secrets | `release.yml` |
@@ -109,12 +116,20 @@ cd app && flutter build windows --release
 # → app/build/windows/x64/runner/Release/  (markitdown_ui.exe + DLL + data/)
 ```
 
-Рядом с `.exe` должны лежать `pdfium.dll` и `sidecar/` (см.
-[implementation-plan.md](implementation-plan.md#этап-5--windows-05), п. 3–4;
-сайдкар собирается отдельным джобом `make sidecar` на том же раннере).
-Упаковка — zip, Inno Setup или MSIX — решение Этапа 5, п. 6; **не написано,
-команды появятся здесь, когда решение будет принято**. Подписи Authenticode
-нет (сертификата нет), SmartScreen на неподписанной сборке предупредит.
+Рядом с `.exe` кладутся `pdfium.dll` и `sidecar/` — правилами `install(...)`
+в `app/windows/CMakeLists.txt`. `pdfium.dll` обязательна: без
+`pdfium/native/host/pdfium.dll` (её качает `./pdfium/fetch.sh` в Git Bash)
+CMake падает с понятной ошибкой, а не собирает приложение без PDF. Сайдкар
+необязателен: без `sidecar/dist/windows-x86_64/manifest.json` выходит
+Dart-only сборка (п. 4 плана — сайдкар под Windows — собирается отдельным
+джобом).
+
+**Упаковка — zip** (решение автора, Этап 5, п. 6: «zip сейчас, решить
+позже»; Inno Setup или MSIX — вопрос Этапа 7). Сейчас zip — это сам
+артефакт CI: `actions/upload-artifact` отдаёт каталог `Release/` архивом.
+Подписи Authenticode нет (сертификата нет): SmartScreen при первом запуске
+покажет «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом
+случае».
 
 ### macOS (вторичная платформа)
 
@@ -262,8 +277,8 @@ cd app && flutter build appbundle --release
 Без этого шага приложение всё равно собирается, но PDF падает в рантайме с
 «не удалось прочитать файл»: `DynamicLibrary.open('libpdfium.so')` просто не
 находит библиотеку. `make verify`/`make test` фетчат её сами для тестов
-`core/`, но тестовый `.so` для хоста (macOS/Linux; для Windows — `pdfium.dll`,
-Этап 5) не тот же файл, что нужен
+`core/`, но тестовый `.so` для хоста (macOS/Linux; для Windows — `pdfium.dll`)
+не тот же файл, что нужен
 в APK (Android-библиотека — `arm64`, кладётся туда же скриптом) — см.
 `pdfium/fetch.sh`.
 

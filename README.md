@@ -18,17 +18,18 @@
 
 ## Статус
 
-**Этапы 0–4 закрыты, следующий — Этап 5, Windows** —
+**Этапы 0–4 закрыты, идёт Этап 5 — Windows** —
 [docs/implementation-plan.md](docs/implementation-plan.md). Целевые платформы —
 **Windows и Android**; macOS вторична.
 Каркас, конвейер конвертации и текстовые форматы (Этап 0–1), Office —
 `docx`/`xlsx`/`pptx`/`epub`/`zip`/`ipynb` (Этап 2), `pdf` через свои
 FFI-биндинги на PDFium (Этап 3) и Python-сайдкар на десктопе с настоящим
 markitdown (Этап 4: `.xls`, `.msg` и эталон для сверки) написаны и проверены
-(`make verify`). Живьём сейчас проверяется только Android. Windows ещё не
-собирается: Flutter собирает его только на Windows, поэтому он пойдёт через
-CI на `windows-latest`, а руками будет проверен на Windows-компьютере автора —
-Этап 5. macOS вторична: на машине автора не ставится Xcode, её соберут позже
+(`make verify`). Живьём сейчас проверяется только Android. Windows
+собирается только на Windows, поэтому — в CI на `windows-latest` (джоб
+`windows`, артефакт `markitdown_ui-windows-x64` — zip, распаковал и
+запустил); руками проверяется на Windows-компьютере автора. Сайдкар под
+Windows ещё не собран — пока это Dart-only сборка. macOS вторична: на машине автора не ставится Xcode, её соберут позже
 на другом Маке — подробнее в
 [docs/future-development.md](docs/future-development.md#macos-сборка).
 PDF на Android стоит ≈6,3 МБ бандла (нативная `libpdfium`) — подробный замер в
@@ -111,8 +112,9 @@ cd app && flutter pub get && flutter run -d macos    # macOS, вторичная
 ```
 
 Windows так запустить нельзя: Flutter собирает его только на Windows, а
-разработка идёт на Mac. Сборка — в CI (`windows-latest`, Этап 5), на
-Windows-компьютере запускается артефакт оттуда. Android — `flutter run -d
+разработка идёт на Mac. Сборка — в CI (`windows-latest`, джоб `windows`), на
+Windows-компьютере запускается артефакт оттуда: GitHub → Actions → запуск →
+Artifacts → `markitdown_ui-windows-x64`, распаковать, `markitdown_ui.exe`. Android — `flutter run -d
 <телефон>` или APK; эмулятор на машине автора не запускается.
 
 ### Сайдкар (только десктоп)

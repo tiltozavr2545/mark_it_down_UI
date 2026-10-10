@@ -8,6 +8,7 @@ import '../conversion_failure.dart';
 import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
+import '../pdf/pdf_text_extraction.dart';
 import 'sidecar_manifest.dart';
 
 /// Что запустить для одного вызова сайдкара.
@@ -71,6 +72,11 @@ class SidecarConverter implements DocumentConverter {
   final String? markitdownVersion;
   final String? pythonVersion;
 
+  /// PDF длиннее этого числа страниц сайдкар отклоняет, не запуская Python, —
+  /// реестр отдаёт файл Dart-конвертеру. `null` — без предела (сверка с
+  /// эталоном, интеграционные тесты). Почему — см. [appFormats].
+  final int? maxPdfPages;
+
   SidecarConverter({
     required Set<String> formats,
     required this.commandBuilder,
@@ -79,6 +85,7 @@ class SidecarConverter implements DocumentConverter {
     this.maxOutputBytes = 200 * 1024 * 1024,
     this.markitdownVersion,
     this.pythonVersion,
+    this.maxPdfPages,
   }) : formats = Set.unmodifiable(
          formats.where(sidecarFormatKinds.containsKey),
        );
@@ -87,10 +94,15 @@ class SidecarConverter implements DocumentConverter {
   /// каталога, манифеста, `run.py` или интерпретатора нет, манифест битый или
   /// с неизвестной `schema` — «сайдкара нет» не ошибка, а штатное состояние
   /// (мобильные, сборка без него).
+  ///
+  /// [onlyFormats] сужает список из манифеста (пустое пересечение — тоже
+  /// `null`: регистрировать нечего); без него — все форматы манифеста.
   static SidecarConverter? fromDirectory(
     String directory, {
     Duration timeout = const Duration(seconds: 120),
     Directory? tempDirectory,
+    Set<String>? onlyFormats,
+    int? maxPdfPages,
   }) {
     final manifestFile = File(_join(directory, 'manifest.json'));
     final python = _join(
@@ -107,9 +119,13 @@ class SidecarConverter implements DocumentConverter {
       return null;
     }
     if (manifest == null) return null;
+    final formats = onlyFormats == null
+        ? manifest.formats
+        : manifest.formats.intersection(onlyFormats);
+    if (formats.isEmpty) return null;
 
     return SidecarConverter(
-      formats: manifest.formats,
+      formats: formats,
       commandBuilder: (inputPath, formatId) => SidecarCommand(python, [
         '-I',
         '-B',
@@ -123,8 +139,25 @@ class SidecarConverter implements DocumentConverter {
       tempDirectory: tempDirectory,
       markitdownVersion: manifest.markitdownVersion,
       pythonVersion: manifest.pythonVersion,
+      maxPdfPages: maxPdfPages,
     );
   }
+
+  /// На что сайдкар идёт первым в приложении — решение автора по Этапу 5,
+  /// п. 5 (`docs/implementation-plan.md`). Сайдкар в десятки раз медленнее
+  /// Dart-ядра (PDF на 300 страниц — 112 с против 1,2 с, xlsx на 50 тыс.
+  /// строк — 55 с против 4,4 с), а по сверке Этапа 4 в `docx`/`xlsx`/`pptx`
+  /// Dart не хуже. Поэтому первым он идёт только там, где даёт то, чего у
+  /// Dart нет: `xls`/`msg` (только он) и `pdf` (таблицы) — и для `pdf` лишь
+  /// до [appMaxPdfPages] страниц. `docx`/`xlsx`/`pptx` сайдкар по-прежнему
+  /// умеет — как эталон для `make compare-sidecar`, а не как путь в
+  /// приложении.
+  static const appFormats = {'pdf', 'xls', 'msg'};
+
+  /// Порог для PDF в приложении: ≈0,37 с на страницу у сайдкара — около
+  /// 20 с в худшем случае. Длиннее — Dart-ядро с предупреждением, что
+  /// таблицы извлечены текстом.
+  static const appMaxPdfPages = 50;
 
   /// Ищет сайдкар там, где он должен лежать на этой платформе:
   ///
@@ -133,10 +166,15 @@ class SidecarConverter implements DocumentConverter {
   ///    смотрятся: неверный путь не должен молча подменяться бандлом.
   /// 2. macOS: `Contents/Resources/sidecar` рядом с исполняемым файлом
   ///    бандла (`X.app/Contents/MacOS/X`).
+  /// 3. Windows: `sidecar\` в каталоге `.exe` — туда его кладёт
+  ///    `install(DIRECTORY …)` в `app/windows/CMakeLists.txt`, и так же он
+  ///    лежит в распакованном zip.
   ///
   /// На Android и iOS — всегда `null`, даже если переменная задана: сайдкара
   /// там нет и не будет (нативные колёса под мобильные ABI не существуют).
-  /// Параметры нужны тестам; в приложении вызывается без аргументов.
+  /// Найденный сайдкар ограничен [appFormats] и [appMaxPdfPages] — это
+  /// путь приложения. Параметры нужны тестам; в приложении вызывается без
+  /// аргументов.
   static SidecarConverter? discover({
     Map<String, String>? environment,
     String? operatingSystem,
@@ -147,22 +185,25 @@ class SidecarConverter implements DocumentConverter {
     if (os != 'macos' && os != 'linux' && os != 'windows') return null;
 
     final override = (environment ?? Platform.environment)[sidecarDirEnvVar];
+    final executable = File(resolvedExecutable ?? Platform.resolvedExecutable);
+    final String directory;
     if (override != null && override.isNotEmpty) {
-      return fromDirectory(override, timeout: timeout);
-    }
-
-    if (os == 'macos') {
-      final executable = File(
-        resolvedExecutable ?? Platform.resolvedExecutable,
-      );
+      directory = override;
+    } else if (os == 'macos') {
       // X.app/Contents/MacOS/X → X.app/Contents/Resources/sidecar
-      final contents = executable.parent.parent.path;
-      return fromDirectory(
-        _join(contents, 'Resources/sidecar'),
-        timeout: timeout,
-      );
+      directory = _join(executable.parent.parent.path, 'Resources/sidecar');
+    } else if (os == 'windows') {
+      // Release\markitdown_ui.exe → Release\sidecar
+      directory = _join(executable.parent.path, 'sidecar');
+    } else {
+      return null;
     }
-    return null;
+    return fromDirectory(
+      directory,
+      timeout: timeout,
+      onlyFormats: appFormats,
+      maxPdfPages: appMaxPdfPages,
+    );
   }
 
   static const sidecarDirEnvVar = 'MARKITDOWN_SIDECAR_DIR';
@@ -183,6 +224,24 @@ class SidecarConverter implements DocumentConverter {
   Future<ConversionResult> convert(ConversionRequest request) async {
     final info = request.info;
     final formatId = _formatIdFor(info)!;
+
+    final maxPages = maxPdfPages;
+    if (formatId == 'pdf' && maxPages != null) {
+      // Не открылось — пусть сайдкар попробует сам: откат на Dart при его
+      // отказе всё равно есть.
+      final pages = countPdfPages(request.bytes);
+      if (pages != null && pages > maxPages) {
+        throw ConversionDeclinedException(
+          failure: LimitExceededFailure(
+            'PDF длиннее $maxPages страниц ($pages) не обрабатывается сайдкаром',
+          ),
+          fallbackWarning:
+              'PDF длиннее $maxPages страниц ($pages) обработан Dart-ядром, '
+              'а не сайдкаром: так в десятки раз быстрее, но таблицы '
+              'извлечены как текст',
+        );
+      }
+    }
 
     // Временная папка создаётся только если у файла нет пути на диске, и
     // удаляется здесь же, в finally: владеет файлом вызывающий, а не

@@ -76,3 +76,82 @@ jobs:
             echo "::error::В Release.entitlements выключен app-sandbox"
             exit 1
           fi
+
+      # Windows-часть приложения (Этап 5, п. 7). По импортам .exe сеть не
+      # проверить — flutter_windows.dll и Dart VM сами тянут сокеты для
+      # отладочного сервиса, такая проверка всегда красная. Честно проверяемо
+      # только то, что мы сами не добавили сетевых библиотек в runner/CMake:
+      # гарантии уровня ОС у zip-сборки нет (docs/offline-and-privacy.md).
+      - name: нет сетевых библиотек в app/windows/
+        run: |
+          if grep -rniE 'ws2_32|winhttp|wininet|urlmon|winsock|internetClient' app/windows/ --exclude-dir=ephemeral; then
+            echo "::error::В app/windows/ появилась сетевая библиотека или capability"
+            exit 1
+          fi
+
+  # Windows собирается только на Windows (docs/implementation-plan.md, Этап 5):
+  # здесь — и проверка, и сборка, артефакт которой автор запускает руками.
+  #
+  # Шаги — эквивалент `make verify`, расписанный вручную, а не `make`: в Git
+  # Bash раннера make нет, а Makefile знает только Darwin/Linux. Список
+  # проверок поэтому живёт в двух местах — Makefile и этот джоб; при правке
+  # одного держать одинаковым другой (то же сказано у `verify` в Makefile).
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # Без .gitattributes (eol=lf) этот шаг упал бы на CRLF при чекауте —
+      # проверяем, что правило действительно сработало.
+      - name: переводы строк — LF
+        run: |
+          if git ls-files --eol | grep -E '^i/lf +w/crlf'; then
+            echo "::error::Файлы выписаны с CRLF — проверить .gitattributes"
+            exit 1
+          fi
+
+      - name: pub get
+        run: |
+          (cd app && flutter pub get)
+          (cd core && dart pub get)
+
+      - name: format
+        run: |
+          (cd app && dart format --set-exit-if-changed .)
+          (cd core && dart format --set-exit-if-changed .)
+
+      - name: analyze
+        run: |
+          (cd app && flutter analyze)
+          (cd core && dart analyze)
+
+      - name: PDFium (pdfium.dll)
+        run: ./pdfium/fetch.sh
+
+      - name: test
+        run: |
+          (cd app && flutter test)
+          export MARKITDOWN_PDFIUM_PATH="$(cygpath -w "$PWD/pdfium/native/host/pdfium.dll")"
+          (cd core && dart test)
+
+      - name: flutter build windows
+        working-directory: app
+        run: flutter build windows --release
+
+      # Пока упаковка — zip (Этап 5, п. 6: «zip сейчас, решить позже»):
+      # upload-artifact сам отдаёт каталог zip-архивом. Распаковал и
+      # запустил markitdown_ui.exe — ничего не ставится.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: markitdown_ui-windows-x64
+          path: app/build/windows/x64/runner/Release
+          if-no-files-found: error

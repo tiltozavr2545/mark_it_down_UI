@@ -329,16 +329,17 @@ pdf/docx/pptx/msg и 1,05 с для xlsx/xls, при ~96 / ~132 МБ ОЗУ (п�
 
 Приоритет автора сместился на Windows и Android, поэтому сайдкар на десктопе
 теперь в первую очередь про Windows. Устройство то же — один подпроцесс на
-вызов, тот же `run.py`, тот же протокол; меняется следующее. Всё это **план
-Этапа 5, не сделанное** — см. [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
+вызов, тот же `run.py`, тот же протокол; меняется следующее. Сделана пока
+только сторона приложения (поиск каталога, правило установки рядом с `.exe`);
+сборка самого сайдкара под Windows — **план, не сделанное**, см. [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
 п. 4; ниже — что и почему.
 
 - **Раскладка.** `sidecar/dist/windows-x86_64/{python,lib,run.py,manifest.json}`
   рядом с `.exe`; интерпретатор — `python/python.exe` вместо
-  `python/bin/python3` (`SidecarConverter.fromDirectory` это уже знает).
-  Поиск каталога в `discover()` на Windows пока только через
-  `MARKITDOWN_SIDECAR_DIR` — научить искать рядом с `.exe`. Протокол,
-  `-I -B`, коды выхода без изменений.
+  `python/bin/python3` (`SidecarConverter.fromDirectory` это знает).
+  `discover()` ищет `sidecar\` в каталоге `.exe`, а
+  `app/windows/CMakeLists.txt` кладёт туда `sidecar/dist/windows-x86_64/`,
+  если тот собран. Протокол, `-I -B`, коды выхода без изменений.
 - **Интерпретатор.** python-build-standalone для `x86_64-pc-windows-msvc`,
   вариант `install_only`, те же релиз и CPython 3.12.14. Системный Python не
   используется и тут: на Windows его нет почти никогда, а «Python из
@@ -370,8 +371,10 @@ pdf/docx/pptx/msg и 1,05 с для xlsx/xls, при ~96 / ~132 МБ ОЗУ (п�
   проверить после установки, а не по дереву сборки.
 - **Скорость.** Замеры из этого документа и из
   [format-coverage.md](format-coverage.md#сверка-с-эталоном-этап-4) — с macOS;
-  на Windows пересмотреть. Порядок «сайдкар или Dart» — решение автора,
-  Этап 5, п. 5.
+  на Windows пересмотреть. Порядок «сайдкар или Dart» решён (Этап 5, п. 5):
+  в приложении сайдкар идёт первым только на `pdf` до 50 страниц и на
+  `xls`/`msg` — см.
+  [conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер).
 
 ## Подпись и нотаризация на macOS
 

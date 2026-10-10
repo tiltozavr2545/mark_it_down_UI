@@ -78,6 +78,35 @@ PdfExtractionResult extractPdf(Uint8List bytes) {
   }
 }
 
+/// Только число страниц, без разбора текста: PDFium читает дерево страниц,
+/// а не их содержимое, поэтому это дёшево и на большом файле. `null` — если
+/// документ не открылся (пароль, мусор) или сама библиотека не загрузилась:
+/// вызывающий решает сам, а не ловит исключение.
+int? countPdfPages(Uint8List bytes) {
+  final PdfiumBindings pdfium;
+  try {
+    pdfium = PdfiumBindings.instance();
+  } on Object {
+    return null;
+  }
+  final fileBuffer = calloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
+  try {
+    fileBuffer.asTypedList(bytes.length).setAll(0, bytes);
+    final document = pdfium.loadMemDocument(
+      fileBuffer.cast<Void>(),
+      bytes.length,
+    );
+    if (document.address == 0) return null;
+    try {
+      return pdfium.getPageCount(document);
+    } finally {
+      pdfium.closeDocument(document);
+    }
+  } finally {
+    calloc.free(fileBuffer);
+  }
+}
+
 String _describeLoadError(int code) {
   const passwordOrSecurity = {4, 5}; // FPDF_ERR_PASSWORD, FPDF_ERR_SECURITY
   if (passwordOrSecurity.contains(code)) {

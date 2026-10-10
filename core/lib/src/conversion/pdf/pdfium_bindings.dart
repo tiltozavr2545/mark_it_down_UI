@@ -22,7 +22,9 @@ import 'dart:io';
 ///    любой машины, где библиотека лежит не в стандартном месте платформы.
 /// 2. Голое имя библиотеки — рабочий случай для Android: `.so` лежит в
 ///    `jniLibs/<abi>/` и попадает на путь поиска процесса сам, без нашего
-///    участия.
+///    участия. И для Windows: `pdfium.dll` кладётся рядом с `.exe` правилом
+///    `install(...)` в `app/windows/CMakeLists.txt`, а каталог исполняемого
+///    файла `LoadLibrary` смотрит первым.
 ///
 /// macOS-приложение (бандл из `flutter build macos`) сюда пока не попадает —
 /// см. «Ограничения среды» в `../../../../../AGENTS.md`: пока нет Xcode,
@@ -39,6 +41,9 @@ DynamicLibrary loadPdfiumLibrary() {
   }
   if (Platform.isMacOS) {
     return DynamicLibrary.open('libpdfium.dylib');
+  }
+  if (Platform.isWindows) {
+    return DynamicLibrary.open('pdfium.dll');
   }
   throw UnsupportedError(
     'PDFium не подключён на платформе ${Platform.operatingSystem}',

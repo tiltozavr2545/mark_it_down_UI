@@ -1,5 +1,9 @@
 .PHONY: verify pub-get format analyze test fetch-pdfium sidecar sidecar-lock sign-sidecar verify-version
 
+# То же гоняет CI: джоб verify — через `make verify`, а джоб windows — теми
+# же шагами, расписанными вручную (в Git Bash раннера нет make, а здесь
+# ветки только Darwin/Linux). Меняешь список проверок — держи одинаковыми
+# и этот файл, и windows-джоб в .github/workflows/ci.yml.
 verify: pub-get format analyze test
 
 pub-get:
