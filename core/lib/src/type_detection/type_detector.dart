@@ -34,7 +34,7 @@ DetectedType detectType(Uint8List head, {String? extension}) {
   }
 
   if (isOle2Compound(head)) {
-    return describeOle2(extension);
+    return describeOle2(head, extension);
   }
 
   if (isZipSignature(head)) {

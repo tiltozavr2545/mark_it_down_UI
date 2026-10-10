@@ -37,6 +37,7 @@ class FileIntakeController extends Notifier<FileIntakeState> {
       file.bytes,
       filename: file.filename,
       mimeType: file.mimeType,
+      localPath: file.localPath,
     );
     state = FileIntakeState.converting(info);
 

@@ -110,9 +110,14 @@ class OoxmlPackage {
 
 /// `target` относительно `baseDir`, с разрешением `..`/`.` — Target в
 /// `.rels` пишется относительно директории той части, к которой относится
-/// файл связей, а не относительно корня пакета.
+/// файл связей, а не относительно корня пакета. Исключение — `Target` с
+/// ведущим `/`: он абсолютный, от корня пакета (так пишет openpyxl:
+/// `/xl/worksheets/sheet1.xml`), и базовая директория к нему не
+/// приставляется.
 String _resolveRelativePath(String baseDir, String target) {
-  final combined = baseDir.isEmpty ? target : '$baseDir/$target';
+  final combined = baseDir.isEmpty || target.startsWith('/')
+      ? target
+      : '$baseDir/$target';
   final segments = <String>[];
   for (final segment in combined.split('/')) {
     if (segment.isEmpty || segment == '.') continue;

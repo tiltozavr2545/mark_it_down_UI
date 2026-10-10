@@ -10,5 +10,15 @@ class PickedFile {
   final String? mimeType;
   final Uint8List bytes;
 
-  const PickedFile({required this.bytes, this.filename, this.mimeType});
+  /// Путь к файлу на диске, если источник его знает (диалог, drag&drop,
+  /// «Поделиться»). Нужен десктопному сайдкару, чтобы не писать копию во
+  /// временный файл; у буфера обмена путей нет.
+  final String? localPath;
+
+  const PickedFile({
+    required this.bytes,
+    this.filename,
+    this.mimeType,
+    this.localPath,
+  });
 }

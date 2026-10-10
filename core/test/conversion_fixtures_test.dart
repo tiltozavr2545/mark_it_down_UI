@@ -50,19 +50,36 @@ const _fixtures = [
     'docx/evil_nested.docx',
     'docx/evil_nested.expected.md',
   ), // вложенные списки + таблица в таблице
+  _Fixture(
+    'docx/nested_numbered.docx',
+    'docx/nested_numbered.expected.md',
+  ), // отступ вложенных пунктов = ширина маркера нумерованного родителя
   _Fixture('xlsx/simple.xlsx', 'xlsx/simple.expected.md'),
   _Fixture(
     'xlsx/merged_cells.xlsx',
     'xlsx/merged_cells.expected.md',
     expectedWarningContains: 'объединённые ячейки',
   ),
-  _Fixture('pptx/simple.pptx', 'pptx/simple.expected.md'),
+  _Fixture(
+    'xlsx/types_and_gaps.xlsx',
+    'xlsx/types_and_gaps.expected.md',
+  ), // даты, булевы, пропуски; пакет от openpyxl с абсолютными Target в rels
+  _Fixture('pptx/simple.pptx', 'pptx/simple.expected.md'), // от python-pptx
+  _Fixture(
+    'pptx/no_sppr.pptx',
+    'pptx/no_sppr.expected.md',
+  ), // фигуры без <p:spPr>: невалидно для python-pptx, Dart терпит
   _Fixture('epub/simple.epub', 'epub/simple.expected.md'),
   _Fixture('zip/simple.zip', 'zip/simple.expected.md'),
   _Fixture('zip/nested.zip', 'zip/nested.expected.md'), // zip в zip
   _Fixture('ipynb/simple.ipynb', 'ipynb/simple.expected.md'),
   // Этап 3 — PDF.
   _Fixture('pdf/simple.pdf', 'pdf/simple.expected.md'),
+  // ИЗВЕСТНОЕ ОТСТАВАНИЕ: таблицу PDFium-конвертер не распознаёт, ячейки
+  // строки склеиваются в одну (а строки таблицы — в абзац), тогда как
+  // pdfplumber в сайдкаре отдаёт настоящую Markdown-таблицу. Ожидаемый вывод
+  // фиксирует текущее поведение; при появлении таблиц в PDF — обновить.
+  _Fixture('pdf/table.pdf', 'pdf/table.expected.md'),
   _Fixture(
     'pdf/scanned.pdf',
     'pdf/scanned.expected.md',

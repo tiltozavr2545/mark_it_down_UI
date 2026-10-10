@@ -59,7 +59,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final file = result?.files.firstOrNull;
     final bytes = file?.bytes;
     if (file == null || bytes == null) return;
-    _acceptAll([PickedFile(bytes: bytes, filename: file.name)]);
+    _acceptAll([
+      PickedFile(bytes: bytes, filename: file.name, localPath: file.path),
+    ]);
   }
 
   @override
@@ -81,6 +83,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               bytes: bytes,
               filename: item.name,
               mimeType: item.mimeType,
+              localPath: item.path,
             ),
           ]);
         },

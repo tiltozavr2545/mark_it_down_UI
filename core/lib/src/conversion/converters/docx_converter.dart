@@ -45,8 +45,13 @@ class DocxConverter implements DocumentConverter {
 
     final counterByLevel = <int, int>{};
     final numIdByLevel = <int, int>{};
+    final markerWidthByLevel = <int, int>{};
     final usedFootnotes = <String>[];
     final blocks = <String>[];
+    // Пункты списка подряд склеиваются одним переводом строки (плотный
+    // список), остальные блоки — пустой строкой. Иначе каждый пункт стал бы
+    // «абзацем» разреженного списка, а в длинном списке строк вдвое больше.
+    final isListItem = <bool>[];
 
     for (final child in body.childElements) {
       switch (child.name.qualified) {
@@ -57,15 +62,22 @@ class DocxConverter implements DocumentConverter {
             numbering,
             counterByLevel,
             numIdByLevel,
+            markerWidthByLevel,
             usedFootnotes,
           );
-          if (block != null && block.isNotEmpty) blocks.add(block);
+          if (block != null && block.text.isNotEmpty) {
+            blocks.add(block.text);
+            isListItem.add(block.isListItem);
+          }
         case 'w:tbl':
           // `md.table` заканчивается собственным `\n` после последней
           // строки — без обрезки это даёт лишнюю пустую строку перед
           // следующим блоком, который и так добавляет `\n\n` при склейке.
           final table = _renderTable(child).trimRight();
-          if (table.isNotEmpty) blocks.add(table);
+          if (table.isNotEmpty) {
+            blocks.add(table);
+            isListItem.add(false);
+          }
       }
     }
 
@@ -73,10 +85,19 @@ class DocxConverter implements DocumentConverter {
       blocks.add(
         usedFootnotes.map((id) => '[^$id]: ${footnotes[id] ?? ''}').join('\n'),
       );
+      isListItem.add(false);
+    }
+
+    final markdown = StringBuffer();
+    for (var i = 0; i < blocks.length; i++) {
+      if (i > 0) {
+        markdown.write(isListItem[i] && isListItem[i - 1] ? '\n' : '\n\n');
+      }
+      markdown.write(blocks[i]);
     }
 
     return ConversionResult(
-      markdown: blocks.join('\n\n'),
+      markdown: markdown.toString(),
       converterId: 'docx',
       elapsed: Duration.zero,
       title: pkg.coreTitle(),
@@ -84,12 +105,15 @@ class DocxConverter implements DocumentConverter {
   }
 }
 
-String? _renderParagraph(
+typedef _Block = ({String text, bool isListItem});
+
+_Block? _renderParagraph(
   XmlElement p,
   Map<String, String> rels,
   _Numbering numbering,
   Map<int, int> counterByLevel,
   Map<int, int> numIdByLevel,
+  Map<int, int> markerWidthByLevel,
   List<String> usedFootnotes,
 ) {
   final pPr = p.getElement('w:pPr');
@@ -103,7 +127,9 @@ String? _renderParagraph(
 
   final heading = _headingLevel(styleId);
   if (heading != null) {
-    return inline.trim().isEmpty ? null : md.heading(heading, inline.trim());
+    return inline.trim().isEmpty
+        ? null
+        : (text: md.heading(heading, inline.trim()), isListItem: false);
   }
 
   if (numPr != null) {
@@ -120,6 +146,7 @@ String? _renderParagraph(
     // счётчики ниже текущего уровня не переживают возврат на него.
     counterByLevel.removeWhere((level, _) => level > ilvl);
     numIdByLevel.removeWhere((level, _) => level > ilvl);
+    markerWidthByLevel.removeWhere((level, _) => level > ilvl);
 
     if (numIdByLevel[ilvl] != numId) {
       counterByLevel[ilvl] = 1;
@@ -131,10 +158,20 @@ String? _renderParagraph(
     final marker = numbering.isBullet(numId, ilvl)
         ? '-'
         : '${counterByLevel[ilvl]}.';
-    return '${'  ' * ilvl}$marker $inline';
+    markerWidthByLevel[ilvl] = marker.length + 1;
+
+    // Вложенный пункт отступает на ширину маркера родителя (`- ` — 2,
+    // `1. ` — 3, `10. ` — 4): при меньшем отступе CommonMark не считает его
+    // дочерним, и список под нумерованным пунктом сплющивается. Уровень без
+    // родителя в документе (список начался сразу с `ilvl=1`) — запасные 2.
+    var indent = 0;
+    for (var level = 0; level < ilvl; level++) {
+      indent += markerWidthByLevel[level] ?? 2;
+    }
+    return (text: '${' ' * indent}$marker $inline', isListItem: true);
   }
 
-  return inline.isEmpty ? null : inline;
+  return inline.isEmpty ? null : (text: inline, isListItem: false);
 }
 
 /// Один прогон по прямым детям `w:p` (кроме `w:pPr`) — обычные `w:r` и

@@ -48,10 +48,13 @@ class ConverterRegistry {
         ..sort((a, b) => a.priority.compareTo(b.priority));
 
   /// Пять текстовых конвертеров Этапа 1, шесть форматов Этапа 2 и `pdf`
-  /// Этапа 3, в правильном порядке приоритетов. Сайдкар добавится на Этапе
-  /// 4 — реестр это не хардкодит, фабрика просто называет то, что уже
-  /// реализовано.
-  factory ConverterRegistry.defaultRegistry() => ConverterRegistry([
+  /// Этапа 3, в правильном порядке приоритетов. [extra] — то, что реестр не
+  /// хардкодит: на десктопе сюда приезжает `SidecarConverter` (Этап 4),
+  /// на мобильных список пуст.
+  factory ConverterRegistry.defaultRegistry({
+    List<DocumentConverter> extra = const [],
+  }) => ConverterRegistry([
+    ...extra,
     const CsvConverter(),
     const JsonConverter(),
     const XmlConverter(),
@@ -127,10 +130,8 @@ class ConverterRegistry {
       );
     }
 
-    final converter = _converters.firstWhereOrNull(
-      (c) => c.accepts(info, bytes),
-    );
-    if (converter == null) {
+    final candidates = _converters.where((c) => c.accepts(info, bytes));
+    if (candidates.isEmpty) {
       return ConversionError(UnsupportedFormatFailure(info.detectedType.label));
     }
 
@@ -147,24 +148,44 @@ class ConverterRegistry {
       ),
     );
 
+    // Обычно отвечает первый подошедший конвертер, и его отказ окончателен.
+    // Исключение — [ConversionDeclinedException] (так отказывается сайдкар):
+    // тогда идём к следующему подошедшему, а если он справился — добавляем в
+    // результат пометку, что сработал запасной путь. Если запасного нет или
+    // он тоже не справился, возвращается отказ первого, а не безликая
+    // ошибка последнего.
+    ConversionDeclinedException? declined;
     final stopwatch = Stopwatch()..start();
-    try {
-      final result = await converter.convert(request);
-      return ConversionSuccess(result.withElapsed(stopwatch.elapsed));
-    } on ConversionCorruptedException catch (e) {
-      return ConversionError(
-        CorruptedFileFailure(converterId: converter.id, reason: e.reason),
-      );
-    } on ConversionLimitExceededException catch (e) {
-      return ConversionError(LimitExceededFailure(e.reason));
-    } catch (_) {
-      return ConversionError(
-        CorruptedFileFailure(
-          converterId: converter.id,
-          reason: 'не удалось прочитать содержимое файла',
-        ),
-      );
+    for (final converter in candidates) {
+      try {
+        final result = await converter.convert(request);
+        final withElapsed = result.withElapsed(stopwatch.elapsed);
+        return ConversionSuccess(
+          declined == null
+              ? withElapsed
+              : withElapsed.withWarnings([
+                  ConversionWarning(declined.fallbackWarning),
+                  ...withElapsed.warnings,
+                ]),
+        );
+      } on ConversionDeclinedException catch (e) {
+        declined ??= e;
+      } on ConversionCorruptedException catch (e) {
+        return ConversionError(
+          CorruptedFileFailure(converterId: converter.id, reason: e.reason),
+        );
+      } on ConversionLimitExceededException catch (e) {
+        return ConversionError(LimitExceededFailure(e.reason));
+      } catch (_) {
+        return ConversionError(
+          CorruptedFileFailure(
+            converterId: converter.id,
+            reason: 'не удалось прочитать содержимое файла',
+          ),
+        );
+      }
     }
+    return ConversionError(declined!.failure);
   }
 }
 
@@ -175,12 +196,3 @@ class _RecursionBudget {
 }
 
 String _megabytes(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
-
-extension<T> on List<T> {
-  T? firstWhereOrNull(bool Function(T) test) {
-    for (final element in this) {
-      if (test(element)) return element;
-    }
-    return null;
-  }
-}

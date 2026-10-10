@@ -22,7 +22,7 @@
 | платформа | чем | как проверить |
 |---|---|---|
 | Android | в `AndroidManifest.xml` **нет** `android.permission.INTERNET` | `aapt dump permissions app-release.apk` — в выводе нет INTERNET; в Google Play в разделе разрешений тоже нет |
-| macOS | в `*.entitlements` **нет** `com.apple.security.network.client` | `codesign -d --entitlements - MarkItDown.app` |
+| macOS | в `Release.entitlements` **нет** `com.apple.security.network.client` (и вообще `network.*`), песочница включена | `codesign -d --entitlements - MarkItDown.app`; в CI — grep по `Release.entitlements` |
 | iOS | нет сетевого кода; в `Info.plist` нет `NSAppTransportSecurity`-послаблений | ревью зависимостей (разрешения на сеть iOS не требует, поэтому гарантия здесь слабее — см. ниже) |
 | Windows / Linux | гарантии уровня ОС нет | только ревью зависимостей |
 
@@ -36,10 +36,25 @@ iOS и Windows разрешения на исходящую сеть не тре
 транзитивная зависимость их не тянет. Это **проверка в CI**, а не разовый
 просмотр, — см. «Конвенции работы» в [../AGENTS.md](../AGENTS.md).
 
+Про `DebugProfile.entitlements`: там есть `com.apple.security.network.server` —
+он нужен инструментам Flutter (hot reload, VM service), и в релизную сборку не
+попадает. Поэтому проверка — по `Release.entitlements`, а не по всем
+`*.entitlements` подряд.
+
 Python-сайдкар на десктопе ту же линию держит: `requests` в зависимостях
 markitdown остаётся (он в core-группе, его не выкинуть), но Azure-,
-YouTube- и LLM-конвертеры не устанавливаются вообще, а на macOS у бандла нет
-entitlement на сеть — см. [python-sidecar.md](python-sidecar.md).
+YouTube- и LLM-конвертеры не устанавливаются вообще — см.
+[python-sidecar.md](python-sidecar.md).
+
+На macOS сайдкар — подпроцесс приложения и **наследует App Sandbox
+родителя**: сети у него нет по тем же причинам, что и у самого приложения.
+Собственные entitlements интерпретатора (`sidecar/sidecar.entitlements`)
+содержат только `cs.disable-library-validation` — про загрузку библиотек, не
+про сеть, — и сетевых ключей в них нет. Это проверяет CI: шаг падает, если в
+`Release.entitlements` или `sidecar/*.entitlements` появился `network.*` или в
+`Release.entitlements` выключена песочница. Оговорка: поведение сайдкара под
+песочницей живого `.app` ещё не проверено (нет Xcode) — см.
+[future-development.md](future-development.md).
 
 ## Чего в приложении нет
 

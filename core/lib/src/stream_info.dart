@@ -24,12 +24,19 @@ class StreamInfo {
   /// Результат распознавания по магическим байтам.
   final DetectedType detectedType;
 
+  /// Путь к файлу на диске, если он там лежит (диалог выбора, drag&drop).
+  /// Нужен сайдкару, который получает путь аргументом, а не байты; если
+  /// `null` (буфер обмена, вложенный файл архива), конвертер пишет
+  /// временный файл сам. Конвертеры Dart-ядра его не читают.
+  final String? localPath;
+
   const StreamInfo({
     required this.filename,
     required this.extension,
     required this.mimeType,
     required this.lengthBytes,
     required this.detectedType,
+    this.localPath,
   });
 
   /// [head] — первые байты файла, достаточные для распознавания (для
@@ -40,6 +47,7 @@ class StreamInfo {
     String? filename,
     String? mimeType,
     int? lengthBytes,
+    String? localPath,
   }) {
     final extension = _extensionOf(filename);
     return StreamInfo(
@@ -48,6 +56,7 @@ class StreamInfo {
       mimeType: mimeType,
       lengthBytes: lengthBytes ?? head.length,
       detectedType: detectType(head, extension: extension),
+      localPath: localPath,
     );
   }
 

@@ -54,6 +54,15 @@ aapt dump permissions build/app/outputs/flutter-apk/app-release.apk \
 make verify-version BASE_REF=origin/main
 ```
 
+Цель зовёт `tool/verify_version.sh`: версия `app/pubspec.yaml` в рабочем дереве
+сравнивается с `git show $BASE_REF:app/pubspec.yaml`. Падает, если формат не
+`MAJOR.MINOR.PATCH+BUILD`, версия не изменилась или `build` не вырос строго.
+`name` расти не обязан: допустим бамп одного `build`. `core/pubspec.yaml`
+считается отдельно (версия без `build`) и здесь не проверяется. В `make verify`
+цель не входит: локально сравнивать с `origin/main` незачем. В CI она идёт
+отдельным шагом только на `pull_request` (базовая ветка подтягивается
+`git fetch`).
+
 `build` обязан расти монотонно: Google Play и App Store Connect не принимают
 повторный номер, и обнаруживается это в самый неподходящий момент.
 
@@ -78,16 +87,135 @@ make verify-version BASE_REF=origin/main
 cd app && flutter build macos --release
 ```
 
-С этапа 4 перед этим собирается сайдкар (`make sidecar`), и дальше —
-**подпись изнутри наружу**: каждый вложенный бинарник и каждая `.so` в
-`site-packages`, потом бандл. Один неподписанный `.so` в зависимостях — отказ
+С этапа 4 перед этим собирается сайдкар (`make sidecar`, см.
+[python-sidecar.md](python-sidecar.md#сборка)), и дальше — **подпись изнутри
+наружу**: сначала каждый Mach-O внутри сайдкара, потом фреймворки Flutter,
+потом `.app`, потом DMG. Один неподписанный `.so` в зависимостях — отказ
 нотаризации, и в отчёте он будет одной строкой среди многих.
 
-Рабочие команды подписи **дописать сюда на этапе 4**, пока они в руках:
-разбираться в этом второй раз дороже, чем записать один. Ориентиры — в
-[python-sidecar.md](python-sidecar.md#подпись-и-нотаризация-на-macos):
-`--options runtime`, `com.apple.security.cs.disable-library-validation`, и
-**никакого** `com.apple.security.network.client`.
+#### Подпись и нотаризация: команды
+
+**Статус проверки.** Проверено на этой машине: всё, что относится к
+**ad-hoc подписи с Hardened Runtime** (`--options runtime`, идентичность `-`):
+скрипт подписи, проверка `codesign --verify --strict --deep`, запуск `run.py`
+по всем шести форматам из подписанного дерева, вложение подписанного сайдкара
+в тестовый `.app` и подпись этого `.app` с `Release.entitlements`. **Не
+проверено** (на машине нет Developer ID — `security find-identity -v -p
+codesigning` пуст): подпись настоящей идентичностью, `--timestamp` с сервером
+Apple, нотаризация, `stapler`, `spctl`, поведение под настоящей песочницей
+`.app` и сборка самого Runner (нет Xcode). Команды ниже для этой части
+написаны по документации и должны быть пройдены один раз вручную с реальным
+сертификатом; что сломается — поправить здесь же.
+
+Порядок строгий, потому что подпись хеширует содержимое: любая правка файла
+после подписи её ломает.
+
+```bash
+ID="Developer ID Application: Имя Фамилия (TEAMID)"
+
+# 1. Сайдкар — целиком, до подписи чего-либо ещё. Подпись только ПОСЛЕ
+#    compileall и всех чисток, которые делает build.sh.
+make sidecar
+make sign-sidecar IDENTITY="$ID"        # = sidecar/sign.sh sidecar/dist/<host> "$ID"
+#    Что делает: каждый Mach-O по магическим байтам (.so/.dylib — первыми,
+#    python/bin/python3.12 — последним, с sidecar/sidecar.entitlements),
+#    --options runtime --timestamp, затем codesign --verify --strict по каждому
+#    файлу и --deep --strict по интерпретатору, затем run.py --self-check.
+
+# 2. Собрать приложение и положить сайдкар в Contents/Resources/sidecar
+#    (шаг Xcode-сборки не написан — см. «Встраивание» ниже). rsync -a сохраняет
+#    подписи: они лежат внутри самих файлов.
+cd app && flutter build macos --release
+APP=build/macos/Build/Products/Release/MarkItDown.app
+rsync -a --delete ../sidecar/dist/macos-$(uname -m)/ "$APP/Contents/Resources/sidecar/"
+
+# 3. Фреймворки и dylib самого Flutter-приложения — изнутри наружу.
+#    --deep НЕ использовать: он перезапишет подписи вложенного сайдкара без
+#    entitlements интерпретатора.
+find "$APP/Contents/Frameworks" -depth \( -name '*.framework' -o -name '*.dylib' \) -print0 |
+  xargs -0 -n1 codesign --force --sign "$ID" --options runtime --timestamp
+
+# 4. Само приложение — с Release.entitlements (песочница, без сети).
+codesign --force --sign "$ID" --options runtime --timestamp \
+  --entitlements macos/Runner/Release.entitlements "$APP"
+
+# 5. Проверки до отправки.
+codesign --verify --deep --strict --verbose=2 "$APP"
+codesign -d --entitlements - "$APP"      # app-sandbox есть, network.* нет
+codesign -d --entitlements - "$APP/Contents/Resources/sidecar/python/bin/python3.12"
+spctl -a -vv -t exec "$APP"              # до нотаризации: "rejected (Unnotarized Developer ID)" — это норма
+
+# 6. DMG и нотаризация. Ключи notarytool — один раз:
+#    xcrun notarytool store-credentials markitdown-notary \
+#        --apple-id <id> --team-id <TEAMID> --password <app-specific-password>
+hdiutil create -volname MarkItDown -srcfolder "$APP" -ov -format UDZO MarkItDown.dmg
+codesign --sign "$ID" --timestamp MarkItDown.dmg
+xcrun notarytool submit MarkItDown.dmg --keychain-profile markitdown-notary --wait
+#    Если Invalid — причины построчно (обычно: неподписанный/без runtime Mach-O):
+#    xcrun notarytool log <submission-id> --keychain-profile markitdown-notary
+
+# 7. Степлинг и финальная проверка (нормальный результат: "accepted",
+#    "source=Notarized Developer ID").
+xcrun stapler staple MarkItDown.dmg
+xcrun stapler validate MarkItDown.dmg
+spctl -a -vv -t open --context context:primary-signature MarkItDown.dmg
+```
+
+Почему шаг 1 стоит особняком: сайдкар нужен также без приложения (сверка с
+Dart-ядром, разработка), а скрипт подписи сам проверяет всё дерево и
+отказывается, если нашёл Mach-O без подписи. Хуки в Xcode для того же —
+вопрос будущей Build Phase (см. ниже), на команды это не влияет.
+
+#### Entitlements: что и почему
+
+| где | что | зачем |
+|---|---|---|
+| `Release.entitlements` (Runner) | `app-sandbox`, `files.user-selected.read-only` | **песочница включена намеренно**: «нет сети» на macOS — это не просто отсутствие `network.client`, а *песочница без него*. В несандбоксном приложении отсутствие этого ключа ничего не запрещает |
+| `DebugProfile.entitlements` | то же + `allow-jit`, `network.server` | инструменты Flutter (hot reload, VM service); только debug/profile, в релиз не попадает |
+| `sidecar/sidecar.entitlements` (интерпретатор) | `cs.disable-library-validation` | см. [python-sidecar.md](python-sidecar.md#подпись-проверено-ad-hoc-с-hardened-runtime) |
+| нигде | `network.client`, `network.server` в Release | CI-шаг «нет com.apple.security.network.* в Release.entitlements и сайдкаре» |
+
+Решение по Runner: **песочницу оставить**, сетевые ключи в Release не
+добавлять. Аргументы: (а) распространение — DMG, не MAS, так что sandbox
+формально не обязателен, но он единственное, что делает гарантию «нет сети»
+проверяемой операционной системой; (б) сайдкар как подпроцесс наследует
+песочницу родителя и потому тоже без сети — Python-зависимости не смогут
+позвонить наружу, даже если очень захотят; (в) приложению хватает
+`files.user-selected.read-only`: файл приходит через диалог или drag-and-drop
+(в песочнице это выдаёт доступ), на запись пользователь ничего не просил, а
+сайдкар читает копию из временной папки контейнера. Цена: подпроцесс в
+песочнице нельзя проверить здесь — нужен живой `.app` (см. «Статус проверки» выше).
+
+#### Встраивание сайдкара в macOS-бандл — открыто
+
+Приложение ищет сайдкар в `<App>.app/Contents/Resources/sidecar`
+(`SidecarConverter.discover`, см.
+[conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер)),
+а нужного шага сборки в `app/macos/` **нет**: Xcode на машине автора не
+ставится (см. [../AGENTS.md](../AGENTS.md)), и править
+`Runner.xcodeproj/project.pbxproj` вслепую, без возможности собрать и
+проверить, не стали. Что нужно сделать, когда macOS-сборка заработает:
+
+1. Build Phase типа Run Script в таргете `Runner`, после «Copy Bundle
+   Resources»: скопировать результат `make sidecar` (каталог с `python/`,
+   `lib/`, `run.py`, `manifest.json`) в
+   `"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources/sidecar"` (`rsync -a
+   --delete`, симлинки внутри `python/` сохранять — `-a` это делает).
+2. Входные/выходные файлы фазы указать явно (иначе Xcode будет пересобирать
+   её каждый раз или, наоборот, не запускать), `ENABLE_USER_SCRIPT_SANDBOXING`
+   для этой фазы выключить — скрипт читает каталог вне проекта.
+3. Подпись вложенных `.so`/исполняемых файлов — отдельным шагом после
+   копирования, см. выше; сам `Contents/Resources/sidecar` должен попасть в
+   подпись бандла.
+4. Без собранного сайдкара фаза не должна падать: приложение умеет работать
+   без него (нет каталога — сайдкар не регистрируется), а `flutter build
+   macos` для разработки Dart-части не обязан его требовать.
+5. Проверить на машине с Xcode: «бросили `.xls` — получили Markdown», в
+   `warnings` есть `converterId: sidecar`.
+
+На Android ничего из этого не делается: сайдкар в APK не попадает — проверено
+замером (APK 25,1 → 25,3 МБ, рост целиком из Dart-кода, см.
+[format-coverage.md](format-coverage.md#android-не-потолстел-этап-4)).
 
 ### Android
 

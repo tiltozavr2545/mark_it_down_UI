@@ -41,6 +41,7 @@ class ShareIntake {
           bytes: bytes,
           filename: p.basename(shared.path),
           mimeType: shared.mimeType,
+          localPath: shared.path,
         ),
       );
     }

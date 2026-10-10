@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../stream_info.dart';
+import 'conversion_failure.dart';
 import 'conversion_request.dart';
 import 'conversion_result.dart';
 
@@ -49,4 +50,37 @@ class ConversionLimitExceededException implements Exception {
 
   @override
   String toString() => reason;
+}
+
+/// Конвертер бросает это, когда **не смог** обработать файл, но формат
+/// может уметь следующий в цепочке конвертер (сайдкар отказался или упал, а
+/// Dart-реализация того же формата есть). В отличие от
+/// [ConversionCorruptedException], реестр не завершает прогон, а переходит к
+/// следующему конвертеру, чей `accepts()` тоже сказал «да»: частичный или
+/// запасной результат полезнее отказа. Если запасного нет или он тоже
+/// провалился, пользователю уходит [failure] — отказ первого конвертера, а
+/// не generic-ошибка.
+class ConversionDeclinedException implements Exception {
+  /// Что показать, если дальше по цепочке никто не справился.
+  final ConversionFailure failure;
+
+  /// Человекочитаемая пометка в `warnings`, если справился запасной
+  /// конвертер («сайдкар не смог обработать файл, результат получен
+  /// встроенным разбором»). Без текстов исключений и stderr.
+  final String fallbackWarning;
+
+  /// Диагностика для разработчика (хвост stderr сайдкара и т.п.). Пользователю
+  /// не показывается никогда — только для логов и отладки.
+  final String? diagnostics;
+
+  const ConversionDeclinedException({
+    required this.failure,
+    required this.fallbackWarning,
+    this.diagnostics,
+  });
+
+  @override
+  String toString() =>
+      'ConversionDeclinedException: $fallbackWarning'
+      '${diagnostics == null ? '' : '\n$diagnostics'}';
 }

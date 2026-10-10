@@ -8,6 +8,8 @@ export 'src/conversion/conversion_request.dart';
 export 'src/conversion/conversion_result.dart';
 export 'src/conversion/converter_registry.dart';
 export 'src/conversion/document_converter.dart';
+export 'src/conversion/sidecar/sidecar_converter.dart';
+export 'src/conversion/sidecar/sidecar_manifest.dart';
 export 'src/stream_info.dart';
 export 'src/type_detection/detected_type.dart';
 export 'src/type_detection/type_detector.dart';

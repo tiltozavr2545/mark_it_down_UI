@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements интерпретатора сайдкара (sidecar/dist/<host>/python/bin/python3.12).
+  Обоснование каждой строки и проверка — docs/python-sidecar.md, «Подпись».
+
+  Здесь НЕТ, и это нарочно:
+  - com.apple.security.network.* — сайдкар офлайн (docs/offline-and-privacy.md);
+  - allow-unsigned-executable-memory / allow-jit — путь markitdown (pdf, docx,
+    xlsx, xls, pptx, msg) без них работает; они нужны только ctypes-колбэкам,
+    которых на этом пути нет (на колбэке без них процесс зависает);
+  - app-sandbox / inherit — для DMG не нужны: подпроцесс песочного приложения
+    наследует песочницу от родителя (проверить на живом .app пока нечем). Для
+    Mac App Store понадобятся оба — это отдельное решение.
+-->
+<plist version="1.0">
+<dict>
+	<!-- Все .so/.dylib в lib/ подписаны нами, но при ad-hoc-подписи у них нет Team ID,
+	     и без этого ключа Hardened Runtime отказывается их грузить. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

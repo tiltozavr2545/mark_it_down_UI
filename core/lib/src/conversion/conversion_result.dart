@@ -39,4 +39,15 @@ class ConversionResult {
     title: title,
     warnings: warnings,
   );
+
+  /// Заменяет список [warnings] — реестр дописывает пометку о запасном пути
+  /// (см. `ConversionDeclinedException`).
+  ConversionResult withWarnings(List<ConversionWarning> warnings) =>
+      ConversionResult(
+        markdown: markdown,
+        converterId: converterId,
+        elapsed: elapsed,
+        title: title,
+        warnings: warnings,
+      );
 }

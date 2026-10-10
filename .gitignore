@@ -25,6 +25,8 @@ android/key.properties
 sidecar/python/
 sidecar/lib/
 sidecar/dist/
+# кэш загрузок build.sh (архив интерпретатора) и штампы сборки
+sidecar/cache/
 
 # PDFium: качается скриптом pdfium/fetch.sh, в репозиторий не коммитится
 # (см. docs/format-coverage.md#pdf-чем-извлекать-текст)

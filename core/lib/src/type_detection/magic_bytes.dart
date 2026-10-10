@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'detected_type.dart';
+import 'ole2_directory.dart';
 
 bool _startsWith(Uint8List bytes, List<int> signature) {
   if (bytes.length < signature.length) return false;
@@ -68,10 +69,36 @@ DetectedType? detectImageSignature(Uint8List head) {
   return null;
 }
 
-/// OLE2-контейнер сам по себе не говорит, `.doc`, `.xls` или `.msg` перед
-/// нами — все три делят одну сигнатуру. Расширение здесь легитимная
-/// подсказка (байты неоднозначны), но не более того: он может и врать.
-DetectedType describeOle2(String? extension) {
+/// OLE2-контейнер сам по себе не говорит, `.doc`, `.xls`, `.msg` или `.ppt`
+/// перед нами — все они делят одну сигнатуру. Различаются по именам потоков
+/// в каталоге CFB ([readOle2EntryNames]): `Workbook`/`Book` — Excel,
+/// `__properties_version1.0` и `__substg1.0_*` — Outlook `.msg`,
+/// `WordDocument` — Word, `PowerPoint Document` — PowerPoint. Расширение —
+/// только запасная подсказка, когда каталог прочитать не удалось (обрезанный
+/// файл, нестандартный контейнер): оно может и врать.
+DetectedType describeOle2(Uint8List head, String? extension) {
+  final names = readOle2EntryNames(head);
+  if (names != null) {
+    if (names.any(
+      (n) =>
+          n == '__properties_version1.0' ||
+          n.startsWith('__substg1.0_') ||
+          n.startsWith('__recip_version1.0_') ||
+          n.startsWith('__attach_version1.0_'),
+    )) {
+      return const DetectedType(FileKind.msg, 'Outlook-сообщение (.msg)');
+    }
+    if (names.contains('Workbook') || names.contains('Book')) {
+      return const DetectedType(FileKind.xls, 'Excel 97–2003 (.xls)');
+    }
+    if (names.contains('WordDocument')) {
+      return const DetectedType(FileKind.doc, 'Word 97–2003 (.doc)');
+    }
+    if (names.contains('PowerPoint Document')) {
+      return const DetectedType(FileKind.ppt, 'PowerPoint 97–2003 (.ppt)');
+    }
+  }
+
   const knownExtensions = {'doc', 'xls', 'msg', 'ppt'};
   if (extension != null && knownExtensions.contains(extension)) {
     return DetectedType(

@@ -18,15 +18,19 @@
 
 ## Статус
 
-**Этап 3 закрыт** — [docs/implementation-plan.md](docs/implementation-plan.md).
+**Этап 4 закрыт** — [docs/implementation-plan.md](docs/implementation-plan.md).
 Каркас, конвейер конвертации и текстовые форматы (Этап 0–1), Office —
-`docx`/`xlsx`/`pptx`/`epub`/`zip`/`ipynb` (Этап 2), затем `pdf` через свои
-FFI-биндинги на PDFium (Этап 3) написаны и проверены (`make verify`).
-Собирается и проверяется живьём пока только Android: на машине автора не
-ставится Xcode, так что macOS-сборка отложена до появления рабочего Xcode —
-подробнее в [docs/future-development.md](docs/future-development.md#macos-сборка).
+`docx`/`xlsx`/`pptx`/`epub`/`zip`/`ipynb` (Этап 2), `pdf` через свои
+FFI-биндинги на PDFium (Этап 3) и Python-сайдкар на десктопе с настоящим
+markitdown (Этап 4: `.xls`, `.msg` и эталон для сверки) написаны и проверены
+(`make verify`). Собирается и проверяется живьём пока только Android: на машине
+автора не ставится Xcode, так что macOS-сборка и встраивание сайдкара в неё
+отложены до появления рабочего Xcode — подробнее в
+[docs/future-development.md](docs/future-development.md#macos-сборка).
 PDF на Android стоит ≈6,3 МБ бандла (нативная `libpdfium`) — подробный замер в
-[docs/format-coverage.md](docs/format-coverage.md#решения-этапа-3).
+[docs/format-coverage.md](docs/format-coverage.md#решения-этапа-3); сайдкара в
+Android-сборке нет вовсе
+([замер](docs/format-coverage.md#android-не-потолстел-этап-4)).
 
 ## Что значит «без интернета»
 
@@ -101,6 +105,19 @@ docs/                 — документация
 ```bash
 cd app && flutter pub get && flutter run -d macos
 ```
+
+### Сайдкар (только десктоп)
+
+```bash
+make sidecar            # sidecar/dist/<host>/, нужен интернет при сборке
+make compare-sidecar    # сверка Dart-ядра с настоящим markitdown
+```
+
+Настоящий markitdown с упакованным Python весит ≈242 МБ (macOS x86_64) и нужен
+только десктопу; на Android его нет, и в `make verify` он не входит. Без
+собранного сайдкара приложение работает на одном Dart-ядре, кроме `.xls` и
+`.msg` — они читаются только через сайдкар. Устройство, размеры и подпись —
+[docs/python-sidecar.md](docs/python-sidecar.md).
 
 Никаких `.env` и ключей не нужно: у приложения нет ни одного секрета, потому
 что ему некуда ходить. Ключи нужны только для подписи релизных сборок — см.

@@ -21,6 +21,17 @@ jobs:
       - name: make verify
         run: make verify
 
+      # Бамп версии обязателен в каждом PR (docs/operations.md#версия). Только
+      # на pull_request: на push в main сравнивать не с чем. checkout берёт один
+      # коммит, поэтому базовую ветку подтягиваем явно.
+      - name: бамп версии (app/pubspec.yaml)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
+          make verify-version BASE_REF="origin/$BASE_BRANCH"
+
       # Главная гарантия продукта — см. docs/offline-and-privacy.md. Ловим
       # сетевую зависимость, как только она приезжает транзитивно, а не
       # когда их наберётся тридцать.
@@ -49,5 +60,19 @@ jobs:
         run: |
           if grep -q 'android.permission.INTERNET' app/android/app/src/main/AndroidManifest.xml; then
             echo "::error::AndroidManifest.xml запрашивает INTERNET"
+            exit 1
+          fi
+
+      # Ту же линию держит macOS: в Release нет сетевых entitlements, а
+      # песочница включена — без неё их отсутствие ничего не запрещает (см.
+      # docs/offline-and-privacy.md). Entitlements сайдкара — туда же.
+      - name: нет com.apple.security.network.* в Release.entitlements и сайдкаре
+        run: |
+          if grep -q '<key>com.apple.security.network' app/macos/Runner/Release.entitlements sidecar/*.entitlements; then
+            echo "::error::Сетевой entitlement в Release.entitlements или sidecar/*.entitlements"
+            exit 1
+          fi
+          if ! grep -A1 '<key>com.apple.security.app-sandbox</key>' app/macos/Runner/Release.entitlements | grep -q '<true/>'; then
+            echo "::error::В Release.entitlements выключен app-sandbox"
             exit 1
           fi

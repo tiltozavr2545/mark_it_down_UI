@@ -42,6 +42,7 @@ class XlsxConverter implements DocumentConverter {
       pkg.partXml('xl/sharedStrings.xml'),
     );
     final sheetRels = pkg.relationshipsFor('xl/workbook.xml');
+    final dates = _DateStyles.parse(pkg.partXml('xl/styles.xml'), workbook);
     final warnings = <ConversionWarning>[];
     final blocks = <String>[];
 
@@ -49,8 +50,12 @@ class XlsxConverter implements DocumentConverter {
       final name = sheet.getAttribute('name') ?? 'Sheet';
       final path = sheetRels[sheet.getAttribute('r:id')];
       final sheetXml = path == null ? null : pkg.partXml(path);
-      if (sheetXml == null) continue;
-      blocks.add(_renderSheet(name, sheetXml, sharedStrings, warnings));
+      if (sheetXml == null) {
+        // Молча выкинутый лист — потеря данных без следа; лучше сказать.
+        warnings.add(ConversionWarning('лист "$name": не удалось прочитать'));
+        continue;
+      }
+      blocks.add(_renderSheet(name, sheetXml, sharedStrings, dates, warnings));
     }
 
     return ConversionResult(
@@ -75,6 +80,7 @@ String _renderSheet(
   String name,
   XmlDocument sheetXml,
   List<String> sharedStrings,
+  _DateStyles dates,
   List<ConversionWarning> warnings,
 ) {
   final grid = <int, Map<int, String>>{};
@@ -93,6 +99,7 @@ String _renderSheet(
       grid.putIfAbsent(rowIndex, () => {})[colIndex] = _cellValue(
         cell,
         sharedStrings,
+        dates,
       );
       if (colIndex > maxCol) maxCol = colIndex;
       if (rowIndex > maxRow) maxRow = rowIndex;
@@ -131,7 +138,11 @@ String _renderSheet(
   return '$heading\n\n${md.table(headers, body).trimRight()}';
 }
 
-String _cellValue(XmlElement cell, List<String> sharedStrings) {
+String _cellValue(
+  XmlElement cell,
+  List<String> sharedStrings,
+  _DateStyles dates,
+) {
   final type = cell.getAttribute('t');
   if (type == 'inlineStr') {
     return cell.findAllElements('t').map((t) => t.innerText).join();
@@ -147,9 +158,98 @@ String _cellValue(XmlElement cell, List<String> sharedStrings) {
           : sharedStrings[index];
     case 'b':
       return value == '1' ? 'TRUE' : 'FALSE';
+    case null:
+    case 'n':
+      // Дата в xlsx — обычное число (дни от эпохи) со стилем «формат даты»;
+      // без этой проверки `2024-03-01` выходит как `45352`.
+      final styleIndex = int.tryParse(cell.getAttribute('s') ?? '');
+      if (styleIndex != null && dates.isDateStyle(styleIndex)) {
+        final serial = double.tryParse(value);
+        if (serial != null) return dates.format(serial) ?? value;
+      }
+      return value;
     default:
       return value;
   }
+}
+
+/// Какие стили ячеек (`cellXfs` из `xl/styles.xml`) — даты, и от какой эпохи
+/// считать серийные номера (`date1904` в `workbook.xml`).
+class _DateStyles {
+  final Set<int> _dateXfs;
+  final bool date1904;
+
+  _DateStyles._(this._dateXfs, this.date1904);
+
+  factory _DateStyles.parse(XmlDocument? styles, XmlDocument workbook) {
+    final date1904 =
+        workbook
+            .findAllElements('workbookPr')
+            .firstOrNull
+            ?.getAttribute('date1904') ==
+        '1';
+    if (styles == null) return _DateStyles._(const {}, date1904);
+
+    final codes = <int, String>{
+      for (final fmt in styles.findAllElements('numFmt'))
+        if (int.tryParse(fmt.getAttribute('numFmtId') ?? '') case final id?)
+          id: fmt.getAttribute('formatCode') ?? '',
+    };
+    final dateXfs = <int>{};
+    final xfs = styles
+        .findAllElements('cellXfs')
+        .firstOrNull
+        ?.findElements('xf')
+        .toList();
+    for (var i = 0; xfs != null && i < xfs.length; i++) {
+      final id = int.tryParse(xfs[i].getAttribute('numFmtId') ?? '');
+      if (id != null && _isDateFormat(id, codes[id])) dateXfs.add(i);
+    }
+    return _DateStyles._(dateXfs, date1904);
+  }
+
+  bool isDateStyle(int index) => _dateXfs.contains(index);
+
+  /// `yyyy-MM-dd` для целого числа дней, `HH:mm:ss` для доли суток,
+  /// `yyyy-MM-dd HH:mm:ss` для остального; `null` — число не похоже на
+  /// дату (отрицательное, не конечное), тогда остаётся как есть.
+  String? format(double serial) {
+    if (!serial.isFinite || serial < 0) return null;
+    // Excel считает 1900 високосным: до 1 марта 1900 серийные номера
+    // сдвинуты на день относительно «честной» эпохи 30.12.1899.
+    final epoch = date1904
+        ? DateTime.utc(1904)
+        : serial < 60
+        ? DateTime.utc(1899, 12, 31)
+        : DateTime.utc(1899, 12, 30);
+    final at = epoch.add(Duration(milliseconds: (serial * 86400000).round()));
+    String two(int n) => n.toString().padLeft(2, '0');
+    final date =
+        '${at.year.toString().padLeft(4, '0')}-${two(at.month)}-${two(at.day)}';
+    final time = '${two(at.hour)}:${two(at.minute)}:${two(at.second)}';
+    if (serial == serial.floorToDouble()) return date;
+    if (serial < 1) return time;
+    return '$date $time';
+  }
+}
+
+/// Встроенные форматы дат/времени Excel (14–22, 27–36, 45–47, 50–58) и
+/// пользовательские коды, где вне кавычек и скобок встречаются `y`, `m`, `d`,
+/// `h`, `s` (`[h]`, `[mm]`, `[ss]` — тоже время). `General` и числовые
+/// форматы этих букв не содержат.
+bool _isDateFormat(int id, String? code) {
+  if ((id >= 14 && id <= 22) ||
+      (id >= 27 && id <= 36) ||
+      (id >= 45 && id <= 47) ||
+      (id >= 50 && id <= 58)) {
+    return true;
+  }
+  if (code == null) return false;
+  final stripped = code
+      .replaceAll(RegExp(r'"[^"]*"'), '')
+      .replaceAll(RegExp(r'\\.'), '')
+      .replaceAll(RegExp(r'\[(?![hms]+\])[^\]]*\]', caseSensitive: false), '');
+  return RegExp(r'[ymdhs]', caseSensitive: false).hasMatch(stripped);
 }
 
 /// `A1`-стиль ссылки → индекс столбца с нуля.
