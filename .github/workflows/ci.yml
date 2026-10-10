@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
+    # Только ветки: теги v* собирает release.yml, который зовёт этот же
+    # workflow через workflow_call — без фильтра тег гонял бы всё дважды.
+    branches: ['**']
   pull_request:
+  workflow_call:
 
 env:
   FLUTTER_VERSION: 3.32.8
