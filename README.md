@@ -71,40 +71,39 @@ markitdown, упакованный вместе с Python в «сайдкар» 
 
 ## Как запустить (пользователю)
 
-### Windows — готовая сборка
+Готовые сборки — на странице
+**[Releases](https://github.com/tiltozavr2545/mark_it_down_UI/releases/latest)**:
+zip для Windows и APK для Android.
 
-Собранная версия лежит в GitHub Actions; ставить ничего не нужно, Python
-тоже — он уже внутри.
+### Windows
 
-1. Открыть [Actions](https://github.com/tiltozavr2545/mark_it_down_UI/actions/workflows/ci.yml)
-   и выбрать последний зелёный запуск.
-2. Внизу страницы, в **Artifacts**, скачать `markitdown_ui-windows-x64` (zip,
-   ≈120 МБ; скачивание требует входа в GitHub).
-3. Распаковать в любую папку и запустить `markitdown_ui.exe`. Всё нужное
-   лежит рядом: `pdfium.dll`, папка `data\` и `sidecar\` (Python +
-   markitdown, ≈300 МБ в распакованном виде) — папку не разбирать.
-4. При первом запуске SmartScreen покажет «Windows защитила ваш компьютер»:
+1. Скачать `markitdown_ui-X.Y.Z-windows-x64.zip` (≈120 МБ) и распаковать в
+   любую папку. Ставить ничего не нужно, Python тоже — он уже внутри.
+2. Запустить `markitdown_ui.exe`. Всё нужное лежит рядом: `pdfium.dll`,
+   папки `data\` и `sidecar\` (Python + markitdown, ≈300 МБ в
+   распакованном виде) — папку не разбирать.
+3. При первом запуске SmartScreen покажет «Windows защитила ваш компьютер»:
    **«Подробнее» → «Выполнить в любом случае»**. Это потому, что сборка не
    подписана (сертификата пока нет), а не потому, что с ней что-то не так.
 
 Первая конвертация `xls`/`msg`/`pdf` может занять несколько секунд —
 Defender проверяет Python при первом запуске.
 
-### Android — APK
+Сборка из любого коммита (не только релизного) — артефакт
+`markitdown_ui-windows-x64` в [Actions](https://github.com/tiltozavr2545/mark_it_down_UI/actions/workflows/ci.yml)
+(нужен вход в GitHub).
 
-Готового APK для скачивания пока нет — собирается из исходников (см.
-«Разработка» ниже):
+### Android
 
-```bash
-make fetch-pdfium                       # один раз: libpdfium для arm64
-cd app && flutter build apk --release   # → app/build/app/outputs/flutter-apk/app-release.apk
-```
+1. Скачать `markitdown_ui-X.Y.Z-android-arm64.apk` на телефон и открыть;
+   разрешить установку из этого источника, если Android спросит.
+2. Нужен Android 6.0+ и процессор arm64 (практически любой телефон последних
+   лет).
+3. Если приложение уже стояло, собранное не из этого релиза, — сначала
+   удалить: сборки пока подписаны разными debug-ключами и поверх друг друга
+   не встают (своего ключа подписи ещё нет — Этап 7).
 
-Установить на телефон — `flutter install` при подключённом по USB телефоне
-или перекинуть `.apk` и открыть его на телефоне (понадобится разрешить
-установку из неизвестных источников). Нужен Android 6.0+ и процессор arm64
-(практически любой телефон последних лет). Релизная сборка пока подписана
-debug-ключом — для себя этого достаточно, для Google Play нет.
+Собрать APK самому — см. «Разработка» ниже.
 
 ## Разработка
 
@@ -177,6 +176,8 @@ make compare-sidecar    # сверка Dart-ядра с markitdown на всех
 
 - перед коммитом — `make verify`; в каждом PR — бамп версии в
   `app/pubspec.yaml` (CI проверяет);
+- релиз — тег `vX.Y.Z` на main, дальше всё собирает и публикует
+  `release.yml` ([docs/operations.md](docs/operations.md#релиз));
 - `core/` не импортирует Flutter — ни в одном файле (проверяет CI);
 - новый формат = конвертер + пара фикстур «исходник + ожидаемый Markdown» в
   `core/test/fixtures/`, причём фикстуры нужны «злые»: пустой файл, файл без
@@ -236,7 +237,8 @@ sidecar/                  сборка Python + markitdown для компьют
   locks/                        закреплённые зависимости по платформам
 pdfium/fetch.sh           качает PDFium (хост, Android, Windows); не коммитится
 tool/verify_version.sh    проверка бампа версии в PR
-.github/workflows/ci.yml  CI: verify (Linux), windows-sidecar, windows
+.github/workflows/        ci.yml — verify (Linux), windows-sidecar, windows;
+                          release.yml — тег v* → GitHub Release (zip + APK)
 docs/                     документация (ниже)
 ```
 

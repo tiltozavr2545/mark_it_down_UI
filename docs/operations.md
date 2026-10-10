@@ -29,12 +29,12 @@ make verify
 
 GitHub Actions
 ([репозиторий](https://github.com/tiltozavr2545/mark_it_down_UI)), два
-workflow; `release.yml` пока не написан:
+workflow:
 
 | workflow | когда | что делает |
 |---|---|---|
-| `ci.yml` | push, PR | джоб `verify` (ubuntu): `make verify` + проверка «нет сети» + проверка бампа версии в PR; джоб `windows` (`windows-latest`): те же проверки, `flutter build windows --release`, артефакт `markitdown_ui-windows-x64` (zip каталога `Release/`) |
-| `release.yml` | тег `v*` | Windows (zip; окончательный формат — Этап 7) и Android (`.aab`), прикрепление к GitHub Release; macOS (DMG) — только по отдельному запросу |
+| `ci.yml` | push в ветку, PR; вызывается из `release.yml` | джоб `verify` (ubuntu): `make verify` + проверка «нет сети» + проверка бампа версии в PR; джоб `windows` (`windows-latest`): те же проверки, `flutter build windows --release`, артефакт `markitdown_ui-windows-x64` (zip каталога `Release/`) |
+| `release.yml` | тег `v*` | весь `ci.yml` (через `workflow_call`) + APK для arm64 с проверкой «нет INTERNET» на собранном файле → GitHub Release с `markitdown_ui-X.Y.Z-windows-x64.zip` (с сайдкаром) и `markitdown_ui-X.Y.Z-android-arm64.apk`; macOS — только по отдельному запросу |
 
 **Windows-джоб** (план — [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
 п. 2): шаги идут в `shell: bash` (Git Bash), потому что `run:` на Windows по
@@ -61,7 +61,8 @@ aapt dump permissions build/app/outputs/flutter-apk/app-release.apk \
   | grep -q 'android.permission.INTERNET' && exit 1
 ```
 
-Второй шаг гоняется на сборке, то есть в `release.yml`; первый — на каждом PR,
+Второй шаг гоняется на сборке, то есть в `release.yml` (с `aapt` из
+Android SDK раннера); первый — на каждом PR,
 потому что именно там сетевая зависимость и приезжает транзитивно. Для
 Windows аналога нет: упаковка пока zip, а zip о разрешениях не знает. Шаг
 `нет сетевых библиотек в app/windows/` ловит только то, что мы добавили сами
@@ -295,13 +296,29 @@ macOS 12 слишком стар, `ITMS-90111`). Путь, если понадо
 
 ## Релиз
 
-1. `make verify` зелёный.
+1. `make verify` зелёный, изменения в main.
 2. Версия бампнута, `CHANGELOG.md` дописан.
-3. Тег `vX.Y.Z` → `release.yml` собирает и прикрепляет артефакты.
+3. Тег на коммит в main — `release.yml` собирает всё сам и публикует релиз:
+
+   ```bash
+   git tag v0.5.0 && git push origin v0.5.0
+   ```
+
+   Падает, если версия в `app/pubspec.yaml` не совпадает с тегом, если в
+   APK оказалось `android.permission.INTERNET` или в Windows-сборке нет
+   сайдкара — урезанный или «сетевой» релиз не публикуется. Текст релиза —
+   `.github/release-notes.md` (установка на каждой платформе), что нового —
+   ссылкой на `CHANGELOG.md`.
+
+   **Подпись пока временная.** APK подписан debug-ключом раннера (своего
+   ключа нет) — для установки из файла хватает, для Play нет; ключ у
+   каждого релиза свой, поэтому новую версию поверх старой не поставить —
+   сначала удалить. Windows-сборка не подписана вовсе — SmartScreen
+   предупреждает. Оба вопроса — Этап 7.
 4. **Размер бандла по платформам записать в README.** Он — честная цена
    офлайна, и пользователь имеет право увидеть её до скачивания, а не после.
-5. Android — в Play; Windows — в GitHub Releases в формате, выбранном в
-   Этапе 5; macOS (вторичная) — DMG в GitHub Releases, только по отдельному
+5. Сейчас обе платформы — в GitHub Releases (Windows — zip, решение
+   Этапа 5); к Этапу 7 — Android в Play; macOS (вторичная) — DMG в GitHub Releases, только по отдельному
    запросу (Mac App Store — отдельное решение, см.
    [python-sidecar.md](python-sidecar.md#про-app-store)).
 
