@@ -99,7 +99,7 @@ jobs:
   # sidecar-lock-windows-x86_64, собирает по нему и в конце КРАСНЕЕТ — чтобы
   # незакреплённый эталон не сошёл за нормальное состояние.
   windows-sidecar:
-    runs-on: windows-2025  # тот же образ, что у windows, — см. там
+    runs-on: windows-2022  # тот же образ, что у windows, — см. там
     defaults:
       run:
         shell: bash
@@ -193,12 +193,13 @@ jobs:
   windows:
     needs: windows-sidecar
     if: always()
-    # Не windows-latest: с осени 2026 это образ windows-2025-vs2026, а
-    # Flutter 3.32.8 (закреплён, см. AGENTS.md) знает Visual Studio только до
-    # 2022 и для неизвестной версии подставляет генератор «Visual Studio 16
-    # 2019» — CMake падает с «could not find any instance of Visual Studio».
-    # windows-2025 — тот же Windows с VS 2022. Поднимать вместе с Flutter.
-    runs-on: windows-2025
+    # Не windows-latest и не windows-2025: с осени 2026 оба — образ
+    # windows-2025-vs2026, а Flutter 3.32.8 (закреплён, см. AGENTS.md) знает
+    # Visual Studio только до 2022 и для неизвестной версии подставляет
+    # генератор «Visual Studio 16 2019» — CMake падает с «could not find any
+    # instance of Visual Studio». windows-2022 — образ с VS 2022. Поднимать
+    # вместе с Flutter.
+    runs-on: windows-2022
     defaults:
       run:
         shell: bash

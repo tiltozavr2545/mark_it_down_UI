@@ -36,7 +36,7 @@ echo "sidecar: разрешаю зависимости markitdown[${MARKITDOWN_E
   "markitdown[${MARKITDOWN_EXTRAS}]==${MARKITDOWN_VERSION}"
 
 mkdir -p "$(dirname "${LOCK_FILE}")"
-"${PY}" -I - "$(native_path "${WORK}/report.json")" "$(native_path "${LOCK_FILE}")" "${HOST}" "${PY_VERSION}" \
+"${PY}" -I -X utf8 - "$(native_path "${WORK}/report.json")" "$(native_path "${LOCK_FILE}")" "${HOST}" "${PY_VERSION}" \
   "${MARKITDOWN_VERSION}[${MARKITDOWN_EXTRAS}]" <<'PYEOF'
 import json, sys
 

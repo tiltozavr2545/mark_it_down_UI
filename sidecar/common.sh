@@ -57,6 +57,10 @@ else
   sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
 fi
 
+# Встроенные Python-скрипты (lock.sh, build.sh) запускаются с -X utf8: на
+# Windows stdout в пайпе — cp1252, и print с кириллицей падает
+# UnicodeEncodeError, а PYTHONUTF8/PYTHONIOENCODING под -I игнорируются.
+
 # Путь для аргументов нативному Windows-процессу (python.exe): Git Bash сам
 # переводит /d/a/... в D:/a/..., но с прямыми слешами, а compileall -s
 # сравнивает префикс по os.sep — и молча не срезал бы путь сборки из .pyc.

@@ -163,7 +163,7 @@ cp "${SIDECAR_DIR}/run.py" "${WORK}/run.py"
 # это единицы миллисекунд, ради них отдельный .pyc не городим.
 
 # Реальные версии берём у собранного, а не из констант выше.
-"${PY}" -I - "$(native_path "${WORK}")" "${FORMATS[*]}" <<'PYEOF'
+"${PY}" -I -X utf8 - "$(native_path "${WORK}")" "${FORMATS[*]}" <<'PYEOF'
 import json, sys
 from pathlib import Path
 
