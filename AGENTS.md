@@ -73,8 +73,11 @@ Dart (`SidecarConverter.appFormats`/`appMaxPdfPages`, применяются в
 упаковка zip «сейчас, решить позже» (окончательно — Этап 7). Сделано в
 коде: `app/windows/`, `.gitattributes` (LF), джоб `windows` в `ci.yml`,
 `pdfium.dll` (`fetch.sh` + `install` в `windows/CMakeLists.txt`), поиск
-сайдкара рядом с `.exe`, grep `app/windows/` на сетевые библиотеки. Не
-сделано: сайдкар под Windows (п. 4), ручная проверка (п. 8). Реализовано и
+сайдкара рядом с `.exe`, grep `app/windows/` на сетевые библиотеки, сайдкар
+под Windows (джоб `windows-sidecar`, lock `sidecar/locks/windows-x86_64.txt`,
+сверка совпала с macOS побайтно). Не сделано: ручная проверка (п. 8).
+Раннеры — `windows-2022`: `windows-latest`/`windows-2025` теперь с VS 2026,
+которую Flutter 3.32.8 не знает. Реализовано и
 проверено (`make verify`), но не на macOS и не на Windows — см. ниже. Многие разделы в `docs/` всё ещё заготовки, и это сказано в
 них прямо. Рабочие команды (подпись, нотаризация, сборка сайдкара)
 дописываются по ходу этапов, пока они в руках, а не вспоминаются к релизу.
@@ -253,6 +256,14 @@ Dart (`SidecarConverter.appFormats`/`appMaxPdfPages`, применяются в
   `app/windows/`, `pdfium.dll` и шагов `windows`-джоба, проверяется только
   пушем в CI; Makefile и `windows`-джоб — два списка одних проверок,
   держать одинаковыми.
+- **В `sidecar/build.sh` чистка интерпретатора на Windows — своей веткой.**
+  NTFS не различает регистр: `python/lib/` там совпадает с `python/Lib/`, и
+  Unix-шный `rm -rf python/lib/{…,thread*}` снёс бы `threading.py`.
+- **Python-скрипты сборки сайдкара — с `-X utf8`.** Под `-I` переменные
+  `PYTHONUTF8`/`PYTHONIOENCODING` игнорируются, а stdout в пайпе на
+  Windows — cp1252: любой `print` с кириллицей падает.
+- **`| head` в шаге CI под `pipefail` даёт код 141** (SIGPIPE у того, кто
+  пишет в пайп). В `ci.yml` — `awk 'NR <= N'`.
 - **`flutter create --platforms=…` переписывает `app/.metadata`** — выкидывает
   из `migration.platforms` уже существующие платформы. После запуска
   вернуть их руками.

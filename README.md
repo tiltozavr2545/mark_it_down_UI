@@ -28,8 +28,8 @@ markitdown (Этап 4: `.xls`, `.msg` и эталон для сверки) на
 (`make verify`). Живьём сейчас проверяется только Android. Windows
 собирается только на Windows, поэтому — в CI на `windows-latest` (джоб
 `windows`, артефакт `markitdown_ui-windows-x64` — zip, распаковал и
-запустил); руками проверяется на Windows-компьютере автора. Сайдкар под
-Windows ещё не собран — пока это Dart-only сборка. macOS вторична: на машине автора не ставится Xcode, её соберут позже
+запустил, сайдкар уже внутри, Python ставить не нужно); руками проверяется на
+Windows-компьютере автора. macOS вторична: на машине автора не ставится Xcode, её соберут позже
 на другом Маке — подробнее в
 [docs/future-development.md](docs/future-development.md#macos-сборка).
 PDF на Android стоит ≈6,3 МБ бандла (нативная `libpdfium`) — подробный замер в
