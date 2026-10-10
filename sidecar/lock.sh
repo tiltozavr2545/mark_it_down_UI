@@ -26,17 +26,17 @@ fetch_interpreter
 WORK="$(mktemp -d "${CACHE_DIR}/lock.XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 tar xzf "${ARCHIVE}" -C "${WORK}"
-PY="${WORK}/python/bin/python3"
+PY="${WORK}/${PY_REL}"
 
 echo "sidecar: разрешаю зависимости markitdown[${MARKITDOWN_EXTRAS}]==${MARKITDOWN_VERSION} для ${HOST}"
 "${PY}" -I -m pip install \
   --disable-pip-version-check --no-input --only-binary=:all: \
   --dry-run --ignore-installed --quiet \
-  --report "${WORK}/report.json" \
+  --report "$(native_path "${WORK}/report.json")" \
   "markitdown[${MARKITDOWN_EXTRAS}]==${MARKITDOWN_VERSION}"
 
 mkdir -p "$(dirname "${LOCK_FILE}")"
-"${PY}" -I - "${WORK}/report.json" "${LOCK_FILE}" "${HOST}" "${PY_VERSION}" \
+"${PY}" -I - "$(native_path "${WORK}/report.json")" "$(native_path "${LOCK_FILE}")" "${HOST}" "${PY_VERSION}" \
   "${MARKITDOWN_VERSION}[${MARKITDOWN_EXTRAS}]" <<'PYEOF'
 import json, sys
 
@@ -48,7 +48,7 @@ for it in items:
     sha = it["download_info"]["archive_info"]["hashes"]["sha256"]
     lines.append((meta["name"].lower().replace("_", "-"), meta["version"], sha))
 lines.sort()
-with open(out, "w", encoding="utf-8") as fh:
+with open(out, "w", encoding="utf-8", newline="\n") as fh:
     fh.write(
         f"# Сгенерировано sidecar/lock.sh — руками не править.\n"
         f"# host={host} python={py} markitdown[extras]={req}\n"

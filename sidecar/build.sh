@@ -19,9 +19,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 STAMP_FILE="${CACHE_DIR}/${HOST}.stamp"
 LOCK_HASH="none"
-[[ -f "${LOCK_FILE}" ]] && LOCK_HASH="$(shasum -a 256 "${LOCK_FILE}" | cut -d' ' -f1)"
+[[ -f "${LOCK_FILE}" ]] && LOCK_HASH="$(sha256_of "${LOCK_FILE}")"
 # Всё, от чего зависит результат; изменился любой кусок — пересборка.
-STAMP="lock=${LOCK_HASH} common=$(shasum -a 256 "${SIDECAR_DIR}/common.sh" | cut -d' ' -f1) pbs=${PBS_TAG} python=${PY_VERSION} markitdown=${MARKITDOWN_VERSION}[${MARKITDOWN_EXTRAS}] formats=${FORMATS[*]} run=$(shasum -a 256 "${SIDECAR_DIR}/run.py" | cut -d' ' -f1) build=$(shasum -a 256 "${SIDECAR_DIR}/build.sh" | cut -d' ' -f1)"
+STAMP="lock=${LOCK_HASH} common=$(sha256_of "${SIDECAR_DIR}/common.sh") pbs=${PBS_TAG} python=${PY_VERSION} markitdown=${MARKITDOWN_VERSION}[${MARKITDOWN_EXTRAS}] formats=${FORMATS[*]} run=$(sha256_of "${SIDECAR_DIR}/run.py") build=$(sha256_of "${SIDECAR_DIR}/build.sh")"
 
 if [[ -z "${FORCE:-}" && -f "${DIST_DIR}/manifest.json" && -f "${STAMP_FILE}" \
       && "$(cat "${STAMP_FILE}")" == "${STAMP}" ]]; then
@@ -39,8 +39,8 @@ WORK="$(mktemp -d "${SIDECAR_DIR}/dist/.build-${HOST}.XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 
 tar xzf "${ARCHIVE}" -C "${WORK}"   # внутри архива каталог python/
-PY="${WORK}/python/bin/python3"
-[[ -x "${PY}" ]] || { echo "sidecar: в архиве нет python/bin/python3" >&2; exit 1; }
+PY="${WORK}/${PY_REL}"
+[[ -x "${PY}" ]] || { echo "sidecar: в архиве нет ${PY_REL}" >&2; exit 1; }
 
 # 3. markitdown pip'ом из СКАЧАННОГО интерпретатора (не системного).
 # --only-binary: никакой сборки из исходников на машине — либо готовое колесо,
@@ -58,13 +58,13 @@ if [[ -f "${LOCK_FILE}" ]]; then
   echo "sidecar: ставлю по ${LOCK_FILE}"
   "${PY}" -I -m pip install \
     --disable-pip-version-check --no-input --no-compile --only-binary=:all: \
-    --require-hashes --no-deps --target "${WORK}/lib" \
-    -r "${LOCK_FILE}"
+    --require-hashes --no-deps --target "$(native_path "${WORK}/lib")" \
+    -r "$(native_path "${LOCK_FILE}")"
 elif [[ -n "${ALLOW_UNLOCKED:-}" ]]; then
   echo "sidecar: ВНИМАНИЕ: нет ${LOCK_FILE}, ставлю без закрепления зависимостей" >&2
   "${PY}" -I -m pip install \
     --disable-pip-version-check --no-input --no-compile --only-binary=:all: \
-    --target "${WORK}/lib" \
+    --target "$(native_path "${WORK}/lib")" \
     "markitdown[${MARKITDOWN_EXTRAS}]==${MARKITDOWN_VERSION}"
 else
   echo "sidecar: нет lock-файла для ${HOST}: ${LOCK_FILE}" >&2
@@ -83,14 +83,6 @@ rm -rf "${WORK}/lib/bin"
 rm -f "${WORK}/lib/olefile/olefile2.py"
 find "${WORK}/lib" -depth -type d \( -name __pycache__ -o -name tests -o -name test \) \
   -prune -exec rm -rf {} +
-PYLIB="$(echo "${WORK}"/python/lib/python3.*)"
-rm -rf "${PYLIB}/test" "${PYLIB}/idlelib" "${PYLIB}/tkinter" "${PYLIB}/turtledemo" \
-       "${PYLIB}/ensurepip" "${PYLIB}/site-packages/pip" \
-       "${PYLIB}/site-packages/pip-"*.dist-info "${PYLIB}/config-"* \
-       "${PYLIB}/lib2to3" \
-       "${WORK}/python/include" "${WORK}/python/share"
-rm -f "${PYLIB}/lib-dynload/_tkinter"*
-rm -rf "${WORK}/python/lib/"{tcl*,tk*,libtcl*,libtk*,itcl*,Tix*,thread*}
 # sympy и mpmath: onnxruntime объявляет их в Requires-Dist (они нужны его
 # инструментам квантизации/трансформеров), но при инференсе, который делает
 # magika, не импортируются. ~45 МБ мёртвого груза; самопроверка ниже гоняет
@@ -100,15 +92,38 @@ rm -rf "${WORK}/lib/sympy" "${WORK}/lib/sympy-"*.dist-info \
        "${WORK}/lib/mpmath" "${WORK}/lib/mpmath-"*.dist-info \
        "${WORK}/lib/isympy.py"
 rm -rf "${WORK}/lib/onnxruntime/"{transformers,tools,quantization}
-# libpython*.dylib/.a: исполняемый python3.12 из python-build-standalone
-# собран статически и в них не нуждается (проверено otool -L); они нужны только
-# тем, кто встраивает интерпретатор в свой процесс. ~18 МБ.
-rm -rf "${WORK}/python/lib/"libpython3* "${WORK}/python/lib/pkgconfig"
-# Скрипты из python/bin с shebang на сборочный путь: нужны только интерпретаторы.
-find "${WORK}/python/bin" -mindepth 1 ! -name 'python*' -exec rm -f {} +
-rm -f "${WORK}/python/bin/python3-config" "${WORK}/python/bin/python3."*-config
-# Скрытые файлы метаданных сборки (не нужны, мешают обходу при подписи).
-find "${WORK}/python" -name '.DS_Store' -delete
+if [[ "${HOST}" == windows-* ]]; then
+  # Windows-раскладка: python.exe, Lib/, DLLs/, libs/, Scripts/, tcl/.
+  # Регистр путей на NTFS не различается: Unix-ветка ниже со своими
+  # python/lib/{tcl*,tk*,thread*} здесь попала бы в Lib/ и снесла бы
+  # threading.py — поэтому ветки раздельные, а не общая с оговорками.
+  PYLIB="${WORK}/python/Lib"
+  rm -rf "${PYLIB}/test" "${PYLIB}/idlelib" "${PYLIB}/tkinter" "${PYLIB}/turtledemo" \
+         "${PYLIB}/ensurepip" "${PYLIB}/site-packages/pip" \
+         "${PYLIB}/site-packages/pip-"*.dist-info "${PYLIB}/lib2to3" \
+         "${WORK}/python/include" "${WORK}/python/libs" "${WORK}/python/Scripts" \
+         "${WORK}/python/tcl"
+  rm -f "${WORK}/python/DLLs/"{_tkinter.pyd,tcl86t.dll,tk86t.dll} \
+        "${WORK}/python/"{pythonw.exe,python3.dll.lib}
+else
+  PYLIB="$(echo "${WORK}"/python/lib/python3.*)"
+  rm -rf "${PYLIB}/test" "${PYLIB}/idlelib" "${PYLIB}/tkinter" "${PYLIB}/turtledemo" \
+         "${PYLIB}/ensurepip" "${PYLIB}/site-packages/pip" \
+         "${PYLIB}/site-packages/pip-"*.dist-info "${PYLIB}/config-"* \
+         "${PYLIB}/lib2to3" \
+         "${WORK}/python/include" "${WORK}/python/share"
+  rm -f "${PYLIB}/lib-dynload/_tkinter"*
+  rm -rf "${WORK}/python/lib/"{tcl*,tk*,libtcl*,libtk*,itcl*,Tix*,thread*}
+  # libpython*.dylib/.a: исполняемый python3.12 из python-build-standalone
+  # собран статически и в них не нуждается (проверено otool -L); они нужны только
+  # тем, кто встраивает интерпретатор в свой процесс. ~18 МБ.
+  rm -rf "${WORK}/python/lib/"libpython3* "${WORK}/python/lib/pkgconfig"
+  # Скрипты из python/bin с shebang на сборочный путь: нужны только интерпретаторы.
+  find "${WORK}/python/bin" -mindepth 1 ! -name 'python*' -exec rm -f {} +
+  rm -f "${WORK}/python/bin/python3-config" "${WORK}/python/bin/python3."*-config
+  # Скрытые файлы метаданных сборки (не нужны, мешают обходу при подписи).
+  find "${WORK}/python" -name '.DS_Store' -delete
+fi
 
 # 4b. macOS: часть колёс (onnxruntime, cryptography, charset-normalizer) —
 # universal2, то есть в каждой .so лежат x86_64 и arm64. Бандл собирается под
@@ -140,7 +155,7 @@ echo "sidecar: компилирую байткод"
 # зашит абсолютный путь машины сборщика (утечка имени пользователя в бандл и
 # невоспроизводимая сборка).
 "${PY}" -I -m compileall -q -f --invalidation-mode unchecked-hash \
-  -s "${WORK}/" "${WORK}/lib" "${WORK}/python/lib"
+  -s "$(native_path "${WORK}")" "$(native_path "${WORK}/lib")" "$(native_path "${PYLIB%/python3.*}")"
 
 # 6. run.py и manifest.json
 cp "${SIDECAR_DIR}/run.py" "${WORK}/run.py"
@@ -148,7 +163,7 @@ cp "${SIDECAR_DIR}/run.py" "${WORK}/run.py"
 # это единицы миллисекунд, ради них отдельный .pyc не городим.
 
 # Реальные версии берём у собранного, а не из констант выше.
-"${PY}" -I - "${WORK}" "${FORMATS[*]}" <<'PYEOF'
+"${PY}" -I - "$(native_path "${WORK}")" "${FORMATS[*]}" <<'PYEOF'
 import json, sys
 from pathlib import Path
 
@@ -163,14 +178,16 @@ manifest = {
     "formats": formats,
 }
 (work / "manifest.json").write_text(
-    json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+    newline="\n",  # и на Windows — LF, как всё в репозитории
 )
 PYEOF
 
 # 7. Самопроверка: каждый заявленный формат должен быть реально импортируемым.
 # Не прогон конвертации (для этого есть фикстуры), а проверка, что зависимости
 # каждого конвертера на месте — иначе manifest врал бы про поддержку.
-"${PY}" -I -B "${WORK}/run.py" --self-check
+"${PY}" -I -B "$(native_path "${WORK}/run.py")" --self-check
 
 # 8. Подмена и отчёт.
 rm -rf "${DIST_DIR}"

@@ -89,15 +89,116 @@ jobs:
             exit 1
           fi
 
+  # Python-сайдкар под Windows (Этап 5, п. 4). Собирать его, кроме как здесь,
+  # негде. Не часть make verify (как и на Mac): качает сотни МБ, поэтому
+  # результат кэшируется по хешу всего, от чего он зависит.
+  #
+  # Lock-файл генерируется только здесь (хеши колёс win_amd64 свои), а
+  # коммитится руками после чтения: если sidecar/locks/windows-x86_64.txt
+  # в репозитории нет, джоб создаёт его lock.sh, выкладывает артефактом
+  # sidecar-lock-windows-x86_64, собирает по нему и в конце КРАСНЕЕТ — чтобы
+  # незакреплённый эталон не сошёл за нормальное состояние.
+  windows-sidecar:
+    runs-on: windows-2025  # тот же образ, что у windows, — см. там
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            sidecar/dist/windows-x86_64
+            sidecar/cache
+          key: sidecar-windows-x86_64-${{ hashFiles('sidecar/common.sh', 'sidecar/build.sh', 'sidecar/run.py', 'sidecar/locks/windows-x86_64.txt') }}
+
+      - name: lock-файл (если его нет в репозитории)
+        id: lock
+        run: |
+          if [[ -f sidecar/locks/windows-x86_64.txt ]]; then
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            ./sidecar/lock.sh
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.lock.outputs.generated == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-lock-windows-x86_64
+          path: sidecar/locks/windows-x86_64.txt
+
+      - name: сборка сайдкара
+        run: ./sidecar/build.sh
+
+      # Лимит 260 символов: самый длинный путь внутри сайдкара плюс запас на
+      # каталог, куда его распакуют (C:\Users\<имя>\Downloads\…\sidecar\ —
+      # берём 100). Не падение, а цифра в логе: длинные пути на машине автора
+      # проверяются в п. 8.
+      - name: самый длинный путь в сайдкаре
+        run: |
+          cd sidecar/dist/windows-x86_64
+          find . -type f | awk '{ print length($0) - 2, $0 }' | sort -rn | head -3
+
+      - name: PDFium (pdfium.dll)
+        run: ./pdfium/fetch.sh
+
+      - name: интеграционные тесты и сверка с Dart-ядром
+        run: |
+          export MARKITDOWN_PDFIUM_PATH="$(cygpath -w "$PWD/pdfium/native/host/pdfium.dll")"
+          export MARKITDOWN_SIDECAR_DIR="$(cygpath -w "$PWD/sidecar/dist/windows-x86_64")"
+          cd core
+          dart pub get
+          dart test test/sidecar_integration_test.dart
+          dart run tool/compare_sidecar.dart
+          cat build/sidecar-compare/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sidecar-compare-windows-x86_64
+          path: core/build/sidecar-compare
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-windows-x86_64
+          path: sidecar/dist/windows-x86_64
+          if-no-files-found: error
+
+      - name: lock-файл закоммичен?
+        if: steps.lock.outputs.generated == 'true'
+        run: |
+          echo "::error::sidecar/locks/windows-x86_64.txt нет в репозитории. Скачать артефакт sidecar-lock-windows-x86_64, прочитать и закоммитить."
+          exit 1
+
   # Windows собирается только на Windows (docs/implementation-plan.md, Этап 5):
   # здесь — и проверка, и сборка, артефакт которой автор запускает руками.
+  #
+  # Ждёт windows-sidecar, но не зависит от его успеха: сайдкар собрался —
+  # кладётся рядом с .exe (install в app/windows/CMakeLists.txt), нет —
+  # выходит Dart-only сборка, а проверки Dart-части всё равно прогоняются.
   #
   # Шаги — эквивалент `make verify`, расписанный вручную, а не `make`: в Git
   # Bash раннера make нет, а Makefile знает только Darwin/Linux. Список
   # проверок поэтому живёт в двух местах — Makefile и этот джоб; при правке
   # одного держать одинаковым другой (то же сказано у `verify` в Makefile).
   windows:
-    runs-on: windows-latest
+    needs: windows-sidecar
+    if: always()
+    # Не windows-latest: с осени 2026 это образ windows-2025-vs2026, а
+    # Flutter 3.32.8 (закреплён, см. AGENTS.md) знает Visual Studio только до
+    # 2022 и для неизвестной версии подставляет генератор «Visual Studio 16
+    # 2019» — CMake падает с «could not find any instance of Visual Studio».
+    # windows-2025 — тот же Windows с VS 2022. Поднимать вместе с Flutter.
+    runs-on: windows-2025
     defaults:
       run:
         shell: bash
@@ -143,9 +244,26 @@ jobs:
           export MARKITDOWN_PDFIUM_PATH="$(cygpath -w "$PWD/pdfium/native/host/pdfium.dll")"
           (cd core && dart test)
 
+      - name: сайдкар из windows-sidecar
+        if: needs.windows-sidecar.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: sidecar-windows-x86_64
+          path: sidecar/dist/windows-x86_64
+
       - name: flutter build windows
         working-directory: app
         run: flutter build windows --release
+
+      - name: что в сборке
+        run: |
+          cd app/build/windows/x64/runner/Release
+          if [[ -f sidecar/manifest.json ]]; then
+            echo "Сборка **с сайдкаром**: $(du -sh . | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Сборка **без сайдкара** (Dart-only): $(du -sh . | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          ls
 
       # Пока упаковка — zip (Этап 5, п. 6: «zip сейчас, решить позже»):
       # upload-artifact сам отдаёт каталог zip-архивом. Распаковал и
