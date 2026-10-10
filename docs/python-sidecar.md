@@ -329,16 +329,19 @@ pdf/docx/pptx/msg и 1,05 с для xlsx/xls, при ~96 / ~132 МБ ОЗУ (п�
 
 Приоритет автора сместился на Windows и Android, поэтому сайдкар на десктопе
 теперь в первую очередь про Windows. Устройство то же — один подпроцесс на
-вызов, тот же `run.py`, тот же протокол; меняется следующее. Всё это **план
-Этапа 5, не сделанное** — см. [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
+вызов, тот же `run.py`, тот же протокол; меняется следующее. **Собирается и
+проверяется в CI** (джоб `windows-sidecar` на `windows-2022`: сборка,
+интеграционные тесты, сверка с Dart — все выводы совпали с macOS побайтно,
+см. [format-coverage.md](format-coverage.md#сверка-на-windows-этап-5)); на
+живой Windows-машине — ещё нет (п. 8), см. [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
 п. 4; ниже — что и почему.
 
 - **Раскладка.** `sidecar/dist/windows-x86_64/{python,lib,run.py,manifest.json}`
   рядом с `.exe`; интерпретатор — `python/python.exe` вместо
-  `python/bin/python3` (`SidecarConverter.fromDirectory` это уже знает).
-  Поиск каталога в `discover()` на Windows пока только через
-  `MARKITDOWN_SIDECAR_DIR` — научить искать рядом с `.exe`. Протокол,
-  `-I -B`, коды выхода без изменений.
+  `python/bin/python3` (`SidecarConverter.fromDirectory` это знает).
+  `discover()` ищет `sidecar\` в каталоге `.exe`, а
+  `app/windows/CMakeLists.txt` кладёт туда `sidecar/dist/windows-x86_64/`,
+  если тот собран. Протокол, `-I -B`, коды выхода без изменений.
 - **Интерпретатор.** python-build-standalone для `x86_64-pc-windows-msvc`,
   вариант `install_only`, те же релиз и CPython 3.12.14. Системный Python не
   используется и тут: на Windows его нет почти никогда, а «Python из
@@ -352,11 +355,30 @@ pdf/docx/pptx/msg и 1,05 с для xlsx/xls, при ~96 / ~132 МБ ОЗУ (п�
   первом артефакте: `python.exe` из python-build-standalone линкуется с
   CRT, и если он отсутствует, сайдкар молча не стартует.
 - **Lock-файл.** `sidecar/locks/windows-x86_64.txt` — отдельный (хеши колёс
-  `win_amd64` свои), генерируется на раннере `windows-latest`, а не руками:
-  `ALLOW_UNLOCKED=1`, затем `sidecar-lock`, как для любого нового хоста.
-- **Чистка в `build.sh`.** `lipo -thin` и `otool` — macOS-специфика, на Windows
-  пропускаются по хосту; остальное (`sympy`/`mpmath`, инструменты onnxruntime,
-  `compileall`) переносится без изменений.
+  `win_amd64` свои), сгенерирован на раннере, а не руками: если файла нет,
+  джоб `windows-sidecar` сам зовёт `lock.sh`, выкладывает результат
+  артефактом `sidecar-lock-windows-x86_64` и краснеет, пока его не прочитают
+  и не закоммитят. 44 пакета против 42 на macOS: плюс `pyreadline3` и
+  `tzdata` (Windows-зависимости `humanfriendly` и `pandas`); `cryptography`,
+  `onnxruntime`, `pypdfium2` новее, чем на Intel-Mac, — свежих колёс там нет.
+  На вывод фикстур это не повлияло.
+- **Чистка в `build.sh`.** `lipo -thin` — macOS-специфика, на Windows
+  пропускается по хосту; `sympy`/`mpmath`, инструменты onnxruntime и
+  `compileall` общие. Чистка самого интерпретатора — **отдельной веткой**:
+  NTFS не различает регистр, `python/lib/` там — это `python/Lib/`, и
+  Unix-шное `rm -rf python/lib/{tcl*,tk*,thread*}` снесло бы
+  `Lib/threading.py`. На Windows убираются `Lib/{test,idlelib,tkinter,…}`,
+  `tcl/`, `include/`, `libs/`, `Scripts/`, Tk-библиотеки из `DLLs/`.
+- **Кодировка и пути.** Встроенные Python-скрипты `lock.sh`/`build.sh` идут с
+  `-X utf8`: stdout в пайпе на Windows — cp1252, `print` с кириллицей падал, а
+  `PYTHONUTF8` под `-I` игнорируется. Пути в аргументах `python.exe` — через
+  `cygpath -w` (`native_path` в `common.sh`), иначе `compileall -s` не срезал
+  бы путь сборки из `.pyc`. Сам `run.py` пишет ответ UTF-8-байтами прямо в
+  fd, так что протоколу кодировка консоли не мешает.
+- **Размер — 308 МБ** (macOS — 242): `lib/` 182 МБ, `python/` 126 МБ, из них
+  `DLLs/` ≈70 МБ — заметно больше, чем ждёшь от стандартных `.pyd`; что там
+  и можно ли срезать — не разобрано (открытый вопрос, см.
+  [future-development.md](future-development.md#размер-windows-сайдкара)).
 - **Подписи macOS нет.** `sign.sh`, `sidecar.entitlements`, Hardened Runtime и
   нотаризация к Windows не относятся, а вместе с ними уходит и причина для
   `-B` из соображений подписи (флаг остаётся: он всё равно не даёт писать в
@@ -365,13 +387,17 @@ pdf/docx/pptx/msg и 1,05 с для xlsx/xls, при ~96 / ~132 МБ ОЗУ (п�
   открытый вопрос Этапа 5 (п. 6). Первый вызов интерпретатора Defender
   проверяет заметно дольше обычного — таймаут первого вызова держать
   щедрым, как и на macOS.
-- **Длинные пути.** Дерево `lib/` глубокое, а MSIX ставит в
-  `C:\Program Files\WindowsApps\…` с длинным префиксом; лимит 260 символов
-  проверить после установки, а не по дереву сборки.
+- **Длинные пути.** Самый длинный путь внутри сайдкара — 95 символов
+  (`lib/lxml/isoschematron/…`; печатается в логе джоба), то есть до лимита
+  260 остаётся ~165 на каталог, куда распакован zip. Если в Этапе 7 выберут
+  MSIX (`C:\Program Files\WindowsApps\…` с длинным префиксом) — проверить
+  заново.
 - **Скорость.** Замеры из этого документа и из
   [format-coverage.md](format-coverage.md#сверка-с-эталоном-этап-4) — с macOS;
-  на Windows пересмотреть. Порядок «сайдкар или Dart» — решение автора,
-  Этап 5, п. 5.
+  на Windows пересмотреть. Порядок «сайдкар или Dart» решён (Этап 5, п. 5):
+  в приложении сайдкар идёт первым только на `pdf` до 50 страниц и на
+  `xls`/`msg` — см.
+  [conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер).
 
 ## Подпись и нотаризация на macOS
 

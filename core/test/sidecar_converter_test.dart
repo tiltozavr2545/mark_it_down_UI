@@ -1,3 +1,7 @@
+// Фейковый сайдкар — shell-скрипт, см. комментарий к _fakePython.
+@TestOn('!windows')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/cfb_builder.dart';
+import 'support/pdf_builder.dart';
 
 /// Фейковый сайдкар: каталог в стандартной раскладке, где «интерпретатор» —
 /// shell-скрипт, эмулирующий протокол из `docs/python-sidecar.md`. Сценарий
@@ -15,7 +20,9 @@ import 'support/cfb_builder.dart';
 /// пишет в каталог следы вызова (`last_input_path`, `last_format`,
 /// `input_copy`, `pid`), по которым тесты проверяют аргументы, временный
 /// файл и факт убийства процесса. Нужен только `/bin/sh` — работает на
-/// macOS и Linux (CI).
+/// macOS и Linux (CI). На Windows весь файл пропускается (`@TestOn` выше):
+/// shell-скрипт там не запустить, а настоящий сайдкар на Windows-раннере
+/// проверяет `sidecar_integration_test.dart`.
 const _fakePython = r'''#!/bin/sh
 here="$(cd "$(dirname "$0")/../.." && pwd)"
 in=""; fmt=""; extra=""
@@ -123,11 +130,13 @@ void main() {
   SidecarConverter converter({
     Duration timeout = const Duration(seconds: 20),
     int? maxOutputBytes,
+    int? maxPdfPages,
   }) {
     final base = SidecarConverter.fromDirectory(
       fake.dir.path,
       timeout: timeout,
       tempDirectory: scratch,
+      maxPdfPages: maxPdfPages,
     )!;
     if (maxOutputBytes == null) return base;
     return SidecarConverter(
@@ -441,6 +450,61 @@ void main() {
       },
     );
 
+    test('в приложении — только pdf/xls/msg с порогом страниц (п. 5)', () {
+      final c = SidecarConverter.discover(
+        environment: {SidecarConverter.sidecarDirEnvVar: fake.dir.path},
+        operatingSystem: 'linux',
+      )!;
+      // В манифесте фейка есть и docx/xlsx/pptx — их приложение отдаёт Dart.
+      expect(c.formats, {'pdf', 'xls', 'msg'});
+      expect(c.maxPdfPages, SidecarConverter.appMaxPdfPages);
+      // А сверка с эталоном (fromDirectory) видит все форматы манифеста.
+      expect(
+        SidecarConverter.fromDirectory(fake.dir.path)!.formats,
+        containsAll(['docx', 'xlsx', 'pptx']),
+      );
+    });
+
+    test(
+      'в манифесте нет ни pdf, ни xls, ни msg → в приложении null',
+      () async {
+        final docxOnly = await _FakeSidecar.create(
+          root,
+          name: 'docx_only',
+          manifest: jsonEncode({
+            'schema': 1,
+            'formats': ['docx', 'xlsx'],
+          }),
+        );
+        expect(
+          SidecarConverter.discover(
+            environment: {SidecarConverter.sidecarDirEnvVar: docxOnly.dir.path},
+            operatingSystem: 'linux',
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test('Windows: sidecar рядом с .exe', () async {
+      final release = Directory(p.join(root.path, 'Release'))..createSync();
+      await _FakeSidecar.create(release);
+      final c = SidecarConverter.discover(
+        environment: const {},
+        operatingSystem: 'windows',
+        resolvedExecutable: p.join(release.path, 'markitdown_ui.exe'),
+      );
+      expect(c, isNotNull);
+      expect(
+        SidecarConverter.discover(
+          environment: const {},
+          operatingSystem: 'windows',
+          resolvedExecutable: p.join(root.path, 'Elsewhere', 'x.exe'),
+        ),
+        isNull,
+      );
+    });
+
     test('нет каталога → null, без ошибок', () {
       expect(
         SidecarConverter.discover(
@@ -537,6 +601,49 @@ void main() {
         );
       },
     );
+
+    group('порог страниц PDF (п. 5)', () {
+      Future<ConversionResult> convertPdf(int pages) async {
+        final pdf = buildBlankPdf(pages);
+        final outcome = await ConverterRegistry.defaultRegistry(
+          extra: [converter(maxPdfPages: 3)],
+        ).convert(pdf, StreamInfo.fromHead(pdf, filename: 'p.pdf'));
+        return (outcome as ConversionSuccess).result;
+      }
+
+      test('на пороге — сайдкар', () async {
+        final result = await convertPdf(3);
+        expect(result.converterId, 'sidecar');
+        expect(result.markdown, contains('format=pdf'));
+      });
+
+      test('выше порога — Dart, сайдкар даже не запускался', () async {
+        final result = await convertPdf(4);
+        expect(result.converterId, 'pdf');
+        expect(
+          result.warnings.first.message,
+          contains('длиннее 3 страниц (4)'),
+        );
+        expect(result.warnings.first.message, contains('таблицы'));
+        expect(fake.has('last_input_path'), isFalse);
+      });
+
+      test('без порога — сайдкар на любом PDF', () async {
+        final pdf = buildBlankPdf(10);
+        final outcome = await ConverterRegistry.defaultRegistry(
+          extra: [converter()],
+        ).convert(pdf, StreamInfo.fromHead(pdf, filename: 'p.pdf'));
+        expect((outcome as ConversionSuccess).result.converterId, 'sidecar');
+      });
+
+      test('PDF не открылся — решает сайдкар, порог не мешает', () async {
+        final broken = Uint8List.fromList('%PDF-1.4\nне PDF дальше'.codeUnits);
+        final result = await converter(maxPdfPages: 3).convert(
+          _request(broken, _info(FileKind.pdf, 'PDF', size: broken.length)),
+        );
+        expect(result.converterId, 'sidecar');
+      });
+    });
 
     group('xls/msg: запасного нет — отказ сайдкара и есть ответ', () {
       final xls = buildCfb(['Workbook']);

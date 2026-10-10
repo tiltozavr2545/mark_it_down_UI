@@ -142,12 +142,24 @@ Dart-конвертеров там, где настоящий markitdown зав�
 осознанное решение плана. Манифест битый или с неизвестной `schema` —
 сайдкар не регистрируется, приложение не падает.
 
+**В приложении — только `pdf`/`xls`/`msg`, PDF — до 50 страниц** (решение
+автора, Этап 5, п. 5). `discover()` сужает манифест до
+`SidecarConverter.appFormats` и задаёт `maxPdfPages = appMaxPdfPages`:
+сайдкар в десятки раз медленнее Dart, а в `docx`/`xlsx`/`pptx` Dart по сверке
+не хуже, так что первым сайдкар идёт только там, где даёт недостающее, —
+`xls`/`msg` и таблицы в PDF. PDF длиннее порога сайдкар отклоняет, не
+запуская Python (`countPdfPages` через PDFium — дерево страниц, без
+разбора текста), реестр отдаёт файл Dart-конвертеру, а в `warnings`
+пишется, что таблицы извлечены как текст. `fromDirectory()` без
+`onlyFormats` видит весь манифест — так сайдкар остаётся эталоном для
+`make compare-sidecar` и интеграционных тестов.
+
 **Где ищется.** `SidecarConverter.discover()`: на Android/iOS всегда `null`;
 на десктопе — `MARKITDOWN_SIDECAR_DIR` (разработка и тесты, по образцу
 `MARKITDOWN_PDFIUM_PATH`; если задана, другие места не смотрятся), иначе на
-macOS `Contents/Resources/sidecar` рядом с исполняемым файлом бандла. На
-Windows пока только переменная; поиск `sidecar/` рядом с `.exe` — Этап 5, п. 4
-([implementation-plan.md](implementation-plan.md#этап-5--windows-05)). Нет
+macOS `Contents/Resources/sidecar` рядом с исполняемым файлом бандла, на
+Windows — `sidecar\` в каталоге `.exe` (туда его кладёт
+`install(DIRECTORY …)` в `app/windows/CMakeLists.txt`). Нет
 каталога — просто не регистрируется. Поиск идёт внутри изолята конвертации
 (`isolated_convert.dart`), конвертер между изолятами не пересылается.
 
