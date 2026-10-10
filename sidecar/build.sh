@@ -201,6 +201,9 @@ cat "${DIST_DIR}/manifest.json"
 echo
 echo "== размер =="
 for d in "" /python /lib; do du -sh "${DIST_DIR}${d}"; done
+echo "== python/ по каталогам =="
+for d in "${DIST_DIR}"/python/*/; do du -sk "${d}"; done | sort -rn | awk 'NR <= 6' \
+  | awk '{printf "%8.1f МБ  %s\n", $1/1024, $2}' | sed "s#${DIST_DIR}/##"
 echo "== крупнейшие пакеты в lib/ (со скрытыми .dylibs) =="
 # du считает скрытые каталоги (numpy/.dylibs и т.п.) — глоб '*/' их не видит,
 # поэтому идём по каждому пакету отдельно.

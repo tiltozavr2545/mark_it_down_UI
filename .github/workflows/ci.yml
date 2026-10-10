@@ -145,7 +145,9 @@ jobs:
       - name: самый длинный путь в сайдкаре
         run: |
           cd sidecar/dist/windows-x86_64
-          find . -type f | awk '{ print length($0) - 2, $0 }' | sort -rn | head -3
+          # awk, а не head: head закрывает пайп раньше, sort получает SIGPIPE,
+          # и под pipefail шаг падает с кодом 141.
+          find . -type f | awk '{ print length($0) - 2, $0 }' | sort -rn | awk 'NR <= 3'
 
       - name: PDFium (pdfium.dll)
         run: ./pdfium/fetch.sh
