@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markitdown_core/markitdown_core.dart';
 
 import '../conversion/isolated_convert.dart';
+import '../conversion/ocr_data.dart';
 import 'picked_file.dart';
 
 enum FileIntakePhase { idle, converting, ready, failed }
@@ -41,7 +42,11 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     );
     state = FileIntakeState.converting(info);
 
-    final outcome = await isolatedConvert(file.bytes, info);
+    final outcome = await isolatedConvert(
+      file.bytes,
+      info,
+      ocr: await ocrSettings(),
+    );
 
     switch (outcome) {
       case ConversionSuccess(result: final result):

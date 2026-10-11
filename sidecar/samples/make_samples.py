@@ -1,5 +1,7 @@
 """Генератор фикстур, которые нельзя написать руками: .xls, .msg, валидный
-.pptx и .xlsx с типами данных и пропусками, .pdf с таблицей.
+.pptx и .xlsx с типами данных и пропусками, .pdf с таблицей, изображения с
+настоящим EXIF (Pillow) и злой JPEG с петлёй в IFD, аудио с тегами
+(libsndfile через soundfile + mutagen).
 
 Зачем: Dart-ядро не читает .xls и .msg, поэтому исходник пары «исходник +
 ожидаемый Markdown» (core/test/fixtures/{xls,msg}/) берётся отсюда; .pptx,
@@ -17,8 +19,15 @@ pptx/simple.pptx порождается здесь. Образцы собира�
     sidecar/dist/<host>/python/bin/python3 -I sidecar/samples/make_samples.py \
         --lib sidecar/dist/<host>/lib --extra-path /tmp/xlwt_lib
 
-Без xlwt можно собрать остальное: `--only pptx xlsx msg pdf` (тогда --extra-path
-не нужен). Результат — файлы в core/test/fixtures/. Это синтетика: .msg собран ниже простым
+Без xlwt можно собрать остальное: `--only pptx xlsx msg pdf image` (тогда
+--extra-path не нужен). `audio` требует soundfile и mutagen — их, как xlwt,
+ставить в отдельный каталог и передавать через --extra-path:
+
+    python3 -m pip install --target /tmp/audio_lib --python-version 3.12 \
+        --only-binary=:all: --no-deps soundfile mutagen
+
+M4A делает системная `afconvert` (только macOS). `image` на macOS заодно делает HEIC системной `sips`
+(Pillow HEIC не пишет); на другой ОС photo.heic просто не пересоздаётся. Результат — файлы в core/test/fixtures/. Это синтетика: .msg собран ниже простым
 писателем CFB, а не Outlook'ом, так что он проверяет путь olefile ->
 OutlookMsgConverter, но не разнообразие настоящих писем.
 """
@@ -287,30 +296,375 @@ def make_pdf_table(path):
         fh.write(out)
 
 
+# --- изображения (Этап 6, EXIF) ---------------------------------------------
+
+
+def _photo_exif():
+    """EXIF «как с камеры»: всё, что читает ImageConverter, включая GPS,
+    кириллицу в UTF-8 (так пишут телефоны и Windows) и символы разметки."""
+    from PIL import Image
+    from PIL.TiffImagePlugin import IFDRational
+
+    exif = Image.Exif()
+    exif[0x010F] = "Canon"  # Make
+    exif[0x0110] = "Canon EOS 5D Mark IV"  # Model
+    exif[0x0112] = 6  # Orientation: повернуть на 90° по часовой
+    exif[0x0131] = "Firmware 1.2.3"  # Software
+    exif[0x010E] = "Закат над *рекой* | вид с моста".encode("utf-8")  # ImageDescription
+    exif[0x013B] = "Иван Петров".encode("utf-8")  # Artist
+    exif[0x8298] = "(c) 2024 Иван Петров".encode("utf-8")  # Copyright
+    details = exif.get_ifd(0x8769)
+    details[0x9003] = "2024:07:14 18:32:05"  # DateTimeOriginal
+    details[0x9011] = "+03:00"  # OffsetTimeOriginal
+    details[0x829A] = IFDRational(1, 250)  # ExposureTime
+    details[0x829D] = IFDRational(28, 10)  # FNumber
+    details[0x8827] = 200  # ISOSpeedRatings
+    details[0x920A] = IFDRational(50, 1)  # FocalLength
+    details[0xA434] = "EF50mm f/1.8 STM"  # LensModel
+    gps = exif.get_ifd(0x8825)
+    gps[0x0001] = "N"
+    gps[0x0002] = (IFDRational(55, 1), IFDRational(45, 1), IFDRational(209916, 10000))
+    gps[0x0003] = "E"
+    gps[0x0004] = (IFDRational(37, 1), IFDRational(37, 1), IFDRational(33, 10))
+    gps[0x0005] = 0
+    gps[0x0006] = IFDRational(1565, 10)
+    return exif
+
+
+def make_photo_jpeg(path):
+    from PIL import Image
+
+    Image.new("RGB", (64, 48), (200, 120, 60)).save(path, exif=_photo_exif(), quality=80)
+
+
+def make_photo_heic(path):
+    """HEIC с тем же EXIF — из photo.jpg системной sips (только macOS)."""
+    import subprocess
+
+    source = os.path.join(FIXTURES, "image", "photo.jpg")
+    if not os.path.exists(source):
+        make_photo_jpeg(source)
+    subprocess.run(["sips", "-s", "format", "heic", source, "--out", path],
+                   check=True, stdout=subprocess.DEVNULL)
+
+
+def make_screenshot_png(path):
+    """Скриншот: EXIF нет вовсе — самый частый случай."""
+    from PIL import Image
+
+    Image.new("RGB", (120, 80), (255, 255, 255)).save(path)
+
+
+def make_sticker_webp(path):
+    """WebP с минимальным EXIF (дата, программа) — чанк EXIF в RIFF и VP8X."""
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x0131] = "Telegram"
+    exif.get_ifd(0x8769)[0x9003] = "2023:01:02 03:04:05"
+    Image.new("RGBA", (40, 30), (0, 128, 255, 128)).save(path, exif=exif, lossless=True)
+
+
+def make_scan_tiff(path):
+    """TIFF: размер берётся из основного IFD; подписи от Windows в XP*-тегах
+    (UTF-16LE) — так их пишут «Свойства» → «Подробно» в Проводнике."""
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x9C9B] = "Договор, стр. 1".encode("utf-16-le") + b"\0\0"  # XPTitle
+    exif[0x9C9E] = "договор; скан".encode("utf-16-le") + b"\0\0"  # XPKeywords
+    exif[0x9C9D] = "Бухгалтерия".encode("utf-16-le") + b"\0\0"  # XPAuthor
+    Image.new("L", (100, 140), 255).save(path, exif=exif)
+
+
+def make_animation_gif(path):
+    from PIL import Image
+
+    Image.new("P", (32, 16)).save(path)
+
+
+def make_icon_bmp(path):
+    from PIL import Image
+
+    Image.new("RGB", (16, 12), (10, 20, 30)).save(path)
+
+
+def _evil_tiff():
+    """TIFF-блок EXIF с ловушками: ExifIFD и «следующий IFD» указывают на сам
+    IFD0 (петля), у Model смещение далеко за пределы блока, у GPS-IFD
+    65535 записей, которых нет. Make при этом валиден — его и надо отдать."""
+    entry_count = 4
+    make_at = 8 + 2 + 12 * entry_count + 4
+    gps_at = make_at + 6
+    out = bytearray(b"II*\0" + struct.pack("<I", 8))
+    out += struct.pack("<H", entry_count)
+    out += struct.pack("<HHII", 0x010F, 2, 6, make_at)  # Make
+    out += struct.pack("<HHII", 0x0110, 2, 40, 0x7FFF0000)  # Model — за пределами
+    out += struct.pack("<HHII", 0x8769, 4, 1, 8)  # ExifIFD -> IFD0
+    out += struct.pack("<HHII", 0x8825, 4, 1, gps_at)  # GPS IFD -> битый
+    out += struct.pack("<I", 8)  # следующий IFD -> снова IFD0
+    out += b"Nokia\0"
+    out += struct.pack("<H", 0xFFFF)
+    return bytes(out)
+
+
+def make_evil_jpeg(path):
+    """Настоящий JPEG (Pillow), в который вклеен APP1 с [_evil_tiff]."""
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (24, 16), (0, 0, 0)).save(buf, format="JPEG")
+    jpeg = buf.getvalue()
+    payload = b"Exif\0\0" + _evil_tiff()
+    app1 = b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload
+    with open(path, "wb") as fh:
+        fh.write(jpeg[:2] + app1 + jpeg[2:])
+
+
+# --- аудио (Этап 6, метаданные) ---------------------------------------------
+
+
+def _tone(seconds, rate, channels=1):
+    import numpy as np
+
+    t = np.arange(int(seconds * rate)) / rate
+    wave = 0.3 * np.sin(2 * np.pi * 440 * t)
+    return np.column_stack([wave] * channels) if channels > 1 else wave
+
+
+def make_song_mp3(path):
+    """MP3 с ID3v2.3 в UTF-16 (так пишет Windows и большинство тегеров):
+    кириллица, жанр номером «(17)», трек «3/12», комментарий, текст песни."""
+    import soundfile as sf
+    from mutagen.id3 import COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, TRCK, USLT
+
+    sf.write(path, _tone(2.0, 44100, 2), 44100, format="MP3")
+    tags = ID3()
+    tags.add(TIT2(encoding=1, text="Звезда по имени Солнце"))
+    tags.add(TPE1(encoding=1, text="Кино"))
+    tags.add(TALB(encoding=1, text="Звезда по имени Солнце"))
+    tags.add(TDRC(encoding=1, text="1989"))
+    tags.add(TCON(encoding=1, text="(17)"))
+    tags.add(TRCK(encoding=1, text="1/8"))
+    tags.add(COMM(encoding=1, lang="rus", desc="", text="Ремастер *2019* | винил"))
+    tags.add(COMM(encoding=1, lang="eng", desc="iTunNORM", text=" 00000000 00000000"))
+    tags.add(USLT(encoding=1, lang="rus", desc="",
+                  text="Белый снег, серый лёд\nНа растрескавшейся земле\n\nОдеялом лоскутным на ней"))
+    tags.save(path, v2_version=3)
+
+
+def make_legacy_mp3(path):
+    """MP3 из «старой» коллекции: ID3v2.3 с кодировкой 0 (объявлена
+    ISO-8859-1), а байты — Windows-1251; и ID3v1 тоже в Windows-1251.
+    Плюс название с латиницей и диакритикой — оно должно остаться Latin-1."""
+    import soundfile as sf
+    from mutagen.id3 import ID3, TALB, TIT2, TPE1
+
+    def cp1251(text):
+        # mutagen кодирует encoding=0 как latin-1 — подсовываем байты 1251
+        return text.encode("cp1251").decode("latin-1")
+
+    sf.write(path, _tone(1.5, 22050), 22050, format="MP3")
+    tags = ID3()
+    tags.add(TIT2(encoding=0, text=cp1251("Группа крови")))
+    tags.add(TPE1(encoding=0, text=cp1251("Кино")))
+    tags.add(TALB(encoding=0, text="Motörhead Café"))
+    tags.save(path, v2_version=3, v1=2)
+
+
+def make_voice_opus(path):
+    """Голосовое сообщение: Ogg Opus, моно, 48 кГц, как у мессенджеров."""
+    import soundfile as sf
+    from mutagen.oggopus import OggOpus
+
+    sf.write(path, _tone(3.2, 48000), 48000, format="OGG", subtype="OPUS")
+    audio = OggOpus(path)
+    audio["TITLE"] = "Голосовое сообщение"
+    audio["ARTIST"] = "Анна"
+    audio.save()
+
+
+def make_music_vorbis(path):
+    import soundfile as sf
+    from mutagen.oggvorbis import OggVorbis
+
+    sf.write(path, _tone(1.0, 44100, 2), 44100, format="OGG", subtype="VORBIS")
+    audio = OggVorbis(path)
+    audio["TITLE"] = "Etude"
+    audio["ARTIST"] = ["Ivan", "Maria"]
+    audio["DATE"] = "2021-05-03"
+    audio["GENRE"] = "Classical"
+    audio.save()
+
+
+def make_track_flac(path):
+    """FLAC: STREAMINFO (точная длительность) + Vorbis comment с
+    TRACKNUMBER/TRACKTOTAL и текстом песни."""
+    import soundfile as sf
+    from mutagen.flac import FLAC
+
+    sf.write(path, _tone(1.75, 48000, 2), 48000, format="FLAC", subtype="PCM_24")
+    audio = FLAC(path)
+    audio["TITLE"] = "Перемен"
+    audio["ARTIST"] = "Кино"
+    audio["ALBUMARTIST"] = "Кино"
+    audio["ALBUM"] = "Последний герой"
+    audio["TRACKNUMBER"] = "2"
+    audio["TRACKTOTAL"] = "11"
+    audio["LYRICS"] = "Вместо тепла — зелень стекла\nВместо огня — дым"
+    audio.save()
+
+
+def make_recording_wav(path):
+    """Диктофон: WAV PCM 16 бит, моно, 16 кГц, с LIST/INFO."""
+    import soundfile as sf
+
+    with sf.SoundFile(path, "w", 16000, 1, subtype="PCM_16", format="WAV") as f:
+        f.title = "Planerka"
+        f.artist = "Recorder"
+        f.date = "2024-11-05"
+        f.comment = "room 3"
+        f.write(_tone(2.5, 16000))
+
+
+def make_memo_m4a(path):
+    """M4A (AAC) — так пишут диктофоны iPhone и Android; теги iTunes."""
+    import subprocess
+    import tempfile
+
+    import soundfile as sf
+    from mutagen.mp4 import MP4
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = os.path.join(tmp, "memo.wav")
+        sf.write(wav, _tone(2.0, 44100), 44100, format="WAV")
+        subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", wav, path], check=True)
+    audio = MP4(path)
+    audio["\xa9nam"] = "Заметка"
+    audio["\xa9ART"] = "Тимофей"
+    audio["\xa9day"] = "2025"
+    audio["trkn"] = [(4, 9)]
+    audio["\xa9gen"] = "Podcast"
+    audio.save()
+
+
+def make_clip_mp4(path):
+    """Синтетическое MP4-видео: только структура moov (mvhd, trak с tkhd и
+    hdlr «vide»), без кадров. Кодировщика видео под рукой нет, а проверяется
+    именно разбор коробок — как .msg выше, это синтетика, а не съёмка."""
+
+    def box(kind, payload):
+        return struct.pack(">I", 8 + len(payload)) + kind + payload
+
+    ftyp = box(b"ftyp", b"isom" + struct.pack(">I", 512) + b"isomiso2mp41")
+    mvhd = box(b"mvhd", b"\0" * 4 + struct.pack(">IIII", 0, 0, 1000, 65500) + b"\0" * 80)
+    tkhd_payload = (b"\0\0\0\x03" + struct.pack(">IIIII", 0, 0, 1, 0, 65500)
+                    + b"\0" * 16 + b"\0" * 36 + struct.pack(">II", 1280 << 16, 720 << 16))
+    tkhd = box(b"tkhd", tkhd_payload)
+    hdlr = box(b"hdlr", b"\0" * 4 + b"\0" * 4 + b"vide" + b"\0" * 12 + b"VideoHandler\0")
+    trak = box(b"trak", tkhd + box(b"mdia", hdlr))
+    moov = box(b"moov", mvhd + trak)
+    with open(path, "wb") as fh:
+        fh.write(ftyp + moov + box(b"mdat", b""))
+
+
+# --- OCR (Этап 6): картинки и скан с настоящим текстом ---------------------
+
+OCR_LINES = [
+    "Счёт № 42 от 14 июля 2024 года",
+    "Поставщик: ООО «Ромашка», ИНН 7701234567",
+    "Invoice total: 12 500 RUB",
+]
+
+
+def _text_image(width=1400, height=420):
+    """Чёрный текст на белом, 40 pt — как скриншот или хороший скан. Шрифт —
+    Arial из macOS (на Linux — DejaVu Sans); фикстура генерируется один раз и
+    коммитится, так что от шрифтов машины тест не зависит."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    for font_path in ("/System/Library/Fonts/Supplemental/Arial.ttf",
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        if os.path.exists(font_path):
+            break
+    font = ImageFont.truetype(font_path, 40)
+    img = Image.new("L", (width, height), 255)
+    draw = ImageDraw.Draw(img)
+    for i, line in enumerate(OCR_LINES):
+        draw.text((60, 60 + i * 110), line, font=font, fill=0)
+    return img
+
+
+def make_ocr_png(path):
+    _text_image().save(path)
+
+
+def make_ocr_rotated_jpeg(path):
+    """Тот же текст, но пиксели лежат «боком» (повёрнуты на 90° против
+    часовой), а EXIF Orientation = 6 велит показать их повёрнутыми по
+    часовой — так телефон сохраняет снимок документа, сделанный вертикально."""
+    from PIL import Image
+
+    img = _text_image().rotate(90, expand=True)
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    img.save(path, exif=exif, quality=92)
+
+
+def make_ocr_scan_pdf(path):
+    """PDF из одной картинки — без текстового слоя, как у сканера."""
+    _text_image(width=1654, height=2339).convert("RGB").save(path, resolution=200)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lib", required=True, help="site-packages сайдкара (python-pptx, openpyxl)")
-    ap.add_argument("--extra-path", help="каталог с xlwt (нужен только для xls)")
+    ap.add_argument("--extra-path", help="каталог с xlwt (для xls) или soundfile+mutagen (для audio)")
     ap.add_argument(
-        "--only", nargs="+", choices=["xls", "msg", "pptx", "xlsx", "pdf"],
-        default=["xls", "msg", "pptx", "xlsx", "pdf"],
+        "--only", nargs="+", choices=["xls", "msg", "pptx", "xlsx", "pdf", "image", "audio", "ocr"],
+        default=["xls", "msg", "pptx", "xlsx", "pdf", "image", "audio", "ocr"],
     )
     args = ap.parse_args()
     sys.path[:0] = [args.lib] + ([args.extra_path] if args.extra_path else [])
 
     jobs = {
-        "xls": (make_xls, "xls/simple.xls"),
-        "msg": (make_msg, "msg/simple.msg"),
-        "pptx": (make_pptx, "pptx/simple.pptx"),
-        "xlsx": (make_xlsx_types, "xlsx/types_and_gaps.xlsx"),
-        "pdf": (make_pdf_table, "pdf/table.pdf"),
+        "xls": [(make_xls, "xls/simple.xls")],
+        "msg": [(make_msg, "msg/simple.msg")],
+        "pptx": [(make_pptx, "pptx/simple.pptx")],
+        "xlsx": [(make_xlsx_types, "xlsx/types_and_gaps.xlsx")],
+        "pdf": [(make_pdf_table, "pdf/table.pdf")],
+        "image": [
+            (make_photo_jpeg, "image/photo.jpg"),
+            (make_screenshot_png, "image/screenshot.png"),
+            (make_sticker_webp, "image/sticker.webp"),
+            (make_scan_tiff, "image/scan.tiff"),
+            (make_animation_gif, "image/animation.gif"),
+            (make_icon_bmp, "image/icon.bmp"),
+            (make_evil_jpeg, "image/evil_loop.jpg"),
+        ] + ([(make_photo_heic, "image/photo.heic")] if sys.platform == "darwin" else []),
+        "audio": [
+            (make_song_mp3, "audio/song.mp3"),
+            (make_legacy_mp3, "audio/legacy.mp3"),
+            (make_voice_opus, "audio/voice.ogg"),
+            (make_music_vorbis, "audio/music.ogg"),
+            (make_track_flac, "audio/track.flac"),
+            (make_recording_wav, "audio/recording.wav"),
+            (make_clip_mp4, "audio/clip.mp4"),
+        ] + ([(make_memo_m4a, "audio/memo.m4a")] if sys.platform == "darwin" else []),
+        "ocr": [
+            (make_ocr_png, "ocr/invoice.png"),
+            (make_ocr_rotated_jpeg, "ocr/invoice_rotated.jpg"),
+            (make_ocr_scan_pdf, "ocr/invoice_scan.pdf"),
+        ],
     }
     for key in args.only:
-        make, rel = jobs[key]
-        path = os.path.join(FIXTURES, rel)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        make(path)
-        print(rel, os.path.getsize(path), "байт")
+        for make, rel in jobs[key]:
+            path = os.path.join(FIXTURES, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            make(path)
+            print(rel, os.path.getsize(path), "байт")
 
 
 if __name__ == "__main__":

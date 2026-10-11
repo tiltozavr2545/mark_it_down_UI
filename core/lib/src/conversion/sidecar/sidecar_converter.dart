@@ -77,6 +77,13 @@ class SidecarConverter implements DocumentConverter {
   /// эталоном, интеграционные тесты). Почему — см. [appFormats].
   final int? maxPdfPages;
 
+  /// PDF, где есть страницы-сканы (без текста, с картинкой), сайдкар
+  /// отклоняет, не запуская Python: pdfminer отдал бы по ним пустоту как
+  /// успех, и до OCR в Dart-ядре дело бы не дошло. Включается в приложении,
+  /// когда OCR доступен (Этап 6): текст сканов важнее таблиц на остальных
+  /// страницах.
+  final bool scannedPdfToDart;
+
   SidecarConverter({
     required Set<String> formats,
     required this.commandBuilder,
@@ -86,6 +93,7 @@ class SidecarConverter implements DocumentConverter {
     this.markitdownVersion,
     this.pythonVersion,
     this.maxPdfPages,
+    this.scannedPdfToDart = false,
   }) : formats = Set.unmodifiable(
          formats.where(sidecarFormatKinds.containsKey),
        );
@@ -103,6 +111,7 @@ class SidecarConverter implements DocumentConverter {
     Directory? tempDirectory,
     Set<String>? onlyFormats,
     int? maxPdfPages,
+    bool scannedPdfToDart = false,
   }) {
     final manifestFile = File(_join(directory, 'manifest.json'));
     final python = _join(
@@ -140,6 +149,7 @@ class SidecarConverter implements DocumentConverter {
       markitdownVersion: manifest.markitdownVersion,
       pythonVersion: manifest.pythonVersion,
       maxPdfPages: maxPdfPages,
+      scannedPdfToDart: scannedPdfToDart,
     );
   }
 
@@ -173,9 +183,10 @@ class SidecarConverter implements DocumentConverter {
   /// На Android и iOS — всегда `null`, даже если переменная задана: сайдкара
   /// там нет и не будет (нативные колёса под мобильные ABI не существуют).
   /// Найденный сайдкар ограничен [appFormats] и [appMaxPdfPages] — это
-  /// путь приложения. Параметры нужны тестам; в приложении вызывается без
-  /// аргументов.
+  /// путь приложения. [scannedPdfToDart] — приложение передаёт `true`, когда
+  /// OCR доступен. Остальные параметры нужны тестам.
   static SidecarConverter? discover({
+    bool scannedPdfToDart = false,
     Map<String, String>? environment,
     String? operatingSystem,
     String? resolvedExecutable,
@@ -203,6 +214,7 @@ class SidecarConverter implements DocumentConverter {
       timeout: timeout,
       onlyFormats: appFormats,
       maxPdfPages: appMaxPdfPages,
+      scannedPdfToDart: scannedPdfToDart,
     );
   }
 
@@ -241,6 +253,16 @@ class SidecarConverter implements DocumentConverter {
               'извлечены как текст',
         );
       }
+    }
+    if (formatId == 'pdf' &&
+        scannedPdfToDart &&
+        pdfHasScanPages(request.bytes) == true) {
+      throw const ConversionDeclinedException(
+        failure: UnsupportedFormatFailure('PDF со сканированными страницами'),
+        fallbackWarning:
+            'в PDF есть сканированные страницы — он обработан Dart-ядром с '
+            'OCR, а не сайдкаром: таблицы извлечены как текст',
+      );
     }
 
     // Временная папка создаётся только если у файла нет пути на диске, и

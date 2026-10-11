@@ -44,6 +44,9 @@ DetectedType detectType(Uint8List head, {String? extension}) {
   final image = detectImageSignature(head);
   if (image != null) return image;
 
+  final media = detectMediaSignature(head, extension);
+  if (media != null) return media;
+
   return _describeText(head, extension);
 }
 

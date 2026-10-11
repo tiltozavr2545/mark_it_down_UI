@@ -131,12 +131,14 @@ void main() {
     Duration timeout = const Duration(seconds: 20),
     int? maxOutputBytes,
     int? maxPdfPages,
+    bool scannedPdfToDart = false,
   }) {
     final base = SidecarConverter.fromDirectory(
       fake.dir.path,
       timeout: timeout,
       tempDirectory: scratch,
       maxPdfPages: maxPdfPages,
+      scannedPdfToDart: scannedPdfToDart,
     )!;
     if (maxOutputBytes == null) return base;
     return SidecarConverter(
@@ -642,6 +644,43 @@ void main() {
           _request(broken, _info(FileKind.pdf, 'PDF', size: broken.length)),
         );
         expect(result.converterId, 'sidecar');
+      });
+    });
+
+    group('PDF со сканами при доступном OCR (Этап 6)', () {
+      final scanned = Uint8List.fromList(
+        File('test/fixtures/pdf/scanned.pdf').readAsBytesSync(),
+      );
+      Future<ConversionResult> convertScanned({required bool toDart}) async {
+        final outcome = await ConverterRegistry.defaultRegistry(
+          extra: [converter(maxPdfPages: 50, scannedPdfToDart: toDart)],
+        ).convert(scanned, StreamInfo.fromHead(scanned, filename: 's.pdf'));
+        return (outcome as ConversionSuccess).result;
+      }
+
+      test('есть страницы-сканы — Dart, сайдкар даже не запускался', () async {
+        final result = await convertScanned(toDart: true);
+        expect(result.converterId, 'pdf');
+        expect(
+          result.warnings.first.message,
+          contains('сканированные страницы'),
+        );
+        expect(fake.has('last_input_path'), isFalse);
+      });
+
+      test('OCR недоступен — по-прежнему сайдкар', () async {
+        final result = await convertScanned(toDart: false);
+        expect(result.converterId, 'sidecar');
+      });
+
+      test('PDF без сканов — сайдкар и при доступном OCR', () async {
+        final pdf = Uint8List.fromList(
+          File('test/fixtures/pdf/simple.pdf').readAsBytesSync(),
+        );
+        final outcome = await ConverterRegistry.defaultRegistry(
+          extra: [converter(maxPdfPages: 50, scannedPdfToDart: true)],
+        ).convert(pdf, StreamInfo.fromHead(pdf, filename: 'p.pdf'));
+        expect((outcome as ConversionSuccess).result.converterId, 'sidecar');
       });
     });
 

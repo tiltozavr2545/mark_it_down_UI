@@ -140,6 +140,84 @@ typedef _FPDFPage_GetObjectDart =
 typedef _FPDFPageObj_GetTypeNative = Int32 Function(Pointer<Void> pageObject);
 typedef _FPDFPageObj_GetTypeDart = int Function(Pointer<Void> pageObject);
 
+typedef _FPDF_GetPageSizeNative = Float Function(Pointer<Void> page);
+typedef _FPDF_GetPageSizeDart = double Function(Pointer<Void> page);
+
+typedef _FPDFBitmap_CreateExNative =
+    Pointer<Void> Function(
+      Int32 width,
+      Int32 height,
+      Int32 format,
+      Pointer<Void> firstScan,
+      Int32 stride,
+    );
+typedef _FPDFBitmap_CreateExDart =
+    Pointer<Void> Function(
+      int width,
+      int height,
+      int format,
+      Pointer<Void> firstScan,
+      int stride,
+    );
+
+typedef _FPDFBitmap_FillRectNative =
+    Int32 Function(
+      Pointer<Void> bitmap,
+      Int32 left,
+      Int32 top,
+      Int32 width,
+      Int32 height,
+      Uint32 color,
+    );
+typedef _FPDFBitmap_FillRectDart =
+    int Function(
+      Pointer<Void> bitmap,
+      int left,
+      int top,
+      int width,
+      int height,
+      int color,
+    );
+
+typedef _FPDF_RenderPageBitmapNative =
+    Void Function(
+      Pointer<Void> bitmap,
+      Pointer<Void> page,
+      Int32 startX,
+      Int32 startY,
+      Int32 sizeX,
+      Int32 sizeY,
+      Int32 rotate,
+      Int32 flags,
+    );
+typedef _FPDF_RenderPageBitmapDart =
+    void Function(
+      Pointer<Void> bitmap,
+      Pointer<Void> page,
+      int startX,
+      int startY,
+      int sizeX,
+      int sizeY,
+      int rotate,
+      int flags,
+    );
+
+typedef _FPDFBitmap_GetBufferNative =
+    Pointer<Uint8> Function(Pointer<Void> bitmap);
+typedef _FPDFBitmap_GetStrideNative = Int32 Function(Pointer<Void> bitmap);
+typedef _FPDFBitmap_GetStrideDart = int Function(Pointer<Void> bitmap);
+typedef _FPDFBitmap_DestroyNative = Void Function(Pointer<Void> bitmap);
+typedef _FPDFBitmap_DestroyDart = void Function(Pointer<Void> bitmap);
+
+/// `FPDFBitmap_BGRx` из `fpdfview.h`: 4 байта на пиксель, альфы нет.
+/// Не путать с `FPDFBitmap_BGR` = 2 (3 байта): Tesseract, которому сказано
+/// «4 байта на пиксель», читал бы такой растр за его концом.
+const fpdfBitmapBgrx = 3;
+
+/// `FPDF_ANNOT`: рисовать и аннотации — штампы и подписи на скане бывают
+/// именно ими.
+const fpdfRenderAnnot = 0x01;
+
 /// `FPDF_PAGEOBJ_IMAGE` из `fpdf_edit.h` — значение части публичного ABI,
 /// не меняется между релизами PDFium.
 const fpdfPageObjImage = 3;
@@ -213,6 +291,41 @@ class PdfiumBindings {
       _pageObjGetType = lib
           .lookupFunction<_FPDFPageObj_GetTypeNative, _FPDFPageObj_GetTypeDart>(
             'FPDFPageObj_GetType',
+          ),
+      _getPageWidth = lib
+          .lookupFunction<_FPDF_GetPageSizeNative, _FPDF_GetPageSizeDart>(
+            'FPDF_GetPageWidthF',
+          ),
+      _getPageHeight = lib
+          .lookupFunction<_FPDF_GetPageSizeNative, _FPDF_GetPageSizeDart>(
+            'FPDF_GetPageHeightF',
+          ),
+      _bitmapCreateEx = lib
+          .lookupFunction<_FPDFBitmap_CreateExNative, _FPDFBitmap_CreateExDart>(
+            'FPDFBitmap_CreateEx',
+          ),
+      _bitmapFillRect = lib
+          .lookupFunction<_FPDFBitmap_FillRectNative, _FPDFBitmap_FillRectDart>(
+            'FPDFBitmap_FillRect',
+          ),
+      _renderPageBitmap = lib
+          .lookupFunction<
+            _FPDF_RenderPageBitmapNative,
+            _FPDF_RenderPageBitmapDart
+          >('FPDF_RenderPageBitmap'),
+      _bitmapGetBuffer = lib
+          .lookupFunction<
+            _FPDFBitmap_GetBufferNative,
+            _FPDFBitmap_GetBufferNative
+          >('FPDFBitmap_GetBuffer'),
+      _bitmapGetStride = lib
+          .lookupFunction<
+            _FPDFBitmap_GetStrideNative,
+            _FPDFBitmap_GetStrideDart
+          >('FPDFBitmap_GetStride'),
+      _bitmapDestroy = lib
+          .lookupFunction<_FPDFBitmap_DestroyNative, _FPDFBitmap_DestroyDart>(
+            'FPDFBitmap_Destroy',
           ) {
     lib.lookupFunction<_FPDF_InitLibraryNative, void Function()>(
       'FPDF_InitLibrary',
@@ -240,6 +353,14 @@ class PdfiumBindings {
   final _FPDFPage_CountObjectsDart _pageCountObjects;
   final _FPDFPage_GetObjectDart _pageGetObject;
   final _FPDFPageObj_GetTypeDart _pageObjGetType;
+  final _FPDF_GetPageSizeDart _getPageWidth;
+  final _FPDF_GetPageSizeDart _getPageHeight;
+  final _FPDFBitmap_CreateExDart _bitmapCreateEx;
+  final _FPDFBitmap_FillRectDart _bitmapFillRect;
+  final _FPDF_RenderPageBitmapDart _renderPageBitmap;
+  final _FPDFBitmap_GetBufferNative _bitmapGetBuffer;
+  final _FPDFBitmap_GetStrideDart _bitmapGetStride;
+  final _FPDFBitmap_DestroyDart _bitmapDestroy;
 
   int getLastError() => _getLastError();
 
@@ -286,4 +407,29 @@ class PdfiumBindings {
       _pageGetObject(page, index);
 
   int pageObjGetType(Pointer<Void> pageObject) => _pageObjGetType(pageObject);
+
+  /// Размер страницы в пунктах (1/72 дюйма).
+  double getPageWidth(Pointer<Void> page) => _getPageWidth(page);
+
+  double getPageHeight(Pointer<Void> page) => _getPageHeight(page);
+
+  /// Новый BGRx-растр, принадлежащий PDFium (`firstScan` = NULL).
+  Pointer<Void> bitmapCreate(int width, int height) =>
+      _bitmapCreateEx(width, height, fpdfBitmapBgrx, nullptr, 0);
+
+  void bitmapFill(Pointer<Void> bitmap, int width, int height, int color) =>
+      _bitmapFillRect(bitmap, 0, 0, width, height, color);
+
+  void renderPageBitmap(
+    Pointer<Void> bitmap,
+    Pointer<Void> page,
+    int width,
+    int height,
+  ) => _renderPageBitmap(bitmap, page, 0, 0, width, height, 0, fpdfRenderAnnot);
+
+  Pointer<Uint8> bitmapBuffer(Pointer<Void> bitmap) => _bitmapGetBuffer(bitmap);
+
+  int bitmapStride(Pointer<Void> bitmap) => _bitmapGetStride(bitmap);
+
+  void bitmapDestroy(Pointer<Void> bitmap) => _bitmapDestroy(bitmap);
 }

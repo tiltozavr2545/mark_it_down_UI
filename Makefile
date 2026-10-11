@@ -1,4 +1,4 @@
-.PHONY: verify pub-get format analyze test fetch-pdfium sidecar sidecar-lock sign-sidecar verify-version
+.PHONY: verify pub-get format analyze test fetch-pdfium fetch-tesseract tesseract sidecar sidecar-lock sign-sidecar verify-version
 
 # То же гоняет CI: джоб verify — через `make verify`, а джоб windows — теми
 # же шагами, расписанными вручную (в Git Bash раннера нет make, а здесь
@@ -24,9 +24,22 @@ analyze:
 fetch-pdfium:
 	./pdfium/fetch.sh
 
-test: fetch-pdfium
+# Модели Tesseract и .so для Android — секунды, поэтому, как и PDFium,
+# качаются из test. Сборка десктопного Tesseract (`make tesseract`) — минуты и
+# в verify не входит: без неё OCR-тесты (core/test/ocr_test.dart)
+# пропускаются, с ней — гоняются. CI Linux берёт Tesseract из пакетов
+# дистрибутива (см. ci.yml).
+fetch-tesseract:
+	./tesseract/fetch.sh
+
+tesseract:
+	./tesseract/build.sh
+
+TESSERACT_HOST_DIR := $(CURDIR)/tesseract/native/host
+
+test: fetch-pdfium fetch-tesseract
 	cd app && flutter test
-	cd core && MARKITDOWN_PDFIUM_PATH=$(CURDIR)/pdfium/native/host/libpdfium.$(if $(filter Darwin,$(shell uname -s)),dylib,so) dart test
+	cd core && $(if $(wildcard $(TESSERACT_HOST_DIR)/*),MARKITDOWN_TESSERACT_DIR=$(TESSERACT_HOST_DIR)) MARKITDOWN_PDFIUM_PATH=$(CURDIR)/pdfium/native/host/libpdfium.$(if $(filter Darwin,$(shell uname -s)),dylib,so) dart test
 
 # Собирает Python-сайдкар для хоста в sidecar/dist/<host>/ — см.
 # docs/python-sidecar.md. Намеренно НЕ входит в verify/test: качает сотни МБ

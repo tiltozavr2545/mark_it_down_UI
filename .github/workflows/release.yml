@@ -52,6 +52,12 @@ jobs:
       - name: PDFium
         run: ./pdfium/fetch.sh
 
+      # Tesseract для OCR: libtesseract/libleptonica/libjpeg/libpngx.so в
+      # jniLibs/arm64-v8a и модели rus/eng в assets/tessdata. Без них APK
+      # собирается, но OCR в нём молча недоступен — проверяется ниже.
+      - name: Tesseract (модели и .so)
+        run: ./tesseract/fetch.sh
+
       # Только arm64: PDFium в APK лежит лишь под arm64-v8a, а других
       # телефонов практически не осталось. Подпись — debug-ключ (так
       # настроен android/app/build.gradle.kts, своего ключа пока нет).
@@ -70,6 +76,15 @@ jobs:
             echo "::error::APK запрашивает INTERNET"
             exit 1
           fi
+
+      - name: OCR в APK
+        run: |
+          unzip -l app/build/app/outputs/flutter-apk/app-release.apk > apk.txt
+          for f in lib/arm64-v8a/libtesseract.so lib/arm64-v8a/libleptonica.so \
+                   assets/flutter_assets/assets/tessdata/rus.traineddata \
+                   assets/flutter_assets/assets/tessdata/eng.traineddata; do
+            grep -q "$f" apk.txt || { echo "::error::В APK нет $f"; exit 1; }
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -103,6 +118,8 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           test -f dist/windows/markitdown_ui.exe
           test -f dist/windows/pdfium.dll
+          ls dist/windows/tesseract*.dll dist/windows/leptonica*.dll
+          test -f dist/windows/data/flutter_assets/assets/tessdata/rus.traineddata
           test -f dist/windows/sidecar/manifest.json || {
             echo "::error::В Windows-сборке нет сайдкара"; exit 1; }
           # Внутри архива — одна папка, а не россыпь файлов в «Загрузках».

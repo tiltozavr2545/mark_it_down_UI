@@ -33,6 +33,14 @@ sidecar/cache/
 pdfium/native/
 app/android/app/src/main/jniLibs/
 
+# Tesseract (OCR): исходники, сборка и модели качаются tesseract/fetch.sh и
+# собираются tesseract/build.sh, в репозиторий не коммитятся
+tesseract/cache/
+tesseract/build/
+tesseract/native/
+tesseract/tessdata/
+app/assets/tessdata/*.traineddata
+
 # Claude Code: локальный конфиг и launch-профили, они per-machine
 .claude/settings.local.json
 .claude/launch.json

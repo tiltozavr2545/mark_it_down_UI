@@ -16,7 +16,7 @@ publish_to: 'none'
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.5.0+6
+version: 0.6.0+7
 
 environment:
   sdk: ^3.8.1
@@ -42,6 +42,7 @@ dependencies:
   desktop_drop: ^0.8.4
   receive_sharing_intent: ^1.8.1
   path: ^1.9.0
+  path_provider: ^2.1.5
   super_clipboard: ^0.9.1
 
 dev_dependencies:
@@ -60,6 +61,13 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Модели Tesseract для OCR (Этап 6). Качает tesseract/fetch.sh, в
+  # репозитории только .gitkeep — без моделей сборка проходит, а OCR честно
+  # пишет «недоступно». На Windows ассеты лежат файлами рядом с .exe, на
+  # Android копируются из APK при первом OCR (lib/src/conversion/ocr_data.dart).
+  assets:
+    - assets/tessdata/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
