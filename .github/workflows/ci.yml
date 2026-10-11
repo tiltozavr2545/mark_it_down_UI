@@ -22,6 +22,13 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
+      # OCR-тесты (core/test/ocr_test.dart) — на Tesseract из пакетов Ubuntu:
+      # Linux не целевая платформа, и собирать его здесь из исходников
+      # (tesseract/build.sh, минуты) незачем. Модели — свои, закреплённые,
+      # их качает make test (tesseract/fetch.sh).
+      - name: Tesseract (пакет дистрибутива)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libtesseract5
+
       - name: make verify
         run: make verify
 
@@ -245,10 +252,28 @@ jobs:
       - name: PDFium (pdfium.dll)
         run: ./pdfium/fetch.sh
 
+      # Tesseract для OCR (Этап 6): DLL собираются из исходников
+      # (tesseract/build.sh, ~10 минут) и кэшируются по хешу рецепта; модели
+      # и Android-.so качает fetch.sh — секунды. DLL нужны и тестам, и
+      # flutter build windows (install в app/windows/CMakeLists.txt).
+      - uses: actions/cache@v4
+        with:
+          path: |
+            tesseract/native/host
+            tesseract/cache
+          key: tesseract-windows-x64-${{ hashFiles('tesseract/build.sh', 'tesseract/versions.sh') }}
+
+      - name: Tesseract (сборка DLL и модели)
+        run: |
+          ./tesseract/build.sh
+          ./tesseract/fetch.sh
+          ls -la tesseract/native/host
+
       - name: test
         run: |
           (cd app && flutter test)
           export MARKITDOWN_PDFIUM_PATH="$(cygpath -w "$PWD/pdfium/native/host/pdfium.dll")"
+          export MARKITDOWN_TESSERACT_DIR="$(cygpath -w "$PWD/tesseract/native/host")"
           (cd core && dart test)
 
       - name: сайдкар из windows-sidecar
@@ -265,6 +290,7 @@ jobs:
       - name: что в сборке
         run: |
           cd app/build/windows/x64/runner/Release
+          ls tesseract*.dll leptonica*.dll data/flutter_assets/assets/tessdata/
           if [[ -f sidecar/manifest.json ]]; then
             echo "Сборка **с сайдкаром**: $(du -sh . | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
           else

@@ -25,6 +25,13 @@ make verify
 самое гоняет CI — локальная команда существует, чтобы не узнавать о сломанном
 формате из пайплайна.
 
+`make test` сам качает PDFium и модели OCR (`tesseract/fetch.sh`). Тестам OCR
+(`core/test/ocr_test.dart`) нужен собранный Tesseract: один раз `make
+tesseract` (≈10 минут, cmake + компилятор C/C++), дальше `make test` находит
+его в `tesseract/native/host/` сам. Без него эти тесты пропускаются, а не
+падают. CI Linux берёт Tesseract из пакетов Ubuntu, CI Windows собирает
+`build.sh` с кэшем.
+
 ## CI
 
 GitHub Actions
@@ -117,8 +124,13 @@ cd app && flutter build windows --release
 # → app/build/windows/x64/runner/Release/  (markitdown_ui.exe + DLL + data/)
 ```
 
-Рядом с `.exe` кладутся `pdfium.dll` и `sidecar/` — правилами `install(...)`
-в `app/windows/CMakeLists.txt`. `pdfium.dll` обязательна: без
+Рядом с `.exe` кладутся `pdfium.dll`, DLL Tesseract (`leptonica-*.dll`,
+`tesseract*.dll`) и `sidecar/` — правилами `install(...)` в
+`app/windows/CMakeLists.txt`; модели OCR (`*.traineddata`) едут ассетами
+Flutter в `data/flutter_assets/assets/tessdata/`. DLL Tesseract обязательны,
+как `pdfium.dll`: их собирает `./tesseract/build.sh` (Git Bash + Visual
+Studio 2022, ≈10 минут; в CI — с кэшем по хешу рецепта), модели и
+Android-`.so` качает `./tesseract/fetch.sh`. `pdfium.dll` обязательна: без
 `pdfium/native/host/pdfium.dll` (её качает `./pdfium/fetch.sh` в Git Bash)
 CMake падает с понятной ошибкой, а не собирает приложение без PDF. Сайдкар
 необязателен: без `sidecar/dist/windows-x86_64/manifest.json` выходит
@@ -271,9 +283,15 @@ Dart-ядром, разработка), а скрипт подписи сам п
 ### Android
 
 ```bash
-make fetch-pdfium  # кладёт libpdfium.so в jniLibs/arm64-v8a — один раз
+make fetch-pdfium     # libpdfium.so в jniLibs/arm64-v8a — один раз
+make fetch-tesseract  # libtesseract/libleptonica/libjpeg/libpngx.so туда же
+                      # + модели rus/eng в app/assets/tessdata/
 cd app && flutter build appbundle --release
 ```
+
+Без `fetch-tesseract` APK собирается (в `assets/tessdata/` лежит только
+`.gitkeep`), но OCR в нём недоступен — приложение так и пишет в
+предупреждении. Релизный джоб проверяет, что `.so` и модели в APK есть.
 
 Без этого шага приложение всё равно собирается, но PDF падает в рантайме с
 «не удалось прочитать файл»: `DynamicLibrary.open('libpdfium.so')` просто не

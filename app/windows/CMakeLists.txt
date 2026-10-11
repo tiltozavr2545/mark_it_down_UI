@@ -98,6 +98,21 @@ endif()
 install(FILES "${PDFIUM_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# Tesseract (Этап 6, OCR): leptonica-*.dll и tesseract*.dll — рядом с .exe,
+# где их ищет loadTesseractLibraries в core/. Собирает tesseract/build.sh
+# (в CI — с кэшем), в репозиторий не коммитится. Обязательны, как PDFium:
+# без них OCR молча пропал бы из сборки. Модели (*.traineddata) едут
+# ассетами Flutter, а не отсюда.
+file(GLOB TESSERACT_DLLS
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../tesseract/native/host/leptonica*.dll"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../tesseract/native/host/tesseract*.dll")
+list(LENGTH TESSERACT_DLLS TESSERACT_DLL_COUNT)
+if(NOT TESSERACT_DLL_COUNT EQUAL 2)
+  message(FATAL_ERROR "Нет DLL Tesseract в tesseract/native/host — сначала ./tesseract/build.sh (Git Bash)")
+endif()
+install(FILES ${TESSERACT_DLLS} DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Python-сайдкар (Этап 5, п. 4): sidecar/ рядом с .exe, где его ищет
 # SidecarConverter.discover(). Необязателен: без собранного
 # sidecar/dist/windows-x86_64 выходит Dart-only сборка — штатная, а не

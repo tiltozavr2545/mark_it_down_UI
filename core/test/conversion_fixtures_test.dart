@@ -90,6 +90,42 @@ const _fixtures = [
     'pdf/blank.expected.md',
     expectedWarningContains: 'не найдено текста',
   ), // страница есть, текста и объектов на ней нет вовсе
+  // Этап 6 — изображения: метаданные без OCR.
+  _Fixture(
+    'image/photo.jpg',
+    'image/photo.expected.md',
+    expectedWarningContains: 'геометка',
+  ), // EXIF «с камеры»: GPS, UTF-8-кириллица, символы разметки в описании
+  _Fixture('image/photo.heic', 'image/photo_heic.expected.md'), // sips
+  _Fixture('image/screenshot.png', 'image/screenshot.expected.md'), // без EXIF
+  _Fixture('image/sticker.webp', 'image/sticker.expected.md'), // EXIF в RIFF
+  _Fixture('image/scan.tiff', 'image/scan.expected.md'), // XP*-теги Windows
+  _Fixture('image/animation.gif', 'image/animation.expected.md'),
+  _Fixture('image/icon.bmp', 'image/icon.expected.md'),
+  _Fixture(
+    'image/evil_loop.jpg',
+    'image/evil_loop.expected.md',
+    expectedWarningContains: 'EXIF повреждены',
+  ), // IFD указывает сам на себя, смещение за пределы блока, 65535 записей
+  // Этап 6 — аудио: метаданные без транскрипции.
+  _Fixture(
+    'audio/song.mp3',
+    'audio/song.expected.md',
+    expectedWarningContains: 'речь не распознаётся',
+  ), // ID3v2.3 UTF-16, жанр «(17)», COMM iTunNORM, текст песни, Xing VBR
+  _Fixture(
+    'audio/legacy.mp3',
+    'audio/legacy.expected.md',
+  ), // «Latin-1», который на деле Windows-1251, + ID3v1; Motörhead — Latin-1
+  _Fixture('audio/voice.ogg', 'audio/voice.expected.md'), // Opus
+  _Fixture('audio/music.ogg', 'audio/music.expected.md'), // Vorbis
+  _Fixture('audio/track.flac', 'audio/track.expected.md'),
+  _Fixture('audio/recording.wav', 'audio/recording.expected.md'), // LIST/INFO
+  _Fixture('audio/memo.m4a', 'audio/memo.expected.md'), // afconvert + теги
+  _Fixture(
+    'audio/clip.mp4',
+    'audio/clip.expected.md',
+  ), // синтетика: только moov с видеодорожкой
 ];
 
 void main() {

@@ -77,6 +77,84 @@ void main() {
       final bytes = Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0, 0]);
       expect(detectType(bytes).kind, FileKind.jpeg);
     });
+
+    test('TIFF в обоих порядках байтов', () {
+      final little = Uint8List.fromList([0x49, 0x49, 0x2A, 0, 8, 0, 0, 0]);
+      final big = Uint8List.fromList([0x4D, 0x4D, 0, 0x2A, 0, 0, 0, 8]);
+      expect(detectType(little).kind, FileKind.tiff);
+      expect(detectType(big).kind, FileKind.tiff);
+    });
+
+    test('HEIC по марке в ftyp', () {
+      final bytes = Uint8List.fromList([0, 0, 0, 24, ...'ftypheic'.codeUnits]);
+      expect(detectType(bytes).kind, FileKind.heic);
+    });
+
+    test('MP3 по ID3v2 и по кадру MPEG без тега', () {
+      final id3 = Uint8List.fromList([...'ID3'.codeUnits, 3, 0, 0, 0, 0, 0, 0]);
+      final frame = Uint8List.fromList([0xFF, 0xFB, 0x90, 0x64, 0, 0]);
+      expect(detectType(id3).kind, FileKind.mp3);
+      expect(detectType(frame).kind, FileKind.mp3);
+    });
+
+    test('текст, начинающийся с «ID3», — не MP3', () {
+      final bytes = Uint8List.fromList('ID3 tags explained'.codeUnits);
+      expect(detectType(bytes).kind, FileKind.text);
+    });
+
+    test('AAC ADTS с тем же синхрословом — не MP3', () {
+      final bytes = Uint8List.fromList([0xFF, 0xF1, 0x50, 0x80, 0, 0]);
+      expect(detectType(bytes).kind, isNot(FileKind.mp3));
+    });
+
+    test('FLAC за тегом ID3v2 — FLAC, а не MP3', () {
+      final bytes = Uint8List.fromList([
+        ...'ID3'.codeUnits,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        ...'fLaC'.codeUnits,
+      ]);
+      expect(detectType(bytes).kind, FileKind.flac);
+    });
+
+    test('WAV и Ogg', () {
+      final wav = Uint8List.fromList([
+        ...'RIFF'.codeUnits,
+        0,
+        0,
+        0,
+        0,
+        ...'WAVE'.codeUnits,
+      ]);
+      final ogg = Uint8List.fromList([...'OggS'.codeUnits, 0, 2]);
+      expect(detectType(wav).kind, FileKind.wav);
+      expect(detectType(ogg).kind, FileKind.ogg);
+    });
+
+    test('MP4 и M4A с той же коробкой ftyp — не изображение', () {
+      for (final brand in ['isom', 'mp42', 'M4A ', 'qt  ']) {
+        final bytes = Uint8List.fromList([
+          0,
+          0,
+          0,
+          24,
+          ...'ftyp$brand'.codeUnits,
+          ...List.filled(8, 0),
+        ]);
+        expect(
+          detectType(bytes).kind,
+          isNot(FileKind.heic),
+          reason: 'марка $brand',
+        );
+      }
+    });
   });
 
   group('zip-семья', () {

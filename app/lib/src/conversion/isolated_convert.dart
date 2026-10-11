@@ -14,11 +14,21 @@ import 'package:markitdown_core/markitdown_core.dart';
 /// На Android/iOS `discover` всегда возвращает `null` — там сайдкара нет и не
 /// будет; на десктопе без найденного каталога тоже `null`, и реестр остаётся
 /// чистым Dart-ядром.
-Future<ConversionOutcome> isolatedConvert(Uint8List bytes, StreamInfo info) {
+///
+/// [ocr] — где лежат модели Tesseract (см. `ocr_data.dart`): строка пути
+/// пересылается в изолят, а библиотеки OCR открываются уже в нём.
+Future<ConversionOutcome> isolatedConvert(
+  Uint8List bytes,
+  StreamInfo info, {
+  OcrSettings? ocr,
+}) {
   return Isolate.run(() {
-    final sidecar = SidecarConverter.discover();
+    // С OCR PDF-сканы должны дойти до Dart-ядра: сайдкар отдал бы по ним
+    // пустоту как успех (см. SidecarConverter.scannedPdfToDart).
+    final sidecar = SidecarConverter.discover(scannedPdfToDart: ocr != null);
     final registry = ConverterRegistry.defaultRegistry(
       extra: [if (sidecar != null) sidecar],
+      ocr: ocr,
     );
     return registry.convert(bytes, info);
   });

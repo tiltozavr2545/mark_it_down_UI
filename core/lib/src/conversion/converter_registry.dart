@@ -5,10 +5,12 @@ import 'conversion_failure.dart';
 import 'conversion_limits.dart';
 import 'conversion_request.dart';
 import 'conversion_result.dart';
+import 'converters/audio_converter.dart';
 import 'converters/csv_converter.dart';
 import 'converters/docx_converter.dart';
 import 'converters/epub_converter.dart';
 import 'converters/html_converter.dart';
+import 'converters/image_converter.dart';
 import 'converters/ipynb_converter.dart';
 import 'converters/json_converter.dart';
 import 'converters/pdf_converter.dart';
@@ -18,6 +20,7 @@ import 'converters/xlsx_converter.dart';
 import 'converters/xml_converter.dart';
 import 'converters/zip_converter.dart';
 import 'document_converter.dart';
+import 'ocr/tesseract_ocr.dart';
 
 /// Итог прогона через реестр: либо результат, либо один из трёх понятных
 /// отказов. См. `docs/conversion-pipeline.md#ошибки`.
@@ -47,12 +50,17 @@ class ConverterRegistry {
     : _converters = [...converters]
         ..sort((a, b) => a.priority.compareTo(b.priority));
 
-  /// Пять текстовых конвертеров Этапа 1, шесть форматов Этапа 2 и `pdf`
-  /// Этапа 3, в правильном порядке приоритетов. [extra] — то, что реестр не
+  /// Пять текстовых конвертеров Этапа 1, шесть форматов Этапа 2, `pdf`
+  /// Этапа 3, изображения и аудио Этапа 6, в правильном порядке приоритетов. [extra] — то, что реестр не
   /// хардкодит: на десктопе сюда приезжает `SidecarConverter` (Этап 4),
   /// на мобильных список пуст.
+  ///
+  /// [ocr] — где лежат модели Tesseract; без него картинки и PDF-сканы
+  /// отдаются без распознанного текста (так гоняются фикстуры: их вывод не
+  /// должен зависеть от версии движка на машине).
   factory ConverterRegistry.defaultRegistry({
     List<DocumentConverter> extra = const [],
+    OcrSettings? ocr,
   }) => ConverterRegistry([
     ...extra,
     const CsvConverter(),
@@ -64,7 +72,9 @@ class ConverterRegistry {
     const PptxConverter(),
     const EpubConverter(),
     const ZipConverter(),
-    const PdfConverter(),
+    PdfConverter(ocr: ocr),
+    ImageConverter(ocr: ocr),
+    const AudioConverter(),
     const HtmlConverter(),
     const PlainTextConverter(),
   ]);

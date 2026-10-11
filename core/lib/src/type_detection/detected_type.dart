@@ -23,6 +23,22 @@ enum FileKind {
   gif,
   bmp,
   webp,
+  tiff,
+
+  /// HEIC/HEIF и AVIF — контейнер ISO BMFF (`ftyp`), в котором снимает
+  /// iPhone. Различаются только маркой в `ftyp`.
+  heic,
+
+  /// Аудио: MP3 (с ID3 или без), FLAC, Ogg (Vorbis/Opus), WAV.
+  mp3,
+  flac,
+  ogg,
+  wav,
+
+  /// ISO BMFF не-HEIF: M4A, MP4, MOV, 3GP — аудио или видео, различаются
+  /// дорожками внутри, а не сигнатурой; [DetectedType.label] уточняет по
+  /// марке `ftyp`.
+  mp4,
   text,
   emptyFile,
   unknown,

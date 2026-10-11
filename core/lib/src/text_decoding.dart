@@ -65,3 +65,31 @@ const _windows1251High = <int>[
   0x0440, 0x0441, 0x0442, 0x0443, 0x0444, 0x0445, 0x0446, 0x0447, //
   0x0448, 0x0449, 0x044A, 0x044B, 0x044C, 0x044D, 0x044E, 0x044F, //
 ];
+
+/// Строка из метаданных, объявленная однобайтовой (ID3 с кодировкой 0,
+/// ID3v1, `LIST/INFO` в WAV). Объявлено ISO-8859-1, а на деле в русских
+/// файлах — почти всегда Windows-1251, иногда UTF-8. Порядок: валидный
+/// UTF-8 → Windows-1251, если байты похожи на русские слова → Latin-1.
+///
+/// «Похожи на русские слова» — есть подряд три и больше байта из диапазона
+/// букв Windows-1251 (`0xC0–0xFF`, `Ёё`). В Latin-1 эти же байты — буквы с
+/// диакритикой, но они стоят поодиночке между латиницей (`Beyoncé`,
+/// `Motörhead`); два подряд ещё бывает (`Größe`), три — уже нет.
+String decodeLegacyText(Uint8List bytes) {
+  if (bytes.every((b) => b < 0x80)) return String.fromCharCodes(bytes);
+  try {
+    return utf8.decode(bytes, allowMalformed: false);
+  } on FormatException {
+    // не UTF-8 — дальше выбор между двумя однобайтовыми
+  }
+  var run = 0;
+  var longestRun = 0;
+  for (final b in bytes) {
+    final cyrillicLetter = b >= 0xC0 || b == 0xA8 || b == 0xB8;
+    run = cyrillicLetter ? run + 1 : 0;
+    if (run > longestRun) longestRun = run;
+  }
+  return longestRun >= 3
+      ? _decodeWindows1251(bytes)
+      : String.fromCharCodes(bytes);
+}
