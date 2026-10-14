@@ -13,9 +13,12 @@ env:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Не ubuntu-latest: с 19.10.2026 он переезжает на Ubuntu 26, а отсюда
+    # берётся Tesseract из пакетов дистрибутива — его версия попадает в
+    # ожидания OCR-тестов. Поднимать осознанно, как windows-2022 ниже.
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
@@ -115,7 +118,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
@@ -123,7 +126,7 @@ jobs:
           channel: stable
           cache: true
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             sidecar/dist/windows-x86_64
@@ -141,7 +144,7 @@ jobs:
           fi
 
       - if: steps.lock.outputs.generated == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sidecar-lock-windows-x86_64
           path: sidecar/locks/windows-x86_64.txt
@@ -173,14 +176,14 @@ jobs:
           dart run tool/compare_sidecar.dart
           cat build/sidecar-compare/summary.md >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: sidecar-compare-windows-x86_64
           path: core/build/sidecar-compare
           if-no-files-found: ignore
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sidecar-windows-x86_64
           path: sidecar/dist/windows-x86_64
@@ -217,7 +220,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
@@ -256,7 +259,7 @@ jobs:
       # (tesseract/build.sh, ~10 минут) и кэшируются по хешу рецепта; модели
       # и Android-.so качает fetch.sh — секунды. DLL нужны и тестам, и
       # flutter build windows (install в app/windows/CMakeLists.txt).
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             tesseract/native/host
@@ -278,7 +281,7 @@ jobs:
 
       - name: сайдкар из windows-sidecar
         if: needs.windows-sidecar.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sidecar-windows-x86_64
           path: sidecar/dist/windows-x86_64
@@ -301,7 +304,7 @@ jobs:
       # Пока упаковка — zip (Этап 5, п. 6: «zip сейчас, решить позже»):
       # upload-artifact сам отдаёт каталог zip-архивом. Распаковал и
       # запустил markitdown_ui.exe — ничего не ставится.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: markitdown_ui-windows-x64
           path: app/build/windows/x64/runner/Release

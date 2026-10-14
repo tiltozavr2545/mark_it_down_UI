@@ -77,8 +77,10 @@ Dart-конвертер при любом сбое сайдкара) закры�
 сайдкара рядом с `.exe`, grep `app/windows/` на сетевые библиотеки, сайдкар
 под Windows (джоб `windows-sidecar`, lock `sidecar/locks/windows-x86_64.txt`,
 сверка совпала с macOS побайтно).
-Раннеры — `windows-2022`: `windows-latest`/`windows-2025` теперь с VS 2026,
-которую Flutter 3.32.8 не знает. Реализовано и
+Раннеры закреплены: Linux — `ubuntu-24.04` (`ubuntu-latest` с 19.10.2026 —
+Ubuntu 26, другая версия Tesseract из пакетов); Windows — `windows-2022`:
+`windows-latest`/`windows-2025` теперь с VS 2026, которую Flutter 3.32.8 не
+знает. Реализовано и
 проверено (`make verify`), но не на macOS и не на Windows — см. ниже.
 
 **Этап 6 выпущен в `v0.6.0`, ручная проверка (п. 4) не отмечена.** EXIF:
