@@ -358,11 +358,17 @@ Python, на Android его нет. Всё «почему» — в
   расширения или под чужим (`голосовое` из мессенджера) он не откроет —
   временный файл для декодера платформы пишется с расширением по
   сигнатуре.
-- **На раннере `windows-2022` нет Media Foundation** (это Windows Server,
-  компонент не установлен), как и в Windows «N». Поэтому `mfplat.dll`
-  грузится динамически (`mdw_platform_windows.cpp`) — импорт уронил бы
-  загрузку всей `markitdown_whisper.dll`, — и AAC в CI не проверяется: только
-  руками на настоящей Windows.
+- **`mfplat.dll` есть не везде** — в Windows «N» без Media Feature Pack и в
+  Windows Server без компонента Media Foundation её нет. Поэтому она
+  грузится динамически (`mdw_platform_windows.cpp`): импорт уронил бы
+  загрузку всей `markitdown_whisper.dll`, и пропало бы всё распознавание, а
+  не только AAC. На раннере `windows-2022` Media Foundation есть — AAC
+  проверяется в CI (`speech_test.dart`).
+- **Декодер AAC в Media Foundation меняет формат вывода по первому кадру**
+  (`MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`) — частоту и каналы надо
+  перечитывать, а тип выхода проверять (float или 16-битный PCM). Без
+  этого M4A на Windows «декодировался» в шум, и расшифровка выходила
+  пустой — поймал CI.
 - **`yes | sdkmanager` под `pipefail` — код 141**, как `| head`. В
   `release.yml` — `(yes || true) | …`.
 - **`flutter create --platforms=…` переписывает `app/.metadata`** — выкидывает

@@ -7,8 +7,8 @@
  *
  * Media Foundation грузится динамически (LoadLibraryEx из System32), а не
  * импортом: в редакциях Windows «N» без Media Feature Pack и в Windows
- * Server без компонента Media Foundation (раннер CI windows-2022) mfplat.dll
- * нет, и со статическим импортом не загрузилась бы вся
+ * Server без компонента Media Foundation mfplat.dll нет, и со статическим
+ * импортом не загрузилась бы вся
  * markitdown_whisper.dll — пропало бы распознавание речи целиком, а не
  * только AAC. Так M4A там получает честное «кодек не поддерживается».
  */

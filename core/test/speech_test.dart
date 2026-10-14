@@ -150,8 +150,8 @@ void main() {
         expectMostOf(result.markdown, ['распознавания речи', 'понедельник']);
         return;
       }
-      // Декодера AAC нет: хост тестов macOS/Linux, Windows Server без
-      // Media Foundation (раннер CI) или Windows «N». Метаданные есть,
+      // Декодера AAC нет: хост тестов macOS/Linux, Windows «N» или Windows
+      // Server без Media Foundation (на раннере CI windows-2022 он есть). Метаданные есть,
       // распознавания нет — и об этом сказано; сам путь AAC здесь не
       // проверен, поэтому тест помечается пропущенным, а не зелёным.
       expect(result.markdown, contains('- **Формат:**'));
