@@ -119,19 +119,23 @@ install(FILES ${TESSERACT_DLLS} DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 # процессор. Собирает whisper/build.sh (в CI — с кэшем), в репозиторий не
 # коммитится. Обязательны, как Tesseract: без них распознавание молча
 # пропало бы из сборки. Модели едут ассетами Flutter (whisper/fetch.sh).
+# Каждая обязательная DLL проверяется по имени, а не общим счётом: одних
+# вариантов ggml-cpu-*.dll (GGML_CPU_ALL_VARIANTS) около десятка, и счёт
+# прошёл бы и без прослойки.
 set(WHISPER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../whisper/native/host")
-file(GLOB WHISPER_DLLS
-  "${WHISPER_DIR}/markitdown_whisper.dll"
-  "${WHISPER_DIR}/whisper.dll"
-  "${WHISPER_DIR}/ggml.dll"
-  "${WHISPER_DIR}/ggml-base.dll"
-  "${WHISPER_DIR}/ggml-cpu-*.dll")
-list(LENGTH WHISPER_DLLS WHISPER_DLL_COUNT)
-if(WHISPER_DLL_COUNT LESS 5)
-  message(FATAL_ERROR "Нет DLL распознавания речи в whisper/native/host — сначала ./whisper/build.sh (Git Bash)")
+set(WHISPER_DLLS)
+foreach(WHISPER_DLL markitdown_whisper whisper ggml ggml-base)
+  if(NOT EXISTS "${WHISPER_DIR}/${WHISPER_DLL}.dll")
+    message(FATAL_ERROR "Нет ${WHISPER_DLL}.dll в whisper/native/host — сначала ./whisper/build.sh (Git Bash)")
+  endif()
+  list(APPEND WHISPER_DLLS "${WHISPER_DIR}/${WHISPER_DLL}.dll")
+endforeach()
+file(GLOB WHISPER_CPU_DLLS "${WHISPER_DIR}/ggml-cpu-*.dll")
+if(NOT WHISPER_CPU_DLLS)
+  message(FATAL_ERROR "Нет ни одного ggml-cpu-*.dll в whisper/native/host — сначала ./whisper/build.sh (Git Bash)")
 endif()
-install(FILES ${WHISPER_DLLS} DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
+install(FILES ${WHISPER_DLLS} ${WHISPER_CPU_DLLS}
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 
 # Python-сайдкар (Этап 5, п. 4): sidecar/ рядом с .exe, где его ищет
 # SidecarConverter.discover(). Необязателен: без собранного

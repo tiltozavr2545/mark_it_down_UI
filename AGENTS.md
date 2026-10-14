@@ -104,7 +104,8 @@ Ubuntu 26, другая версия Tesseract из пакетов); Windows —
 не отмечена): whisper.cpp 1.9.5 на Windows и Android через свою
 C-прослойку `whisper/shim/` (`mdw.h`) и FFI из `core/`
 (`core/lib/src/conversion/speech/`); модель Whisper small q8_0 (264 МБ,
-многоязычная) и Silero VAD — ассетами (`whisper/fetch.sh`); сборка —
+многоязычная) и Silero VAD — ассетами (`whisper/fetch.sh`); с 0.8.1 —
+кусками по 10 минут по ходу декодирования, без предела длительности; сборка —
 `whisper/build.sh` (хост, `--android` через NDK). Не faster-whisper: тот
 Python, на Android его нет. Всё «почему» — в
 [format-coverage.md](docs/format-coverage.md#решения-транскрипции-08).

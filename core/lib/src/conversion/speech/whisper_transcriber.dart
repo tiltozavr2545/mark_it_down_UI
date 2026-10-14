@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math' as math;
@@ -32,14 +33,8 @@ class TranscriptionSettings {
   final String? tempDir;
 
   /// Код языка (`ru`, `en`, `it`) или `auto` — определить по первым 30
-  /// секундам. Один язык на весь файл: так устроен Whisper.
+  /// секундам речи. Один язык на весь файл: так устроен Whisper.
   final String language;
-
-  /// Сколько звука распознавать. Расшифровка идёт медленнее реального
-  /// времени на телефоне, а 16 кГц float — 3,8 МБ в минуту памяти;
-  /// остальное — в `warnings`, как страницы PDF сверх
-  /// [OcrSettings.maxPdfPages].
-  final Duration maxDuration;
 
   /// Адрес `mdw_control` ([TranscriptionControl.address]) — прогресс и
   /// отмена из главного изолята; 0 — без них.
@@ -51,7 +46,6 @@ class TranscriptionSettings {
     this.libraryDir,
     this.tempDir,
     this.language = 'auto',
-    this.maxDuration = const Duration(hours: 3),
     this.controlAddress = 0,
   });
 
@@ -62,7 +56,6 @@ class TranscriptionSettings {
         libraryDir: libraryDir,
         tempDir: tempDir,
         language: language,
-        maxDuration: maxDuration,
         controlAddress: control.address,
       );
 }
@@ -80,8 +73,9 @@ class TranscriptionControl {
 
   bool get cancelled => _control.ref.cancel != 0;
 
-  /// Остановить распознавание: дольше одного 30-секундного окна не ждёт,
-  /// уже распознанное остаётся в результате.
+  /// Остановить распознавание: дольше одного 30-секундного окна (или
+  /// подготовки 10-минутного куска — VAD и мел-спектрограмма) не ждёт, уже
+  /// распознанное остаётся в результате.
   void cancel() => _control.ref.cancel = 1;
 
   void dispose() => calloc.free(_control);
@@ -126,10 +120,9 @@ class Transcript {
   final String? language;
 
   /// Сколько звука распознавалось — меньше длительности файла, если
-  /// упёрлись в [TranscriptionSettings.maxDuration] или остановили.
+  /// остановили.
   final Duration processed;
 
-  final bool truncated;
   final bool cancelled;
 
   /// `whisper.cpp 1.9.5` — пишется в `warnings`, как движок OCR.
@@ -139,7 +132,6 @@ class Transcript {
     required this.segments,
     required this.language,
     required this.processed,
-    required this.truncated,
     required this.cancelled,
     required this.engine,
   });
@@ -157,8 +149,9 @@ class TranscriptionOutcome {
     : transcript = null;
 }
 
-/// Декодированный звук: 16 кГц моно float в нативной памяти — передаётся в
-/// whisper.cpp без копии в Dart. [dispose] обязателен.
+/// Декодированный звук: 16 кГц моно float в нативной памяти. Распознаванию
+/// не нужен — оно декодирует само, кусками; это проверка декодеров целиком.
+/// [dispose] обязателен.
 class DecodedAudio {
   DecodedAudio._(this._bindings, this.samples, this.length);
 
@@ -213,10 +206,23 @@ class WhisperEngine {
   /// `whisper.cpp 1.9.5`.
   String get engine => 'whisper.cpp ${_bindings.version().toDartString()}';
 
+  /// Остановлено до первой фразы: пустая расшифровка с пометкой.
+  Transcript _stopped(Duration processed) => Transcript(
+    segments: const [],
+    language: null,
+    processed: processed,
+    cancelled: true,
+    engine: engine,
+  );
+
   /// Звук в памяти → 16 кГц моно: WAV, MP3, FLAC, Ogg Vorbis/Opus.
   /// Возвращает [DecodedAudio] или код `MdwStatus`.
   (DecodedAudio?, int) decodeMemory(Uint8List bytes, int maxSamples) {
-    final data = calloc<Uint8>(math.max(bytes.length, 1));
+    // malloc, не calloc: буфер размером с файл тут же целиком
+    // перезаписывается, обнулять его — лишний проход по сотням МБ. Отдать
+    // сам Uint8List (`.address`) можно только листовым вызовом, а он
+    // держит GC всей группы изолятов, включая UI, на всё декодирование.
+    final data = malloc<Uint8>(math.max(bytes.length, 1));
     final out = calloc<Pointer<Float>>();
     final count = calloc<Int64>();
     try {
@@ -232,8 +238,8 @@ class WhisperEngine {
           ? (DecodedAudio._(_bindings, out.value, count.value), status)
           : (null, status);
     } finally {
+      malloc.free(data);
       calloc
-        ..free(data)
         ..free(out)
         ..free(count);
     }
@@ -256,74 +262,139 @@ class WhisperEngine {
         ..free(count);
     }
   }
+}
 
-  /// Распознаёт [audio]. `null` — модель не открылась.
-  Transcript? transcribe(
-    DecodedAudio audio,
-    TranscriptionSettings settings, {
-    required bool truncated,
-  }) {
-    final modelPath = settings.modelPath.toNativeUtf8();
-    final model = _bindings.openModel(modelPath);
-    calloc.free(modelPath);
-    if (model == nullptr) return null;
+/// Распознавание одного файла: сеанс `mdw_session` и параметры в нативной
+/// памяти. Первым пробует один декодер, при неудаче — другой, в том же
+/// сеансе: модель грузится при первом куске звука, и неудачная попытка её
+/// не грузит. [close] обязателен.
+class _Run {
+  _Run(this._engine, TranscriptionSettings settings, Duration? duration)
+    : _session = _newSession(_engine._bindings, settings.modelPath),
+      _language = settings.language.toNativeUtf8(),
+      _vad =
+          settings.vadModelPath != null &&
+              File(settings.vadModelPath!).existsSync()
+          ? settings.vadModelPath!.toNativeUtf8()
+          : nullptr,
+      _control = settings.controlAddress != 0
+          ? Pointer<MdwControl>.fromAddress(settings.controlAddress)
+          : nullptr,
+      _expected = duration == null
+          ? 0
+          : duration.inMicroseconds * _sampleRate ~/ 1000000;
 
-    final language = settings.language.toNativeUtf8();
-    final vad =
-        settings.vadModelPath != null &&
-            File(settings.vadModelPath!).existsSync()
-        ? settings.vadModelPath!.toNativeUtf8()
-        : nullptr;
-    final control = settings.controlAddress != 0
-        ? Pointer<MdwControl>.fromAddress(settings.controlAddress)
-        : nullptr;
+  /// `nullptr` — нет памяти. Путь сеанс копирует себе.
+  static Pointer<Void> _newSession(WhisperBindings bindings, String path) {
+    final nativePath = path.toNativeUtf8();
     try {
-      final status = _bindings.transcribe(
-        model,
-        audio.samples,
-        audio.length,
-        language,
-        vad,
-        _threads(),
-        control,
-      );
-      if (status != MdwStatus.ok && status != MdwStatus.cancelled) {
-        return null;
-      }
-      final cancelled = status == MdwStatus.cancelled;
-      final segments = <TranscriptSegment>[];
-      final count = _bindings.segmentCount(model);
-      for (var i = 0; i < count; i++) {
-        final text = _bindings.segmentText(model, i).toDartString().trim();
-        if (text.isEmpty) continue;
-        segments.add(
-          TranscriptSegment(
-            Duration(milliseconds: _bindings.segmentStartMs(model, i)),
-            Duration(milliseconds: _bindings.segmentEndMs(model, i)),
-            text,
-          ),
-        );
-      }
-      // Без сегментов язык не определялся: whisper отдаёт свой «по
-      // умолчанию» — английский, и музыка без слов стала бы «английской».
-      final detected = _bindings.language(model).toDartString();
-      return Transcript(
-        segments: segments,
-        language: detected.isEmpty || segments.isEmpty ? null : detected,
-        processed: cancelled && segments.isNotEmpty
-            ? segments.last.end
-            : audio.duration,
-        truncated: truncated,
-        cancelled: cancelled,
-        engine: engine,
-      );
+      return bindings.newSession(nativePath);
     } finally {
-      calloc.free(language);
-      if (vad != nullptr) calloc.free(vad);
-      _bindings.closeModel(model);
+      malloc.free(nativePath);
     }
   }
+
+  final WhisperEngine _engine;
+  final Pointer<Void> _session;
+  final Pointer<Utf8> _language;
+  final Pointer<Utf8> _vad;
+  final Pointer<MdwControl> _control;
+  final int _expected;
+
+  WhisperBindings get _bindings => _engine._bindings;
+
+  /// Переносимыми декодерами: WAV, MP3, FLAC, Ogg Vorbis/Opus.
+  int memory(Uint8List bytes) {
+    if (_session == nullptr) return MdwStatus.noMemory;
+    // malloc, не calloc: буфер размером с файл тут же целиком
+    // перезаписывается, обнулять его — лишний проход по сотням МБ. Отдать
+    // сам Uint8List (`.address`) можно только листовым вызовом, а он
+    // держит GC всей группы изолятов, включая UI, на всё распознавание.
+    final data = malloc<Uint8>(math.max(bytes.length, 1));
+    try {
+      data.asTypedList(bytes.length).setAll(0, bytes);
+      return _bindings.transcribeMemory(
+        _session,
+        data,
+        bytes.length,
+        _expected,
+        _language,
+        _vad,
+        _threads(),
+        _control,
+      );
+    } finally {
+      malloc.free(data);
+    }
+  }
+
+  /// Декодером платформы (AAC и всё, что умеет ОС).
+  int file(String path) {
+    if (_session == nullptr) return MdwStatus.noMemory;
+    final nativePath = path.toNativeUtf8();
+    try {
+      return _bindings.transcribeFile(
+        _session,
+        nativePath,
+        _expected,
+        _language,
+        _vad,
+        _threads(),
+        _control,
+      );
+    } finally {
+      malloc.free(nativePath);
+    }
+  }
+
+  /// Результат последнего успешного или остановленного вызова.
+  Transcript transcript({required bool cancelled}) {
+    final segments = <TranscriptSegment>[];
+    final count = _bindings.segmentCount(_session);
+    for (var i = 0; i < count; i++) {
+      final text = _lossyUtf8(_bindings.segmentText(_session, i)).trim();
+      if (text.isEmpty) continue;
+      segments.add(
+        TranscriptSegment(
+          Duration(milliseconds: _bindings.segmentStartMs(_session, i)),
+          Duration(milliseconds: _bindings.segmentEndMs(_session, i)),
+          text,
+        ),
+      );
+    }
+    // Пустой — речи не нашлось: язык без неё не определялся.
+    final detected = _bindings.language(_session).toDartString();
+    return Transcript(
+      segments: segments,
+      language: detected.isEmpty || segments.isEmpty ? null : detected,
+      processed: cancelled && segments.isNotEmpty
+          ? segments.last.end
+          : Duration(milliseconds: _bindings.processedMs(_session)),
+      cancelled: cancelled,
+      engine: _engine.engine,
+    );
+  }
+
+  void close() {
+    if (_session != nullptr) _bindings.freeSession(_session);
+    malloc.free(_language);
+    if (_vad != nullptr) malloc.free(_vad);
+  }
 }
+
+/// Нажата ли «Остановить» — флаг в общей памяти `mdw_control`.
+bool _cancelled(TranscriptionSettings settings) =>
+    settings.controlAddress != 0 &&
+    Pointer<MdwControl>.fromAddress(settings.controlAddress).ref.cancel != 0;
+
+/// Текст сегмента: whisper.cpp режет его по токенам BPE, и граница
+/// сегмента может пройти посреди многобайтной буквы (кириллица, CJK).
+/// `toDartString()` на этом бросает `FormatException` — и минуты
+/// распознавания пропали бы из-за одного символа; битый станет `�`.
+String _lossyUtf8(Pointer<Utf8> text) => utf8.decode(
+  text.cast<Uint8>().asTypedList(text.length),
+  allowMalformed: true,
+);
 
 /// Потоков на распознавание. Whisper упирается в физические ядра, а не в
 /// логические; на телефоне «больших» ядер обычно 4, и маленькие только
@@ -341,76 +412,73 @@ int _threads() {
 /// голосовое без расширения или под чужим не открыл бы. [localPath] — файл
 /// на диске с теми же байтами, если есть и расширение верное: иначе для
 /// декодера платформы пишется временный файл (и удаляется в `finally`).
+/// [duration] — длительность из метаданных, для процента; `null` —
+/// неизвестна, процента не будет.
+///
+/// Предела длительности нет: звук распознаётся кусками по мере
+/// декодирования, и память не растёт с длиной записи (`mdw.h`).
 TranscriptionOutcome transcribeAudio(
   Uint8List bytes,
   TranscriptionSettings settings, {
   required bool mp4,
   required String extension,
   String? localPath,
+  Duration? duration,
 }) {
   final engine = WhisperEngine.open(settings);
   if (engine == null || !File(settings.modelPath).existsSync()) {
     return const TranscriptionOutcome.failure(TranscriptionFailure.unavailable);
   }
-  final maxSamples = settings.maxDuration.inMilliseconds * _sampleRate ~/ 1000;
-
-  var (audio, status) = mp4
-      ? (null, MdwStatus.unsupported)
-      : engine.decodeMemory(bytes, maxSamples);
-  if (audio == null &&
-      (status == MdwStatus.unsupported || status == MdwStatus.decode)) {
-    final fromFile = _withFile(
-      bytes,
-      extension,
-      mp4 ? _isoBmffExtensions : {extension},
-      localPath,
-      settings.tempDir,
-      (path) => engine.decodeFile(path, maxSamples),
-    );
-    // Код переносимого декодера («битый поток») информативнее, чем
-    // «платформа не умеет», — его и оставляем, если и файл не помог.
-    if (fromFile.$1 != null || status == MdwStatus.unsupported) {
-      (audio, status) = fromFile;
-    }
-  }
-  if (audio == null) {
-    return TranscriptionOutcome.failure(switch (status) {
-      MdwStatus.noAudio => TranscriptionFailure.noAudio,
-      MdwStatus.decode => TranscriptionFailure.undecodable,
-      _ => TranscriptionFailure.unsupportedAudio,
-    });
+  if (_cancelled(settings)) {
+    return TranscriptionOutcome.success(engine._stopped(Duration.zero));
   }
 
+  final run = _Run(engine, settings, duration);
   try {
-    if (audio.length == 0) {
-      return const TranscriptionOutcome.failure(TranscriptionFailure.noAudio);
-    }
-    // Щелчок, а не речь: whisper.cpp на звуке короче ~0,1 с отвечает
-    // ошибкой — пользователю честнее «речь не найдена».
-    if (audio.length < _sampleRate ~/ 2) {
-      return TranscriptionOutcome.success(
-        Transcript(
-          segments: const [],
-          language: null,
-          processed: audio.duration,
-          truncated: false,
-          cancelled: false,
-          engine: engine.engine,
-        ),
+    var status = mp4 ? MdwStatus.unsupported : run.memory(bytes);
+    if (status == MdwStatus.unsupported || status == MdwStatus.decode) {
+      final fromFile = _withFile(
+        bytes,
+        extension,
+        mp4 ? _isoBmffExtensions : {extension},
+        localPath,
+        settings.tempDir,
+        run.file,
       );
+      // Код переносимого декодера («битый поток») информативнее, чем
+      // «платформа не умеет», — его и оставляем, если и файл не помог.
+      if (!_noSound.contains(fromFile) || status == MdwStatus.unsupported) {
+        status = fromFile;
+      }
     }
-    final transcript = engine.transcribe(
-      audio,
-      settings,
-      truncated: audio.length >= maxSamples,
-    );
-    return transcript == null
-        ? const TranscriptionOutcome.failure(TranscriptionFailure.failed)
-        : TranscriptionOutcome.success(transcript);
+    return switch (status) {
+      MdwStatus.ok || MdwStatus.cancelled => TranscriptionOutcome.success(
+        run.transcript(cancelled: status == MdwStatus.cancelled),
+      ),
+      MdwStatus.noAudio => const TranscriptionOutcome.failure(
+        TranscriptionFailure.noAudio,
+      ),
+      MdwStatus.decode => const TranscriptionOutcome.failure(
+        TranscriptionFailure.undecodable,
+      ),
+      MdwStatus.unsupported ||
+      MdwStatus.io => const TranscriptionOutcome.failure(
+        TranscriptionFailure.unsupportedAudio,
+      ),
+      _ => const TranscriptionOutcome.failure(TranscriptionFailure.failed),
+    };
   } finally {
-    audio.dispose();
+    run.close();
   }
 }
+
+/// Декодер не дал ни одного отсчёта — распознавание не начиналось.
+const _noSound = {
+  MdwStatus.unsupported,
+  MdwStatus.decode,
+  MdwStatus.noAudio,
+  MdwStatus.io,
+};
 
 /// Расширения контейнера ISO BMFF, под которыми Media Foundation открывает
 /// файл как MPEG-4: видео с телефона не копируем во временный ради одного
@@ -421,13 +489,13 @@ const _isoBmffExtensions = {'m4a', 'mp4', 'm4v', 'm4b', 'mov', '3gp', '3g2'};
 /// же размера и с одним из расширений [accepted], иначе временный файл с
 /// расширением [extension], который удаляется в `finally` — путь по ошибке
 /// — главный способ оставить голосовое пользователя в `/tmp`.
-(DecodedAudio?, int) _withFile(
+int _withFile(
   Uint8List bytes,
   String extension,
   Set<String> accepted,
   String? localPath,
   String? tempDir,
-  (DecodedAudio?, int) Function(String path) action,
+  int Function(String path) action,
 ) {
   final localExtension = localPath?.split('.').last.toLowerCase();
   if (localPath != null && accepted.contains(localExtension)) {
@@ -444,7 +512,7 @@ const _isoBmffExtensions = {'m4a', 'mp4', 'm4v', 'm4b', 'mov', '3gp', '3g2'};
       ..writeAsBytesSync(bytes, flush: true);
     return action(file.path);
   } on FileSystemException {
-    return (null, MdwStatus.io);
+    return MdwStatus.io;
   } finally {
     try {
       dir?.deleteSync(recursive: true);

@@ -10,7 +10,7 @@
   "convertingLabel": "Converting…",
   "@convertingLabel": {"description": "Shown next to the spinner while conversion runs"},
   "transcribingLabel": "Recognizing speech…",
-  "@transcribingLabel": {"description": "Audio file: speech recognition started, progress not known yet (decoding, loading the model)"},
+  "@transcribingLabel": {"description": "Audio file: speech recognition started, progress not known (decoding and loading the model, or the file has no duration in its metadata)"},
   "transcribingProgressLabel": "Recognizing speech… {percent}%",
   "@transcribingProgressLabel": {
     "description": "Audio file: share of the recording already recognized",

@@ -38,16 +38,30 @@
 
 /* ---------------------------------------------------------------- приёмник */
 
+/* Кусок на распознавание — 10 минут: память на него (отсчёты, копия после
+ * VAD, мел-спектрограмма) ≈100 МБ при любой длине записи, а границ, где
+ * может пострадать фраза, — шесть на час. */
+#define MDW_CHUNK_SAMPLES ((int64_t)MDW_SAMPLE_RATE * 60 * 10)
+/* Где искать тишину для границы — в последних 15 секундах куска, окнами по
+ * 0,1 с с шагом в полокна. */
+#define MDW_CUT_LOOKBACK ((int64_t)MDW_SAMPLE_RATE * 15)
+#define MDW_CUT_WINDOW ((int64_t)MDW_SAMPLE_RATE / 10)
+
 struct mdw_sink {
   float *data;
   int64_t count;
   int64_t capacity;
   int64_t max;
+  int64_t total; /* принято всего, с отданными кусками */
   uint32_t rate;
   int has_resampler;
   ma_resampler resampler;
   float *mono; /* рабочий буфер сведения каналов */
   uint64_t mono_capacity;
+  mdw_chunk_fn on_chunk;
+  void *user;
+  const volatile int32_t *cancel;
+  int status;
 };
 
 mdw_sink *mdw_sink_new(int64_t max) {
@@ -55,6 +69,16 @@ mdw_sink *mdw_sink_new(int64_t max) {
   if (sink == NULL) return NULL;
   sink->max = max > 0 ? max : 0;
   sink->rate = MDW_SAMPLE_RATE;
+  return sink;
+}
+
+mdw_sink *mdw_sink_new_chunked(mdw_chunk_fn on_chunk, void *user,
+                               const volatile int32_t *cancel) {
+  mdw_sink *sink = mdw_sink_new(MDW_CHUNK_SAMPLES);
+  if (sink == NULL) return NULL;
+  sink->on_chunk = on_chunk;
+  sink->user = user;
+  sink->cancel = cancel;
   return sink;
 }
 
@@ -82,9 +106,14 @@ int mdw_sink_set_rate(mdw_sink *sink, uint32_t rate) {
   return MDW_OK;
 }
 
-int mdw_sink_full(const mdw_sink *sink) { return sink->count >= sink->max; }
+int mdw_sink_full(const mdw_sink *sink) {
+  return sink->status != MDW_OK ||
+         (sink->on_chunk == NULL && sink->count >= sink->max);
+}
 
-int64_t mdw_sink_count(const mdw_sink *sink) { return sink->count; }
+int64_t mdw_sink_count(const mdw_sink *sink) { return sink->total; }
+
+int mdw_sink_status(const mdw_sink *sink) { return sink->status; }
 
 static int mdw_sink_reserve(mdw_sink *sink, int64_t extra) {
   int64_t need = sink->count + extra;
@@ -99,17 +128,75 @@ static int mdw_sink_reserve(mdw_sink *sink, int64_t extra) {
   return MDW_OK;
 }
 
+/* Середина самого тихого окна в последних MDW_CUT_LOOKBACK отсчётах: там
+ * граница куска не разрежет слово. */
+static int64_t mdw_quiet_point(const float *data, int64_t count) {
+  int64_t from = count > MDW_CUT_LOOKBACK ? count - MDW_CUT_LOOKBACK : 0;
+  int64_t best = count, best_at = count;
+  double best_energy = -1;
+  for (int64_t at = from; at + MDW_CUT_WINDOW <= count; at += MDW_CUT_WINDOW / 2) {
+    double energy = 0;
+    for (int64_t i = at; i < at + MDW_CUT_WINDOW; i++) {
+      energy += (double)data[i] * data[i];
+    }
+    if (best_energy < 0 || energy < best_energy) {
+      best_energy = energy;
+      best_at = at;
+    }
+  }
+  if (best_energy >= 0) best = best_at + MDW_CUT_WINDOW / 2;
+  return best > 0 ? best : count;
+}
+
+/* Отдать накопленное до тихой точки, остаток сдвинуть в начало. */
+static int mdw_sink_cut(mdw_sink *sink) {
+  int64_t cut = mdw_quiet_point(sink->data, sink->count);
+  int status = sink->on_chunk(sink->user, sink->data, cut);
+  memmove(sink->data, sink->data + cut,
+          (size_t)(sink->count - cut) * sizeof(float));
+  sink->count -= cut;
+  return status;
+}
+
+int mdw_sink_flush(mdw_sink *sink) {
+  if (sink->status != MDW_OK || sink->count == 0) return sink->status;
+  sink->status = sink->on_chunk(sink->user, sink->data, sink->count);
+  sink->count = 0;
+  return sink->status;
+}
+
+/* 16 кГц моно — в буфер: до предела или, в режиме кусков, без него. */
+static int mdw_sink_store(mdw_sink *sink, const float *mono, int64_t n) {
+  while (n > 0 && sink->status == MDW_OK) {
+    if (sink->cancel != NULL && *sink->cancel != 0) {
+      sink->status = MDW_ERR_CANCELLED;
+      break;
+    }
+    int64_t room = sink->max - sink->count;
+    if (room <= 0) {
+      if (sink->on_chunk == NULL) break; /* предел: остальное отбрасываем */
+      sink->status = mdw_sink_cut(sink);
+      continue;
+    }
+    int64_t take = n < room ? n : room;
+    if (mdw_sink_reserve(sink, take) != MDW_OK) {
+      sink->status = MDW_ERR_NOMEM;
+      break;
+    }
+    memcpy(sink->data + sink->count, mono, (size_t)take * sizeof(float));
+    sink->count += take;
+    sink->total += take;
+    mono += take;
+    n -= take;
+  }
+  return sink->status;
+}
+
 /* Моно-кадры частоты sink->rate → 16 кГц в конец буфера. */
 static int mdw_sink_append_mono(mdw_sink *sink, const float *mono,
                                 uint64_t count) {
   if (!sink->has_resampler) {
-    int64_t take = (int64_t)count;
-    if (take > sink->max - sink->count) take = sink->max - sink->count;
-    if (take <= 0) return MDW_OK;
-    if (mdw_sink_reserve(sink, take) != MDW_OK) return MDW_ERR_NOMEM;
-    memcpy(sink->data + sink->count, mono, (size_t)take * sizeof(float));
-    sink->count += take;
-    return MDW_OK;
+    return mdw_sink_store(sink, mono, (int64_t)count);
   }
   while (count > 0 && !mdw_sink_full(sink)) {
     float out[4096];
@@ -119,18 +206,13 @@ static int mdw_sink_append_mono(mdw_sink *sink, const float *mono,
                                         out, &out_frames) != MA_SUCCESS) {
       return MDW_ERR_DECODE;
     }
-    int64_t take = (int64_t)out_frames;
-    if (take > sink->max - sink->count) take = sink->max - sink->count;
-    if (take > 0) {
-      if (mdw_sink_reserve(sink, take) != MDW_OK) return MDW_ERR_NOMEM;
-      memcpy(sink->data + sink->count, out, (size_t)take * sizeof(float));
-      sink->count += take;
-    }
+    int status = mdw_sink_store(sink, out, (int64_t)out_frames);
+    if (status != MDW_OK) return status;
     if (in_frames == 0 && out_frames == 0) break; /* ресемплер стоит */
     mono += in_frames;
     count -= in_frames;
   }
-  return MDW_OK;
+  return sink->status;
 }
 
 static float *mdw_sink_mono_buffer(mdw_sink *sink, uint64_t count) {
@@ -396,16 +478,19 @@ static int mdw_decode_miniaudio(const uint8_t *data, int64_t size,
 
 /* ------------------------------------------------------------------ вход */
 
+int mdw_decode_memory_to(const uint8_t *data, int64_t size, mdw_sink *sink) {
+  if (data == NULL || size <= 0) return MDW_ERR_DECODE;
+  return mdw_is_ogg_opus(data, size) ? mdw_decode_ogg_opus(data, size, sink)
+                                     : mdw_decode_miniaudio(data, size, sink);
+}
+
 int mdw_decode_memory(const uint8_t *data, int64_t size, int64_t max_samples,
                       float **out, int64_t *n_out) {
   *out = NULL;
   *n_out = 0;
-  if (data == NULL || size <= 0) return MDW_ERR_DECODE;
   mdw_sink *sink = mdw_sink_new(max_samples);
   if (sink == NULL) return MDW_ERR_NOMEM;
-  int status = mdw_is_ogg_opus(data, size)
-                   ? mdw_decode_ogg_opus(data, size, sink)
-                   : mdw_decode_miniaudio(data, size, sink);
+  int status = mdw_decode_memory_to(data, size, sink);
   if (status != MDW_OK) {
     mdw_sink_free(sink);
     return status;

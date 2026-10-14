@@ -25,6 +25,7 @@ abstract final class MdwStatus {
   static const cancelled = 5;
   static const transcribe = 6;
   static const io = 7;
+  static const model = 8;
 }
 
 /// `mdw_control`: общая память изолята конвертации и главного изолята —
@@ -132,24 +133,46 @@ typedef _DecodeFileDart =
     );
 typedef _FreeSamplesNative = Void Function(Pointer<Float> samples);
 typedef _FreeSamplesDart = void Function(Pointer<Float> samples);
-typedef _OpenModelNative = Pointer<Void> Function(Pointer<Utf8> path);
-typedef _CloseModelNative = Void Function(Pointer<Void> model);
-typedef _CloseModelDart = void Function(Pointer<Void> model);
-typedef _TranscribeNative =
+typedef _SessionNewNative = Pointer<Void> Function(Pointer<Utf8> modelPath);
+typedef _SessionFreeNative = Void Function(Pointer<Void> session);
+typedef _SessionFreeDart = void Function(Pointer<Void> session);
+typedef _TranscribeMemoryNative =
     Int32 Function(
-      Pointer<Void> model,
-      Pointer<Float> samples,
-      Int64 count,
+      Pointer<Void> session,
+      Pointer<Uint8> data,
+      Int64 size,
+      Int64 expectedSamples,
       Pointer<Utf8> language,
       Pointer<Utf8> vadModelPath,
       Int32 threads,
       Pointer<MdwControl> control,
     );
-typedef _TranscribeDart =
+typedef _TranscribeMemoryDart =
     int Function(
-      Pointer<Void> model,
-      Pointer<Float> samples,
-      int count,
+      Pointer<Void> session,
+      Pointer<Uint8> data,
+      int size,
+      int expectedSamples,
+      Pointer<Utf8> language,
+      Pointer<Utf8> vadModelPath,
+      int threads,
+      Pointer<MdwControl> control,
+    );
+typedef _TranscribeFileNative =
+    Int32 Function(
+      Pointer<Void> session,
+      Pointer<Utf8> path,
+      Int64 expectedSamples,
+      Pointer<Utf8> language,
+      Pointer<Utf8> vadModelPath,
+      Int32 threads,
+      Pointer<MdwControl> control,
+    );
+typedef _TranscribeFileDart =
+    int Function(
+      Pointer<Void> session,
+      Pointer<Utf8> path,
+      int expectedSamples,
       Pointer<Utf8> language,
       Pointer<Utf8> vadModelPath,
       int threads,
@@ -164,6 +187,8 @@ typedef _SegmentTextDart =
 typedef _SegmentTimeNative = Int64 Function(Pointer<Void> model, Int32 index);
 typedef _SegmentTimeDart = int Function(Pointer<Void> model, int index);
 typedef _LanguageNative = Pointer<Utf8> Function(Pointer<Void> model);
+typedef _ProcessedNative = Int64 Function(Pointer<Void> session);
+typedef _ProcessedDart = int Function(Pointer<Void> session);
 
 /// Функции `mdw.h`. Отсутствие любой — `ArgumentError` из `lookup`: не та
 /// сборка библиотеки.
@@ -182,15 +207,20 @@ class WhisperBindings {
       freeSamples = lib.lookupFunction<_FreeSamplesNative, _FreeSamplesDart>(
         'mdw_free_samples',
       ),
-      openModel = lib.lookupFunction<_OpenModelNative, _OpenModelNative>(
-        'mdw_open_model',
+      newSession = lib.lookupFunction<_SessionNewNative, _SessionNewNative>(
+        'mdw_session_new',
       ),
-      closeModel = lib.lookupFunction<_CloseModelNative, _CloseModelDart>(
-        'mdw_close_model',
+      freeSession = lib.lookupFunction<_SessionFreeNative, _SessionFreeDart>(
+        'mdw_session_free',
       ),
-      transcribe = lib.lookupFunction<_TranscribeNative, _TranscribeDart>(
-        'mdw_transcribe',
-      ),
+      transcribeMemory = lib
+          .lookupFunction<_TranscribeMemoryNative, _TranscribeMemoryDart>(
+            'mdw_transcribe_memory',
+          ),
+      transcribeFile = lib
+          .lookupFunction<_TranscribeFileNative, _TranscribeFileDart>(
+            'mdw_transcribe_file',
+          ),
       segmentCount = lib.lookupFunction<_SegmentCountNative, _SegmentCountDart>(
         'mdw_segment_count',
       ),
@@ -205,6 +235,9 @@ class WhisperBindings {
       ),
       language = lib.lookupFunction<_LanguageNative, _LanguageNative>(
         'mdw_language',
+      ),
+      processedMs = lib.lookupFunction<_ProcessedNative, _ProcessedDart>(
+        'mdw_processed_ms',
       );
 
   // Типы полей — развёрнутые, а не typedef-ы выше: те приватные, а
@@ -227,21 +260,33 @@ class WhisperBindings {
   )
   decodeFile;
   final void Function(Pointer<Float> samples) freeSamples;
-  final Pointer<Void> Function(Pointer<Utf8> path) openModel;
-  final void Function(Pointer<Void> model) closeModel;
+  final Pointer<Void> Function(Pointer<Utf8> modelPath) newSession;
+  final void Function(Pointer<Void> session) freeSession;
   final int Function(
-    Pointer<Void> model,
-    Pointer<Float> samples,
-    int count,
+    Pointer<Void> session,
+    Pointer<Uint8> data,
+    int size,
+    int expectedSamples,
     Pointer<Utf8> language,
     Pointer<Utf8> vadModelPath,
     int threads,
     Pointer<MdwControl> control,
   )
-  transcribe;
+  transcribeMemory;
+  final int Function(
+    Pointer<Void> session,
+    Pointer<Utf8> path,
+    int expectedSamples,
+    Pointer<Utf8> language,
+    Pointer<Utf8> vadModelPath,
+    int threads,
+    Pointer<MdwControl> control,
+  )
+  transcribeFile;
   final int Function(Pointer<Void> model) segmentCount;
   final Pointer<Utf8> Function(Pointer<Void> model, int index) segmentText;
   final int Function(Pointer<Void> model, int index) segmentStartMs;
   final int Function(Pointer<Void> model, int index) segmentEndMs;
   final Pointer<Utf8> Function(Pointer<Void> model) language;
+  final int Function(Pointer<Void> session) processedMs;
 }

@@ -10,16 +10,6 @@ import 'picked_file.dart';
 
 enum FileIntakePhase { idle, converting, ready, failed }
 
-/// Файлы, речь в которых распознаётся (`AudioConverter`). Распознавание —
-/// минуты, а не секунды, поэтому у них прогресс и кнопка «Остановить».
-const _speechKinds = {
-  FileKind.mp3,
-  FileKind.flac,
-  FileKind.ogg,
-  FileKind.wav,
-  FileKind.mp4,
-};
-
 class FileIntakeState {
   final FileIntakePhase phase;
   final StreamInfo? info;
@@ -72,10 +62,17 @@ class FileIntakeState {
 class FileIntakeController extends Notifier<FileIntakeState> {
   TranscriptionControl? _control;
 
+  /// Номер последнего принятого файла. Пока идёт конвертация, приём не
+  /// закрыт (drop, «Поделиться»), и новый файл заменяет текущий: результат
+  /// и `finally` старого вызова не должны трогать состояние нового.
+  int _generation = 0;
+
   @override
   FileIntakeState build() => const FileIntakeState.idle();
 
   Future<void> accept(PickedFile file) async {
+    final generation = _supersede();
+    bool current() => generation == _generation;
     final info = StreamInfo.fromHead(
       file.bytes,
       filename: file.filename,
@@ -87,8 +84,11 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     TranscriptionSettings? speech;
     TranscriptionControl? control;
     Timer? poll;
-    if (_speechKinds.contains(info.detectedType.kind)) {
+    // Речь распознаёт AudioConverter, и это минуты, а не секунды, — поэтому
+    // у его файлов прогресс и кнопка «Остановить».
+    if (AudioConverter.handles(info.detectedType.kind)) {
       speech = await transcriptionSettings();
+      if (!current()) return; // пока ждали модель, пришёл другой файл
       if (speech != null) {
         control = _control = TranscriptionControl();
         speech = speech.withControl(control);
@@ -96,12 +96,19 @@ class FileIntakeController extends Notifier<FileIntakeState> {
         // Прогресс пишет нативный код в общую память — опрашиваем, а не
         // ждём сообщений: изолят занят в whisper_full и не ответит.
         poll = Timer.periodic(const Duration(milliseconds: 500), (_) {
-          if (state.phase != FileIntakePhase.converting) return;
+          final progress = control!.progress;
+          final stopping = control.cancelled;
+          // Процент двигается шагами по 5 — без сравнения карточка
+          // перестраивалась бы дважды в секунду впустую.
+          if (!current() ||
+              progress == state.speechProgress && stopping == state.stopping) {
+            return;
+          }
           state = FileIntakeState.converting(
             info,
             transcribing: true,
-            speechProgress: control!.progress,
-            stopping: control.cancelled,
+            speechProgress: progress,
+            stopping: stopping,
           );
         });
       }
@@ -119,10 +126,11 @@ class FileIntakeController extends Notifier<FileIntakeState> {
       poll?.cancel();
       // Освобождать только после конца изолята: нативный код пишет в
       // control до последнего окна.
-      _control = null;
+      if (identical(_control, control)) _control = null;
       control?.dispose();
     }
 
+    if (!current()) return;
     switch (outcome) {
       case ConversionSuccess(result: final result):
         state = FileIntakeState.ready(info, result);
@@ -145,7 +153,18 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     );
   }
 
-  void clear() => state = const FileIntakeState.idle();
+  void clear() {
+    _supersede();
+    state = const FileIntakeState.idle();
+  }
+
+  /// Текущая конвертация больше не нужна: её распознавание останавливается
+  /// (иначе минуты занимало бы процессор впустую), результат отбрасывается.
+  int _supersede() {
+    _control?.cancel();
+    _control = null;
+    return ++_generation;
+  }
 }
 
 final fileIntakeControllerProvider =

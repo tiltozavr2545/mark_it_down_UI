@@ -128,7 +128,7 @@ abstract class AppLocalizations {
   /// **'Converting…'**
   String get convertingLabel;
 
-  /// Audio file: speech recognition started, progress not known yet (decoding, loading the model)
+  /// Audio file: speech recognition started, progress not known (decoding and loading the model, or the file has no duration in its metadata)
   ///
   /// In en, this message translates to:
   /// **'Recognizing speech…'**

@@ -7,6 +7,8 @@ import 'package:markitdown_core/markitdown_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'bundled_assets.dart';
+
 /// Опись моделей, которую `whisper/fetch.sh` кладёт рядом с ними в
 /// `assets/whisper/`: Whisper small и Silero VAD — имя, размер, sha256.
 const _manifest = 'assets/whisper/models.json';
@@ -65,11 +67,9 @@ Future<TranscriptionSettings?> _prepare() async {
   }
 }
 
-/// Windows (и Linux): ассеты Flutter лежат обычными файлами рядом с `.exe`
-/// — `data/flutter_assets/assets/whisper/`, читать можно на месте.
+/// Windows (и Linux): модели читаются на месте, рядом с `.exe`.
 (String?, String?) _desktopAssets(_Model model, _Model vad) {
-  final exeDir = File(Platform.resolvedExecutable).parent.path;
-  final dir = p.join(exeDir, 'data', 'flutter_assets', 'assets', 'whisper');
+  final dir = desktopAssetDir('whisper');
   String? path(_Model m) {
     final file = File(p.join(dir, m.file));
     return file.existsSync() ? file.path : null;
@@ -78,11 +78,9 @@ Future<TranscriptionSettings?> _prepare() async {
   return (path(model), path(vad));
 }
 
-/// Android: ассеты внутри APK, а whisper.cpp читает модель с диска.
-/// Копируем в каталог приложения один раз (опись говорит, совпадает ли уже
-/// лежащая копия, без чтения модели в память); после обновления модели —
-/// заново, старую удаляем. Пишем во временный файл и переименовываем, чтобы
-/// прерванное копирование не оставило обрезанную модель.
+/// Android: whisper.cpp читает модель с диска — копируем из APK один раз
+/// (опись говорит, совпадает ли уже лежащая копия, без чтения модели в
+/// память); после обновления модели — заново, старую удаляем.
 ///
 /// Цена: модель лежит дважды — в APK и на диске (≈530 МБ вместе), а при
 /// копировании `rootBundle.load` читает её в память целиком. Почему так, а
@@ -92,15 +90,11 @@ Future<(String?, String?)> _copyAssetsToDisk(_Model model, _Model vad) async {
   final dir = Directory(p.join(support.path, 'whisper'));
   await dir.create(recursive: true);
   for (final m in [model, vad]) {
-    final target = File(p.join(dir.path, m.diskName));
-    if (target.existsSync() && target.lengthSync() == m.size) continue;
-    final data = await rootBundle.load('assets/whisper/${m.file}');
-    final partial = File('${target.path}.part');
-    await partial.writeAsBytes(
-      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-      flush: true,
+    await copyAssetToDisk(
+      'assets/whisper/${m.file}',
+      File(p.join(dir.path, m.diskName)),
+      size: m.size,
     );
-    await partial.rename(target.path);
   }
   final keep = {model.diskName, vad.diskName};
   await for (final entity in dir.list()) {

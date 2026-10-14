@@ -41,9 +41,14 @@ class AudioConverter implements DocumentConverter {
   @override
   double get priority => 0.0;
 
+  /// Берёт ли конвертер файлы этого вида — а значит, и распознаёт ли в
+  /// них речь. Приложение по нему решает, кому нужны прогресс и
+  /// «Остановить».
+  static bool handles(FileKind kind) => _mediaKinds.contains(kind);
+
   @override
   bool accepts(StreamInfo info, Uint8List head) =>
-      _mediaKinds.contains(info.detectedType.kind);
+      handles(info.detectedType.kind);
 
   @override
   Future<ConversionResult> convert(ConversionRequest request) async {
@@ -145,6 +150,7 @@ class AudioConverter implements DocumentConverter {
       mp4: kind == FileKind.mp4,
       extension: _extensions[kind] ?? 'bin',
       localPath: request.info.localPath,
+      duration: duration,
     );
     final transcript = outcome.transcript;
     if (transcript == null) {
@@ -185,14 +191,6 @@ class AudioConverter implements DocumentConverter {
         ConversionWarning(
           'распознавание остановлено на '
           '${_duration(transcript.processed) ?? '0:00'} — расшифровка неполная',
-        ),
-      );
-    } else if (transcript.truncated) {
-      final total = _duration(duration);
-      warnings.add(
-        ConversionWarning(
-          'распознаны первые ${_timestamp(settings.maxDuration)}'
-          '${total != null ? ' из $total' : ''} — остальное не обработано',
         ),
       );
     }
