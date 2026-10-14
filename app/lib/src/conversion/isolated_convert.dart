@@ -16,11 +16,14 @@ import 'package:markitdown_core/markitdown_core.dart';
 /// чистым Dart-ядром.
 ///
 /// [ocr] — где лежат модели Tesseract (см. `ocr_data.dart`): строка пути
-/// пересылается в изолят, а библиотеки OCR открываются уже в нём.
+/// пересылается в изолят, а библиотеки OCR открываются уже в нём. То же с
+/// [transcription] (`speech_data.dart`); его прогресс и отмена — через
+/// [TranscriptionControl], адрес которого лежит в настройках.
 Future<ConversionOutcome> isolatedConvert(
   Uint8List bytes,
   StreamInfo info, {
   OcrSettings? ocr,
+  TranscriptionSettings? transcription,
 }) {
   return Isolate.run(() {
     // С OCR PDF-сканы должны дойти до Dart-ядра: сайдкар отдал бы по ним
@@ -29,6 +32,7 @@ Future<ConversionOutcome> isolatedConvert(
     final registry = ConverterRegistry.defaultRegistry(
       extra: [if (sidecar != null) sidecar],
       ocr: ocr,
+      transcription: transcription,
     );
     return registry.convert(bytes, info);
   });

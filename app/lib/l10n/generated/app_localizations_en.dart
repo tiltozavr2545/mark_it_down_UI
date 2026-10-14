@@ -24,6 +24,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get convertingLabel => 'Converting…';
 
   @override
+  String get transcribingLabel => 'Recognizing speech…';
+
+  @override
+  String transcribingProgressLabel(int percent) {
+    return 'Recognizing speech… $percent%';
+  }
+
+  @override
+  String get transcribingHint =>
+      'Offline, on this device. A long recording takes minutes.';
+
+  @override
+  String get stoppingLabel => 'Stopping — finishing the current fragment…';
+
+  @override
+  String get stopButton => 'Stop';
+
+  @override
   String get copyButton => 'Copy';
 
   @override

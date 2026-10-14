@@ -95,7 +95,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 dragging: _dragging,
                 onPickFile: _pickFile,
               ),
-              FileIntakePhase.converting => _Converting(info: state.info!),
+              FileIntakePhase.converting => _Converting(
+                state: state,
+                onStop: () => ref
+                    .read(fileIntakeControllerProvider.notifier)
+                    .stopTranscription(),
+              ),
               FileIntakePhase.ready => _PreviewResult(
                 info: state.info!,
                 result: state.result!,
@@ -156,13 +161,23 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _Converting extends StatelessWidget {
-  final StreamInfo info;
+  final FileIntakeState state;
+  final VoidCallback onStop;
 
-  const _Converting({required this.info});
+  const _Converting({required this.state, required this.onStop});
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final info = state.info!;
+    final progress = state.speechProgress;
+    final label = !state.transcribing
+        ? l10n.convertingLabel
+        : state.stopping
+        ? l10n.stoppingLabel
+        : progress > 0
+        ? l10n.transcribingProgressLabel(progress)
+        : l10n.transcribingLabel;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -186,9 +201,31 @@ class _Converting extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
                 const SizedBox(width: 12),
-                Text(l10n.convertingLabel),
+                Flexible(child: Text(label)),
               ],
             ),
+            if (state.transcribing) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 320,
+                child: LinearProgressIndicator(
+                  // 0 — звук декодируется или модель грузится: доля
+                  // неизвестна, полоса бежит.
+                  value: progress > 0 ? progress / 100 : null,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.transcribingHint,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: state.stopping ? null : onStop,
+                icon: const Icon(Icons.stop),
+                label: Text(l10n.stopButton),
+              ),
+            ],
           ],
         ),
       ),

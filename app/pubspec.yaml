@@ -16,7 +16,7 @@ publish_to: 'none'
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.7.0+8
+version: 0.8.0+9
 
 environment:
   sdk: ^3.8.1
@@ -68,6 +68,9 @@ flutter:
   # Android копируются из APK при первом OCR (lib/src/conversion/ocr_data.dart).
   assets:
     - assets/tessdata/
+    # Модели распознавания речи и их опись — whisper/fetch.sh (265 МБ, в
+    # репозиторий не коммитятся; каталог держит .gitkeep).
+    - assets/whisper/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

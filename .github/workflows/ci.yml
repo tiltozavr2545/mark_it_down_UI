@@ -32,6 +32,28 @@ jobs:
       - name: Tesseract (пакет дистрибутива)
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libtesseract5
 
+      # Распознавание речи (0.8): whisper.cpp собирается из исходников
+      # (whisper/build.sh, минуты — десяток вариантов CPU-бэкенда), модели
+      # качает fetch.sh (265 МБ). И то и другое кэшируется по хешу рецепта;
+      # с ними make test гоняет core/test/speech_test.dart, без них —
+      # пропускает.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            whisper/native/host
+            whisper/cache
+          key: whisper-linux-x64-${{ hashFiles('whisper/build.sh', 'whisper/versions.sh', 'whisper/shim/**') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/models
+          key: whisper-models-${{ hashFiles('whisper/versions.sh') }}
+
+      - name: whisper (сборка и модели)
+        run: |
+          ./whisper/build.sh
+          ./whisper/fetch.sh
+
       - name: make verify
         run: make verify
 
@@ -272,11 +294,34 @@ jobs:
           ./tesseract/fetch.sh
           ls -la tesseract/native/host
 
+      # Распознавание речи (0.8): DLL whisper.cpp — из исходников, как
+      # Tesseract, с кэшем по хешу рецепта; модели — fetch.sh. Нужны и
+      # тестам, и flutter build windows (install в app/windows/CMakeLists.txt).
+      # AAC здесь не проверить: в образе Windows Server нет компонента
+      # Media Foundation — speech_test.dart помечает этот тест пропущенным.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            whisper/native/host
+            whisper/cache
+          key: whisper-windows-x64-${{ hashFiles('whisper/build.sh', 'whisper/versions.sh', 'whisper/shim/**') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/models
+          key: whisper-models-${{ hashFiles('whisper/versions.sh') }}
+
+      - name: whisper (сборка DLL и модели)
+        run: |
+          ./whisper/build.sh
+          ./whisper/fetch.sh
+
       - name: test
         run: |
           (cd app && flutter test)
           export MARKITDOWN_PDFIUM_PATH="$(cygpath -w "$PWD/pdfium/native/host/pdfium.dll")"
           export MARKITDOWN_TESSERACT_DIR="$(cygpath -w "$PWD/tesseract/native/host")"
+          export MARKITDOWN_WHISPER_DIR="$(cygpath -w "$PWD/whisper/native/host")"
           (cd core && dart test)
 
       - name: сайдкар из windows-sidecar
@@ -294,6 +339,7 @@ jobs:
         run: |
           cd app/build/windows/x64/runner/Release
           ls tesseract*.dll leptonica*.dll data/flutter_assets/assets/tessdata/
+          ls markitdown_whisper.dll whisper.dll ggml*.dll data/flutter_assets/assets/whisper/
           if [[ -f sidecar/manifest.json ]]; then
             echo "Сборка **с сайдкаром**: $(du -sh . | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
           else

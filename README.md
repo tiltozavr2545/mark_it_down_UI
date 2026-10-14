@@ -39,8 +39,9 @@ markitdown, упакованный вместе с Python в «сайдкар» 
 
 ## Платформы и статус
 
-Проект идёт по этапам ([план](docs/implementation-plan.md)); сейчас закрыты
-этапы 0–4, идёт **Этап 5 — Windows**. Версия — `0.5.0`.
+Проект идёт по этапам ([план](docs/implementation-plan.md)); закрыты этапы
+0–5, Этап 6 (изображения, аудио, OCR) выпущен, идёт **Этап 7 — полировка**.
+В 0.8 появилось офлайн-распознавание речи. Версия — `0.8.0`.
 
 | платформа | статус |
 |---|---|
@@ -64,7 +65,7 @@ markitdown, упакованный вместе с Python в «сайдкар» 
 | `xls`, `msg` (Outlook) | ✅ | ❌ | только сайдкар |
 | изображения: JPEG, PNG, BMP | ✅ | ✅ | метаданные EXIF + распознанный текст (OCR) |
 | изображения: GIF, WebP, TIFF, HEIC | ✅ | ✅ | только метаданные, без OCR |
-| аудио: MP3, FLAC, Ogg/Opus, WAV, M4A; видео MP4/MOV | ✅ | ✅ | длительность, теги, текст песни; речь не распознаётся |
+| аудио: MP3, FLAC, Ogg/Opus, WAV, M4A; видео MP4/MOV | ✅ | ✅ | длительность, теги, текст песни + **расшифровка речи** (whisper.cpp, модель small: русский, английский, итальянский и ещё ~95 языков; до 180 минут) |
 | `doc`, `ppt` (старый Office) | ❌ | ❌ | не умеет и сам markitdown |
 
 Предела на размер файла нет. У архивов есть защита от zip-бомб: до 1 ГБ
@@ -80,7 +81,8 @@ zip для Windows и APK для Android.
 
 ### Windows
 
-1. Скачать `markitdown_ui-X.Y.Z-windows-x64.zip` (≈120 МБ) и распаковать в
+1. Скачать `markitdown_ui-X.Y.Z-windows-x64.zip` (≈370 МБ — из них 265 МБ
+   модель распознавания речи) и распаковать в
    любую папку. Ставить ничего не нужно, Python тоже — он уже внутри.
 2. Запустить `markitdown_ui.exe`. Всё нужное лежит рядом: `pdfium.dll`,
    папки `data\` и `sidecar\` (Python + markitdown, ≈300 МБ в
@@ -90,7 +92,10 @@ zip для Windows и APK для Android.
    подписана (сертификата пока нет), а не потому, что с ней что-то не так.
 
 Первая конвертация `xls`/`msg`/`pdf` может занять несколько секунд —
-Defender проверяет Python при первом запуске.
+Defender проверяет Python при первом запуске. Распознавание речи — минуты
+на длинной записи: процент виден, остановить можно в любой момент.
+Работает на любом 64-битном процессоре — код под AVX2/AVX-512 включается,
+только если процессор их умеет.
 
 Сборка из любого коммита (не только релизного) — артефакт
 `markitdown_ui-windows-x64` в [Actions](https://github.com/tiltozavr2545/mark_it_down_UI/actions/workflows/ci.yml)
@@ -101,7 +106,8 @@ Defender проверяет Python при первом запуске.
 1. Скачать `markitdown_ui-X.Y.Z-android-arm64.apk` на телефон и открыть;
    разрешить установку из этого источника, если Android спросит.
 2. Нужен Android 6.0+ и процессор arm64 (практически любой телефон последних
-   лет).
+   лет). APK весит ≈300 МБ — почти всё это модель распознавания речи; при
+   первом аудиофайле она один раз копируется на диск (ещё ≈265 МБ места).
 3. Если приложение уже стояло, собранное не из этого релиза, — сначала
    удалить: сборки пока подписаны разными debug-ключами и поверх друг друга
    не встают (своего ключа подписи ещё нет — Этап 7).
@@ -119,6 +125,10 @@ Defender проверяет Python при первом запуске.
   телефон с включённой отладкой по USB.
 - Python ставить **не нужно**: сайдкар качает свой, системный не
   используется.
+- `cmake` и компилятор C/C++ — только чтобы собрать OCR и распознавание
+  речи для тестов на компьютере (`make tesseract`, `make whisper`); без них
+  эти тесты пропускаются. Для Android-сборки распознавания — NDK
+  27.0.12077973 (ставится из Android Studio).
 - Никаких `.env`, ключей и аккаунтов: приложению некуда ходить, секретов у
   него нет. Ключи нужны только для подписи релизов —
   [docs/operations.md](docs/operations.md).
@@ -141,7 +151,8 @@ make verify
 ```bash
 # Android: телефон подключён по USB
 cd app && flutter run                      # отладочный запуск
-cd app && flutter build apk --release      # APK (сначала make fetch-pdfium)
+cd app && flutter build apk --release      # APK (сначала make fetch-pdfium;
+                                           # распознавание речи — см. ниже)
 
 # macOS (вторичная, нужен полный Xcode)
 cd app && flutter run -d macos
@@ -158,6 +169,18 @@ Flutter 3.32.8 не знает 2026.
 
 Эмулятор Android на машине автора не запускается (слишком слабая) — всё
 проверяется на настоящем телефоне.
+
+### OCR и распознавание речи
+
+```bash
+make tesseract                 # Tesseract для тестов OCR, ≈10 минут
+make whisper                   # whisper.cpp + модели (265 МБ), ≈10 минут
+./whisper/build.sh --android   # .so распознавания речи в jniLibs (NDK)
+```
+
+Без них приложение собирается, но OCR и распознавание речи в нём честно
+«недоступны», а тесты на них пропускаются. Как устроено и почему так —
+[docs/format-coverage.md](docs/format-coverage.md#решения-транскрипции-08).
 
 ### Сайдкар (настоящий markitdown, только на компьютере)
 
@@ -224,13 +247,15 @@ make compare-sidecar    # сверка Dart-ядра с markitdown на всех
 app/                      Flutter-приложение
   lib/src/home_screen.dart      экран: выбор файла, предпросмотр, копирование
   lib/src/file_intake/          диалог, drag & drop, «Поделиться» (Android)
-  lib/src/conversion/           запуск конвертации в изоляте
+  lib/src/conversion/           запуск конвертации в изоляте, модели OCR и
+                                распознавания речи
   lib/l10n/                     строки интерфейса (ru, en)
   android/ windows/ macos/      платформенные части
 core/                     ядро конвертации — Dart-пакет без Flutter
   lib/src/type_detection/       распознавание типа по содержимому
   lib/src/conversion/           реестр, контракты, конвертеры по форматам,
-                                PDFium-биндинги, SidecarConverter
+                                FFI на PDFium, Tesseract (ocr/) и whisper
+                                (speech/), SidecarConverter
   lib/src/markdown_writer.dart  единственное место сборки Markdown
   test/fixtures/                пары «исходник + ожидаемый Markdown»
   tool/compare_sidecar.dart     сверка Dart-ядра с markitdown
@@ -239,6 +264,9 @@ sidecar/                  сборка Python + markitdown для компьют
   run.py                        обёртка: файл → JSON с Markdown
   locks/                        закреплённые зависимости по платформам
 pdfium/fetch.sh           качает PDFium (хост, Android, Windows); не коммитится
+tesseract/                OCR: build.sh (десктоп), fetch.sh (модели, Android)
+whisper/                  распознавание речи: build.sh (хост и --android),
+                          fetch.sh (модели), shim/ — C-прослойка mdw.h
 tool/verify_version.sh    проверка бампа версии в PR
 .github/workflows/        ci.yml — verify (Linux), windows-sidecar, windows;
                           release.yml — тег v* → GitHub Release (zip + APK)

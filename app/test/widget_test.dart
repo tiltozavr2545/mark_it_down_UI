@@ -43,6 +43,65 @@ void main() {
     expect(find.text('Конвертируется…'), findsOneWidget);
   });
 
+  testWidgets('распознавание речи — процент и «Остановить»', (tester) async {
+    final controller = _FakeFileIntakeController(
+      FileIntakeState.converting(
+        _voiceInfo,
+        transcribing: true,
+        speechProgress: 42,
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fileIntakeControllerProvider.overrideWith(() => controller),
+        ],
+        child: const MarkItDownApp(locale: _ru),
+      ),
+    );
+
+    expect(find.text('Распознаётся речь… 42 %'), findsOneWidget);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .value,
+      0.42,
+    );
+    await tester.tap(find.text('Остановить'));
+    expect(controller.stopped, isTrue);
+  });
+
+  testWidgets('после «Остановить» — ждём фрагмент, кнопка неактивна', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fileIntakeControllerProvider.overrideWith(
+            () => _FakeFileIntakeController(
+              FileIntakeState.converting(
+                _voiceInfo,
+                transcribing: true,
+                speechProgress: 42,
+                stopping: true,
+              ),
+            ),
+          ),
+        ],
+        child: const MarkItDownApp(locale: _ru),
+      ),
+    );
+
+    expect(find.textContaining('Останавливается'), findsOneWidget);
+    final button = tester.widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text('Остановить'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+    expect(button.onPressed, isNull);
+  });
+
   testWidgets('успешная конвертация показывает markdown-превью', (
     tester,
   ) async {
@@ -119,11 +178,23 @@ void main() {
   });
 }
 
+final _voiceInfo = StreamInfo(
+  filename: 'голосовое.ogg',
+  extension: 'ogg',
+  mimeType: null,
+  lengthBytes: 25454,
+  detectedType: const DetectedType(FileKind.ogg, 'Ogg'),
+);
+
 class _FakeFileIntakeController extends FileIntakeController {
   final FileIntakeState initial;
+  bool stopped = false;
 
   _FakeFileIntakeController(this.initial);
 
   @override
   FileIntakeState build() => initial;
+
+  @override
+  void stopTranscription() => stopped = true;
 }

@@ -11,6 +11,7 @@ import '../audio/xiph.dart';
 import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
+import '../speech/whisper_transcriber.dart';
 
 const _mediaKinds = {
   FileKind.mp3,
@@ -21,12 +22,18 @@ const _mediaKinds = {
 };
 
 /// Аудио (и видео в MP4/MOV/3GP) → список метаданных: формат, длительность,
-/// параметры звука, теги, текст песни. Речь не распознаётся — офлайн-
-/// транскрипция отложена (`docs/future-development.md`). Отказа, как и у
-/// картинок, не бывает: сигнатура опознана, формат сказать можно всегда.
-/// См. `docs/format-coverage.md#решения-этапа-6`.
+/// параметры звука, теги, текст песни, а с [transcription] — и расшифровка
+/// речи (whisper.cpp, офлайн). Отказа, как и у картинок, не бывает:
+/// сигнатура опознана, формат сказать можно всегда, а всё, что не вышло с
+/// распознаванием, — в `warnings`. См.
+/// `docs/format-coverage.md#решения-этапа-6` и
+/// `docs/format-coverage.md#решения-транскрипции-08`.
 class AudioConverter implements DocumentConverter {
-  const AudioConverter();
+  const AudioConverter({this.transcription});
+
+  /// Где модель и библиотеки Whisper; `null` — только метаданные (так
+  /// гоняются фикстуры: их вывод не должен зависеть от движка на машине).
+  final TranscriptionSettings? transcription;
 
   @override
   String get id => 'audio';
@@ -56,11 +63,12 @@ class AudioConverter implements DocumentConverter {
         const ConversionWarning(
           'структура файла повреждена — показано то, что удалось прочитать',
         ),
-      if (info.hasAudio || !info.hasVideo)
-        const ConversionWarning(
-          'речь не распознаётся — в результате только метаданные',
-        ),
     ];
+    // Видео без звуковой дорожки распознавать нечего; если дорожек не
+    // нашли вовсе (битый заголовок) — пробуем: декодер скажет сам.
+    final speech = info.hasAudio || !info.hasVideo
+        ? _transcribe(request, kind, info.duration, warnings)
+        : null;
 
     final tags = info.tags;
     final fields = <(String, String?)>[
@@ -87,6 +95,9 @@ class AudioConverter implements DocumentConverter {
       ('Композитор', tags.composer),
       ('Комментарий', tags.comment),
     ];
+    if (speech?.language case final language?) {
+      fields.add(('Язык речи', _languageName(language)));
+    }
     final blocks = [
       [
         for (final (label, value) in fields)
@@ -97,6 +108,10 @@ class AudioConverter implements DocumentConverter {
         md.heading(2, 'Текст песни'),
         _paragraphs(tags.lyrics!),
       ],
+      if (speech != null && speech.segments.isNotEmpty) ...[
+        md.heading(2, 'Расшифровка'),
+        ..._transcriptParagraphs(speech.segments),
+      ],
     ];
     return ConversionResult(
       markdown: blocks.join('\n\n'),
@@ -106,7 +121,157 @@ class AudioConverter implements DocumentConverter {
       warnings: warnings,
     );
   }
+
+  /// Расшифровка или `null`; всё, что пошло не так, — в [warnings], не
+  /// исключением: метаданные уже есть.
+  Transcript? _transcribe(
+    ConversionRequest request,
+    FileKind kind,
+    Duration? duration,
+    List<ConversionWarning> warnings,
+  ) {
+    final settings = transcription;
+    if (settings == null) {
+      warnings.add(
+        const ConversionWarning(
+          'речь не распознаётся — в результате только метаданные',
+        ),
+      );
+      return null;
+    }
+    final outcome = transcribeAudio(
+      request.bytes,
+      settings,
+      mp4: kind == FileKind.mp4,
+      extension: _extensions[kind] ?? 'bin',
+      localPath: request.info.localPath,
+    );
+    final transcript = outcome.transcript;
+    if (transcript == null) {
+      warnings.add(
+        ConversionWarning(switch (outcome.failure!) {
+          TranscriptionFailure.unavailable =>
+            'распознавание речи недоступно: нет движка или модели',
+          TranscriptionFailure.unsupportedAudio =>
+            'звук в этом формате распознать не удалось: кодек не '
+                'поддерживается на этом устройстве',
+          TranscriptionFailure.undecodable =>
+            'звук не удалось декодировать для распознавания речи',
+          TranscriptionFailure.noAudio => 'в файле нет звука для распознавания',
+          TranscriptionFailure.failed => 'распознавание речи не удалось',
+        }),
+      );
+      return null;
+    }
+
+    if (transcript.segments.isEmpty) {
+      warnings.add(
+        ConversionWarning(
+          transcript.cancelled
+              ? 'распознавание остановлено до первой фразы'
+              : 'речь не найдена',
+        ),
+      );
+      return transcript;
+    }
+    warnings.add(
+      ConversionWarning(
+        'речь распознана офлайн (${transcript.engine}) — возможны ошибки, '
+        'имена и термины стоит проверить',
+      ),
+    );
+    if (transcript.cancelled) {
+      warnings.add(
+        ConversionWarning(
+          'распознавание остановлено на '
+          '${_duration(transcript.processed) ?? '0:00'} — расшифровка неполная',
+        ),
+      );
+    } else if (transcript.truncated) {
+      final total = _duration(duration);
+      warnings.add(
+        ConversionWarning(
+          'распознаны первые ${_timestamp(settings.maxDuration)}'
+          '${total != null ? ' из $total' : ''} — остальное не обработано',
+        ),
+      );
+    }
+    return transcript;
+  }
 }
+
+/// Расширение файла для декодера платформы — по сигнатуре, не по имени.
+const _extensions = {
+  FileKind.mp3: 'mp3',
+  FileKind.flac: 'flac',
+  FileKind.ogg: 'ogg',
+  FileKind.wav: 'wav',
+  FileKind.mp4: 'm4a',
+};
+
+/// Сегменты Whisper (по фразе-две) → абзацы с отметкой времени начала.
+/// Новый абзац — после паузы от двух секунд или когда текущий перевалил за
+/// ~600 знаков и кончился на конце предложения (не рвать фразу посередине;
+/// без знаков препинания — не длиннее 1200): стена текста на час записи
+/// нечитаема, а абзац на каждую фразу — шум для того, кто вставит это в
+/// промпт.
+List<String> _transcriptParagraphs(List<TranscriptSegment> segments) {
+  const pause = Duration(seconds: 2);
+  const maxLength = 600;
+  final sentenceEnd = RegExp(r'[.!?…]["»”)]?$');
+  final paragraphs = <String>[];
+  Duration? start;
+  Duration? lastEnd;
+  final text = StringBuffer();
+  void flush() {
+    if (text.isEmpty) return;
+    paragraphs.add(
+      '${md.bold(_timestamp(start!))} ${md.escapeInline(text.toString())}',
+    );
+    text.clear();
+  }
+
+  for (final segment in segments) {
+    final gap = lastEnd == null ? Duration.zero : segment.start - lastEnd;
+    final long =
+        text.length >= maxLength && sentenceEnd.hasMatch(text.toString()) ||
+        text.length >= maxLength * 2;
+    if (text.isNotEmpty && (gap >= pause || long)) flush();
+    if (text.isEmpty) {
+      start = segment.start;
+    } else {
+      text.write(' ');
+    }
+    text.write(_oneLine(segment.text));
+    lastEnd = segment.end;
+  }
+  flush();
+  return paragraphs;
+}
+
+/// `0:05`, `12:34`, `1:02:03` — как длительность, но и для нуля.
+String _timestamp(Duration time) =>
+    _duration(time) ?? '0:${(time.inSeconds % 60).toString().padLeft(2, '0')}';
+
+/// Код языка Whisper → по-русски. Неизвестный — кодом: лучше `ka`, чем
+/// ничего.
+String _languageName(String code) => switch (code) {
+  'ru' => 'русский',
+  'en' => 'английский',
+  'it' => 'итальянский',
+  'uk' => 'украинский',
+  'be' => 'белорусский',
+  'de' => 'немецкий',
+  'fr' => 'французский',
+  'es' => 'испанский',
+  'pt' => 'португальский',
+  'pl' => 'польский',
+  'kk' => 'казахский',
+  'tr' => 'турецкий',
+  'zh' => 'китайский',
+  'ja' => 'японский',
+  _ => code,
+};
 
 void _read(Uint8List bytes, FileKind kind, AudioInfo info) {
   switch (kind) {
