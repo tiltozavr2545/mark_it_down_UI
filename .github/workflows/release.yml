@@ -58,6 +58,31 @@ jobs:
       - name: Tesseract (модели и .so)
         run: ./tesseract/fetch.sh
 
+      # Распознавание речи (0.8): .so собираются из исходников NDK той же
+      # версии, что у приложения (whisper/versions.sh), — готовых нет, в
+      # отличие от Tesseract4Android. Кэш — по хешу рецепта.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            whisper/cache
+            app/android/app/src/main/jniLibs/arm64-v8a/*whisper*
+            app/android/app/src/main/jniLibs/arm64-v8a/*ggml*
+            app/android/app/src/main/jniLibs/arm64-v8a/.whisper-built-*
+          key: whisper-android-arm64-${{ hashFiles('whisper/build.sh', 'whisper/versions.sh', 'whisper/shim/**') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/models
+          key: whisper-models-${{ hashFiles('whisper/versions.sh') }}
+
+      - name: whisper (NDK, сборка .so и модели)
+        run: |
+          ndk="$(sed -n 's/^ANDROID_NDK_VERSION="\(.*\)"/\1/p' whisper/versions.sh)"
+          # (yes || true): под pipefail yes, получив SIGPIPE, роняет шаг с 141.
+          (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+          ./whisper/build.sh --android
+          ./whisper/fetch.sh
+
       # Только arm64: PDFium в APK лежит лишь под arm64-v8a, а других
       # телефонов практически не осталось. Подпись — debug-ключ (так
       # настроен android/app/build.gradle.kts, своего ключа пока нет).
@@ -77,14 +102,19 @@ jobs:
             exit 1
           fi
 
-      - name: OCR в APK
+      - name: OCR и распознавание речи в APK
         run: |
           unzip -l app/build/app/outputs/flutter-apk/app-release.apk > apk.txt
           for f in lib/arm64-v8a/libtesseract.so lib/arm64-v8a/libleptonica.so \
                    assets/flutter_assets/assets/tessdata/rus.traineddata \
-                   assets/flutter_assets/assets/tessdata/eng.traineddata; do
+                   assets/flutter_assets/assets/tessdata/eng.traineddata \
+                   lib/arm64-v8a/libmarkitdown_whisper.so lib/arm64-v8a/libwhisper.so \
+                   lib/arm64-v8a/libggml-cpu-android_armv8.0_1.so \
+                   assets/flutter_assets/assets/whisper/models.json \
+                   assets/flutter_assets/assets/whisper/ggml-small-q8_0.bin; do
             grep -q "$f" apk.txt || { echo "::error::В APK нет $f"; exit 1; }
           done
+          echo "APK: $(du -h app/build/app/outputs/flutter-apk/app-release.apk | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -120,6 +150,8 @@ jobs:
           test -f dist/windows/pdfium.dll
           ls dist/windows/tesseract*.dll dist/windows/leptonica*.dll
           test -f dist/windows/data/flutter_assets/assets/tessdata/rus.traineddata
+          test -f dist/windows/markitdown_whisper.dll
+          test -f dist/windows/data/flutter_assets/assets/whisper/models.json
           test -f dist/windows/sidecar/manifest.json || {
             echo "::error::В Windows-сборке нет сайдкара"; exit 1; }
           # Внутри архива — одна папка, а не россыпь файлов в «Загрузках».

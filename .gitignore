@@ -41,6 +41,15 @@ tesseract/native/
 tesseract/tessdata/
 app/assets/tessdata/*.traineddata
 
+# Распознавание речи: исходники, сборка и модели качаются whisper/fetch.sh и
+# собираются whisper/build.sh, в репозиторий не коммитятся
+whisper/cache/
+whisper/build/
+whisper/native/
+whisper/models/
+app/assets/whisper/*.bin
+app/assets/whisper/models.json
+
 # Claude Code: локальный конфиг и launch-профили, они per-machine
 .claude/settings.local.json
 .claude/launch.json

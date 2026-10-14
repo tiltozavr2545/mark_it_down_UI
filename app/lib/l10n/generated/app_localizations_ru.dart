@@ -24,6 +24,25 @@ class AppLocalizationsRu extends AppLocalizations {
   String get convertingLabel => 'Конвертируется…';
 
   @override
+  String get transcribingLabel => 'Распознаётся речь…';
+
+  @override
+  String transcribingProgressLabel(int percent) {
+    return 'Распознаётся речь… $percent %';
+  }
+
+  @override
+  String get transcribingHint =>
+      'Офлайн, на этом устройстве. Длинная запись — это минуты.';
+
+  @override
+  String get stoppingLabel =>
+      'Останавливается — дожидаемся текущего фрагмента…';
+
+  @override
+  String get stopButton => 'Остановить';
+
+  @override
   String get copyButton => 'Скопировать';
 
   @override

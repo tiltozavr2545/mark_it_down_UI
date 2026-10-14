@@ -32,6 +32,15 @@ tesseract` (≈10 минут, cmake + компилятор C/C++), дальше 
 падают. CI Linux берёт Tesseract из пакетов Ubuntu, CI Windows собирает
 `build.sh` с кэшем.
 
+Распознавание речи (0.8) — так же, но тяжелее: `make whisper` собирает
+whisper.cpp с прослойкой (`whisper/build.sh` → `whisper/native/host/`,
+≈10 минут на Intel Mac — десяток вариантов CPU-бэкенда) и качает модели
+(`whisper/fetch.sh`, 265 МБ → `whisper/models/` и
+`app/assets/whisper/`). В `make test` модели не качаются: дальше `make
+test` сам находит библиотеки и гоняет `core/test/speech_test.dart`, без
+них — пропускает. CI и Linux, и Windows собирают и качают с кэшем по хешу
+рецепта.
+
 ## CI
 
 GitHub Actions
@@ -130,7 +139,11 @@ cd app && flutter build windows --release
 Flutter в `data/flutter_assets/assets/tessdata/`. DLL Tesseract обязательны,
 как `pdfium.dll`: их собирает `./tesseract/build.sh` (Git Bash + Visual
 Studio 2022, ≈10 минут; в CI — с кэшем по хешу рецепта), модели и
-Android-`.so` качает `./tesseract/fetch.sh`. `pdfium.dll` обязательна: без
+Android-`.so` качает `./tesseract/fetch.sh`. Так же обязательны DLL
+распознавания речи (`markitdown_whisper.dll`, `whisper.dll`, `ggml*.dll`,
+варианты `ggml-cpu-*.dll`) — `./whisper/build.sh`; модели едут ассетами в
+`data/flutter_assets/assets/whisper/` (`./whisper/fetch.sh`, +265 МБ к
+zip). `pdfium.dll` обязательна: без
 `pdfium/native/host/pdfium.dll` (её качает `./pdfium/fetch.sh` в Git Bash)
 CMake падает с понятной ошибкой, а не собирает приложение без PDF. Сайдкар
 необязателен: без `sidecar/dist/windows-x86_64/manifest.json` выходит
@@ -286,12 +299,19 @@ Dart-ядром, разработка), а скрипт подписи сам п
 make fetch-pdfium     # libpdfium.so в jniLibs/arm64-v8a — один раз
 make fetch-tesseract  # libtesseract/libleptonica/libjpeg/libpngx.so туда же
                       # + модели rus/eng в app/assets/tessdata/
+./whisper/build.sh --android  # libmarkitdown_whisper/libwhisper/libggml*.so
+                              # туда же — NDK 27.0.12077973, ≈10 минут
+./whisper/fetch.sh    # модели Whisper в app/assets/whisper/ (265 МБ)
 cd app && flutter build appbundle --release
 ```
 
 Без `fetch-tesseract` APK собирается (в `assets/tessdata/` лежит только
 `.gitkeep`), но OCR в нём недоступен — приложение так и пишет в
-предупреждении. Релизный джоб проверяет, что `.so` и модели в APK есть.
+предупреждении. То же с распознаванием речи без `whisper/`-шагов. Релизный
+джоб проверяет, что `.so` и модели в APK есть. С моделью Whisper APK весит
+≈300 МБ: выше лимита базового модуля Play (200 МБ) — для Play понадобится
+Play Asset Delivery, см.
+[future-development.md](future-development.md#распознавание-речи-что-дальше).
 
 Без этого шага приложение всё равно собирается, но PDF падает в рантайме с
 «не удалось прочитать файл»: `DynamicLibrary.open('libpdfium.so')` просто не

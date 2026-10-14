@@ -3,7 +3,7 @@ description: >
   Конвейер конвертации файлов в Markdown. Чистый Dart, без зависимости от
   flutter: тестируется как dart test, уезжает в изолят, при необходимости
   становится CLI.
-version: 0.7.0
+version: 0.8.0
 publish_to: none
 
 environment:

@@ -1,4 +1,4 @@
-.PHONY: verify pub-get format analyze test fetch-pdfium fetch-tesseract tesseract sidecar sidecar-lock sign-sidecar verify-version
+.PHONY: verify pub-get format analyze test fetch-pdfium fetch-tesseract tesseract whisper sidecar sidecar-lock sign-sidecar verify-version
 
 # То же гоняет CI: джоб verify — через `make verify`, а джоб windows — теми
 # же шагами, расписанными вручную (в Git Bash раннера нет make, а здесь
@@ -37,9 +37,18 @@ tesseract:
 
 TESSERACT_HOST_DIR := $(CURDIR)/tesseract/native/host
 
+# Распознавание речи (0.8): сборка whisper.cpp — минуты, модели — 265 МБ,
+# поэтому, как `make tesseract`, в verify не входит: без него тесты
+# транскрипции (core/test/speech_test.dart) пропускаются, с ним — гоняются.
+whisper:
+	./whisper/build.sh
+	./whisper/fetch.sh
+
+WHISPER_HOST_DIR := $(CURDIR)/whisper/native/host
+
 test: fetch-pdfium fetch-tesseract
 	cd app && flutter test
-	cd core && $(if $(wildcard $(TESSERACT_HOST_DIR)/*),MARKITDOWN_TESSERACT_DIR=$(TESSERACT_HOST_DIR)) MARKITDOWN_PDFIUM_PATH=$(CURDIR)/pdfium/native/host/libpdfium.$(if $(filter Darwin,$(shell uname -s)),dylib,so) dart test
+	cd core && $(if $(wildcard $(TESSERACT_HOST_DIR)/*),MARKITDOWN_TESSERACT_DIR=$(TESSERACT_HOST_DIR)) $(if $(wildcard $(WHISPER_HOST_DIR)/*),MARKITDOWN_WHISPER_DIR=$(WHISPER_HOST_DIR)) MARKITDOWN_PDFIUM_PATH=$(CURDIR)/pdfium/native/host/libpdfium.$(if $(filter Darwin,$(shell uname -s)),dylib,so) dart test
 
 # Собирает Python-сайдкар для хоста в sidecar/dist/<host>/ — см.
 # docs/python-sidecar.md. Намеренно НЕ входит в verify/test: качает сотни МБ

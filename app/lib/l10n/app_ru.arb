@@ -7,6 +7,11 @@
   "noFilename": "(без имени)",
 
   "convertingLabel": "Конвертируется…",
+  "transcribingLabel": "Распознаётся речь…",
+  "transcribingProgressLabel": "Распознаётся речь… {percent} %",
+  "transcribingHint": "Офлайн, на этом устройстве. Длинная запись — это минуты.",
+  "stoppingLabel": "Останавливается — дожидаемся текущего фрагмента…",
+  "stopButton": "Остановить",
 
   "copyButton": "Скопировать",
   "copiedConfirmation": "Скопировано в буфер обмена",

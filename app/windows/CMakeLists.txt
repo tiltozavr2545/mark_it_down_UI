@@ -113,6 +113,26 @@ endif()
 install(FILES ${TESSERACT_DLLS} DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# Распознавание речи (0.8): markitdown_whisper.dll (наша прослойка), whisper,
+# ggml, ggml-base и варианты CPU-бэкенда ggml-cpu-*.dll — рядом с .exe, где
+# их ищет loadWhisperLibrary в core/ и откуда ggml выбирает вариант под
+# процессор. Собирает whisper/build.sh (в CI — с кэшем), в репозиторий не
+# коммитится. Обязательны, как Tesseract: без них распознавание молча
+# пропало бы из сборки. Модели едут ассетами Flutter (whisper/fetch.sh).
+set(WHISPER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../whisper/native/host")
+file(GLOB WHISPER_DLLS
+  "${WHISPER_DIR}/markitdown_whisper.dll"
+  "${WHISPER_DIR}/whisper.dll"
+  "${WHISPER_DIR}/ggml.dll"
+  "${WHISPER_DIR}/ggml-base.dll"
+  "${WHISPER_DIR}/ggml-cpu-*.dll")
+list(LENGTH WHISPER_DLLS WHISPER_DLL_COUNT)
+if(WHISPER_DLL_COUNT LESS 5)
+  message(FATAL_ERROR "Нет DLL распознавания речи в whisper/native/host — сначала ./whisper/build.sh (Git Bash)")
+endif()
+install(FILES ${WHISPER_DLLS} DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Python-сайдкар (Этап 5, п. 4): sidecar/ рядом с .exe, где его ищет
 # SidecarConverter.discover(). Необязателен: без собранного
 # sidecar/dist/windows-x86_64 выходит Dart-only сборка — штатная, а не

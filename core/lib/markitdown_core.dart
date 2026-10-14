@@ -10,6 +10,9 @@ export 'src/conversion/converter_registry.dart';
 export 'src/conversion/document_converter.dart';
 export 'src/conversion/ocr/tesseract_bindings.dart' show tesseractLibDirEnvVar;
 export 'src/conversion/ocr/tesseract_ocr.dart' show OcrSettings, ocrAvailable;
+export 'src/conversion/speech/whisper_bindings.dart' show whisperLibDirEnvVar;
+export 'src/conversion/speech/whisper_transcriber.dart'
+    show TranscriptionSettings, TranscriptionControl, transcriptionAvailable;
 export 'src/conversion/sidecar/sidecar_converter.dart';
 export 'src/conversion/sidecar/sidecar_manifest.dart';
 export 'src/stream_info.dart';

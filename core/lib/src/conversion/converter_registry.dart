@@ -21,6 +21,7 @@ import 'converters/xml_converter.dart';
 import 'converters/zip_converter.dart';
 import 'document_converter.dart';
 import 'ocr/tesseract_ocr.dart';
+import 'speech/whisper_transcriber.dart';
 
 /// Итог прогона через реестр: либо результат, либо один из трёх понятных
 /// отказов. См. `docs/conversion-pipeline.md#ошибки`.
@@ -57,10 +58,12 @@ class ConverterRegistry {
   ///
   /// [ocr] — где лежат модели Tesseract; без него картинки и PDF-сканы
   /// отдаются без распознанного текста (так гоняются фикстуры: их вывод не
-  /// должен зависеть от версии движка на машине).
+  /// должен зависеть от версии движка на машине). [transcription] — то же
+  /// для речи в аудио (whisper.cpp).
   factory ConverterRegistry.defaultRegistry({
     List<DocumentConverter> extra = const [],
     OcrSettings? ocr,
+    TranscriptionSettings? transcription,
   }) => ConverterRegistry([
     ...extra,
     const CsvConverter(),
@@ -74,7 +77,7 @@ class ConverterRegistry {
     const ZipConverter(),
     PdfConverter(ocr: ocr),
     ImageConverter(ocr: ocr),
-    const AudioConverter(),
+    AudioConverter(transcription: transcription),
     const HtmlConverter(),
     const PlainTextConverter(),
   ]);

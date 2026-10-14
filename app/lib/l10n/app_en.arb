@@ -9,6 +9,21 @@
 
   "convertingLabel": "Converting…",
   "@convertingLabel": {"description": "Shown next to the spinner while conversion runs"},
+  "transcribingLabel": "Recognizing speech…",
+  "@transcribingLabel": {"description": "Audio file: speech recognition started, progress not known yet (decoding, loading the model)"},
+  "transcribingProgressLabel": "Recognizing speech… {percent}%",
+  "@transcribingProgressLabel": {
+    "description": "Audio file: share of the recording already recognized",
+    "placeholders": {
+      "percent": {"type": "int"}
+    }
+  },
+  "transcribingHint": "Offline, on this device. A long recording takes minutes.",
+  "@transcribingHint": {"description": "Under the speech recognition progress bar"},
+  "stoppingLabel": "Stopping — finishing the current fragment…",
+  "@stoppingLabel": {"description": "After Stop was pressed: whisper finishes the current 30-second window"},
+  "stopButton": "Stop",
+  "@stopButton": {"description": "Stops speech recognition; what is already recognized is kept"},
 
   "copyButton": "Copy",
   "copiedConfirmation": "Copied to clipboard",

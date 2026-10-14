@@ -128,6 +128,36 @@ abstract class AppLocalizations {
   /// **'Converting…'**
   String get convertingLabel;
 
+  /// Audio file: speech recognition started, progress not known yet (decoding, loading the model)
+  ///
+  /// In en, this message translates to:
+  /// **'Recognizing speech…'**
+  String get transcribingLabel;
+
+  /// Audio file: share of the recording already recognized
+  ///
+  /// In en, this message translates to:
+  /// **'Recognizing speech… {percent}%'**
+  String transcribingProgressLabel(int percent);
+
+  /// Under the speech recognition progress bar
+  ///
+  /// In en, this message translates to:
+  /// **'Offline, on this device. A long recording takes minutes.'**
+  String get transcribingHint;
+
+  /// After Stop was pressed: whisper finishes the current 30-second window
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping — finishing the current fragment…'**
+  String get stoppingLabel;
+
+  /// Stops speech recognition; what is already recognized is kept
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get stopButton;
+
   /// No description provided for @copyButton.
   ///
   /// In en, this message translates to:
