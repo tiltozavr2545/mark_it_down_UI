@@ -207,18 +207,27 @@ void main() {
       expect((failure as CorruptedFileFailure).converterId, 'json');
     });
 
-    test('превышен лимит размера', () async {
+    test('предела на размер файла нет', () async {
       final bytes = Uint8List.fromList('hello'.codeUnits);
       final info = StreamInfo.fromHead(
         bytes,
         filename: 'huge.txt',
-        lengthBytes: 100 * 1024 * 1024,
+        lengthBytes: 5 * 1024 * 1024 * 1024,
       );
+
+      final outcome = await registry.convert(bytes, info);
+
+      expect(outcome, isA<ConversionSuccess>());
+    });
+
+    test('превышен суммарный распакованный объём архива — хард-фейл', () async {
+      final bytes = _buildZip({'a.txt': 'A' * 600, 'b.txt': 'B' * 600});
+      final info = StreamInfo.fromHead(bytes, filename: 'big.zip');
 
       final outcome = await registry.convert(
         bytes,
         info,
-        limits: const ConversionLimits(maxInMemoryBytes: 50 * 1024 * 1024),
+        limits: const ConversionLimits(maxExtractedBytes: 1000),
       );
 
       expect(outcome, isA<ConversionError>());

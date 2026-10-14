@@ -28,8 +28,8 @@ class CorruptedFileFailure extends ConversionFailure {
 
 /// Превышен один из [ConversionLimits].
 class LimitExceededFailure extends ConversionFailure {
-  /// Какой именно лимит превышен, человекочитаемо («размер файла: 120 МБ,
-  /// предел 50 МБ»).
+  /// Какой именно лимит превышен, человекочитаемо («число файлов в архиве
+  /// превышает предел 2000»).
   final String description;
 
   const LimitExceededFailure(this.description);

@@ -112,15 +112,6 @@ class ConverterRegistry {
       );
     }
 
-    if (info.lengthBytes > limits.maxInMemoryBytes) {
-      return ConversionError(
-        LimitExceededFailure(
-          'размер файла ${_megabytes(info.lengthBytes)} МБ превышает предел '
-          '${_megabytes(limits.maxInMemoryBytes)} МБ',
-        ),
-      );
-    }
-
     budget.filesVisited++;
     if (budget.filesVisited > limits.maxFilesInArchive) {
       return ConversionError(
@@ -130,12 +121,14 @@ class ConverterRegistry {
       );
     }
 
-    budget.extractedBytes += info.lengthBytes;
-    if (budget.extractedBytes > limits.maxInMemoryBytes) {
+    // Сам файл верхнего уровня не считается: предела на его размер нет,
+    // бюджет — только на то, что из него распаковано.
+    if (depth > 0) budget.extractedBytes += info.lengthBytes;
+    if (budget.extractedBytes > limits.maxExtractedBytes) {
       return ConversionError(
         LimitExceededFailure(
           'суммарный распакованный размер ${_megabytes(budget.extractedBytes)} МБ '
-          'превышает предел ${_megabytes(limits.maxInMemoryBytes)} МБ',
+          'превышает предел ${_megabytes(limits.maxExtractedBytes)} МБ',
         ),
       );
     }
