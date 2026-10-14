@@ -11,7 +11,7 @@
  * (mdw_decode.c) и выбор варианта CPU-бэкенда ggml под процессор.
  *
  * Строки — UTF-8. Возвращаемые указатели на строки живут до следующего
- * вызова mdw_transcribe/mdw_close_model с тем же контекстом.
+ * вызова mdw_transcribe_* или mdw_session_free с тем же сеансом.
  */
 #ifndef MDW_H
 #define MDW_H
@@ -40,6 +40,7 @@ extern "C" {
 #define MDW_ERR_CANCELLED 5   /* остановлено флагом cancel */
 #define MDW_ERR_TRANSCRIBE 6  /* whisper_full вернул ошибку */
 #define MDW_ERR_IO 7          /* файл не открылся */
+#define MDW_ERR_MODEL 8       /* модель Whisper не открылась */
 
 /*
  * Общая память между изолятом конвертации и главным изолятом приложения:
@@ -50,7 +51,7 @@ extern "C" {
  */
 typedef struct mdw_control {
   volatile int32_t cancel;   /* != 0 — остановить как можно скорее */
-  volatile int32_t progress; /* 0–100, пишет mdw_transcribe */
+  volatile int32_t progress; /* 0–100, пишет mdw_transcribe_* */
 } mdw_control;
 
 /* Версия whisper.cpp, с которой собрана библиотека (например "1.9.5"). */
@@ -67,8 +68,10 @@ MDW_API int mdw_init(const char *dir);
 
 /*
  * Звук в памяти → float 16 кГц моно: WAV, MP3, FLAC, Ogg Vorbis, Ogg Opus.
- * Не больше max_samples отсчётов (остальное отбрасывается — это предел
- * длительности расшифровки). Результат освобождается mdw_free_samples.
+ * Не больше max_samples отсчётов (остальное отбрасывается). Результат
+ * освобождается mdw_free_samples. Распознаванию это не нужно — оно
+ * декодирует само, кусками (mdw_transcribe_*); здесь — проверка декодеров
+ * целиком.
  */
 MDW_API int mdw_decode_memory(const uint8_t *data, int64_t size,
                               int64_t max_samples, float **out,
@@ -85,27 +88,58 @@ MDW_API int mdw_decode_file(const char *path, int64_t max_samples, float **out,
 
 MDW_API void mdw_free_samples(float *samples);
 
-/* Модель Whisper (ggml). NULL — не открылась. */
-MDW_API void *mdw_open_model(const char *model_path);
-MDW_API void mdw_close_model(void *model);
+/*
+ * Сеанс распознавания с моделью Whisper (ggml) по пути model_path. Модель
+ * грузится при первом куске звука, а не здесь: файл, который не
+ * декодировался, не стоит секунд загрузки 264 МБ, а второй вызов
+ * mdw_transcribe_* (другим декодером) её не перезагружает. NULL — нет
+ * памяти.
+ */
+MDW_API void *mdw_session_new(const char *model_path);
+MDW_API void mdw_session_free(void *session);
 
 /*
- * Распознаёт samples. language — код ("ru", "en", "it") или "auto";
- * vad_model_path — модель Silero VAD или NULL (без VAD). control может
- * быть NULL. При отмене возвращает MDW_ERR_CANCELLED, а уже распознанные
- * сегменты остаются доступны mdw_segment_*.
+ * Декодирует звук и распознаёт его кусками по 10 минут — по мере
+ * декодирования: память не растёт с длительностью записи (иначе час — это
+ * ≈0,6 ГБ: отсчёты, их копия после VAD и мел-спектрограмма всего файла).
+ * Кусок режется в самом тихом месте последних 15 секунд, чтобы не рвать
+ * слово. Язык ("ru", "en", "it" или "auto") при "auto" определяется по
+ * первому куску с речью и держится на весь файл.
+ *
+ * expected_samples — ожидаемая длина (из метаданных) для прогресса; 0 —
+ * неизвестна, прогресс остаётся 0. vad_model_path — Silero VAD или NULL.
+ * control может быть NULL.
+ *
+ * MDW_ERR_UNSUPPORTED/MDW_ERR_DECODE/MDW_ERR_NO_AUDIO — декодер не дал ни
+ * одного отсчёта, распознавание не начиналось (можно пробовать другой
+ * декодер в том же сеансе). Сбой декодера посреди потока — не ошибка:
+ * распознаётся то, что успели. MDW_ERR_CANCELLED — остановлено флагом
+ * cancel; уже распознанное доступно mdw_segment_*. Флаг, поднятый после
+ * последнего окна, результат не портит — MDW_OK.
  */
-MDW_API int mdw_transcribe(void *model, const float *samples, int64_t n,
-                           const char *language, const char *vad_model_path,
-                           int threads, mdw_control *control);
+MDW_API int mdw_transcribe_memory(void *session, const uint8_t *data,
+                                  int64_t size, int64_t expected_samples,
+                                  const char *language,
+                                  const char *vad_model_path, int threads,
+                                  mdw_control *control);
 
-MDW_API int mdw_segment_count(void *model);
-MDW_API const char *mdw_segment_text(void *model, int i);
-MDW_API int64_t mdw_segment_start_ms(void *model, int i);
-MDW_API int64_t mdw_segment_end_ms(void *model, int i);
+/* То же для файла — декодером платформы (см. mdw_decode_file). */
+MDW_API int mdw_transcribe_file(void *session, const char *path,
+                                int64_t expected_samples, const char *language,
+                                const char *vad_model_path, int threads,
+                                mdw_control *control);
 
-/* Язык последнего распознавания: "ru", "en", "it"… или "" */
-MDW_API const char *mdw_language(void *model);
+MDW_API int mdw_segment_count(void *session);
+MDW_API const char *mdw_segment_text(void *session, int i);
+MDW_API int64_t mdw_segment_start_ms(void *session, int i);
+MDW_API int64_t mdw_segment_end_ms(void *session, int i);
+
+/* Язык последнего распознавания: "ru", "en", "it"… или "" — речи не
+ * нашлось. */
+MDW_API const char *mdw_language(void *session);
+
+/* Сколько звука прошло через распознавание, мс. */
+MDW_API int64_t mdw_processed_ms(void *session);
 
 #ifdef __cplusplus
 }

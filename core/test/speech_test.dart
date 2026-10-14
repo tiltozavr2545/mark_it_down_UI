@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:markitdown_core/markitdown_core.dart';
 import 'package:markitdown_core/src/conversion/speech/whisper_bindings.dart';
 import 'package:markitdown_core/src/conversion/speech/whisper_transcriber.dart';
@@ -176,22 +177,110 @@ void main() {
       }
     }, skip: noModel);
 
-    test('предел длительности — распознано начало и сказано об этом', () async {
-      final short = ConverterRegistry.defaultRegistry(
-        transcription: TranscriptionSettings(
-          modelPath: settings.modelPath,
-          vadModelPath: settings.vadModelPath,
-          maxDuration: const Duration(seconds: 3),
-        ),
+    // Dart проверяет флаг до прослойки сам, поэтому её ранний выход —
+    // напрямую: остановленное до вызова не декодируется и не грузит модель.
+    test('отмена до mdw_transcribe_memory — сразу «остановлено»', () {
+      final bindings = WhisperBindings(loadWhisperLibrary()!.library);
+      final bytes = read('speech/ru.wav');
+      final data = malloc<Uint8>(bytes.length);
+      data.asTypedList(bytes.length).setAll(0, bytes);
+      final modelPath = settings.modelPath.toNativeUtf8();
+      final session = bindings.newSession(modelPath);
+      final language = 'auto'.toNativeUtf8();
+      final control = TranscriptionControl()..cancel();
+      try {
+        final status = bindings.transcribeMemory(
+          session,
+          data,
+          bytes.length,
+          0,
+          language,
+          nullptr,
+          1,
+          Pointer<MdwControl>.fromAddress(control.address),
+        );
+        expect(status, MdwStatus.cancelled);
+        expect(bindings.segmentCount(session), 0);
+        expect(bindings.processedMs(session), 0, reason: 'не декодировалось');
+      } finally {
+        control.dispose();
+        bindings.freeSession(session);
+        malloc
+          ..free(data)
+          ..free(modelPath)
+          ..free(language);
+      }
+    }, skip: noModel);
+
+    // Кусок — 10 минут: речь, 10,5 минуты тишины, снова речь. Граница
+    // куска ложится в тишину, вторая фраза — во втором куске со сдвигом
+    // времени, язык — с первого куска. Распознаётся только речь (VAD),
+    // поэтому тест идёт секунды, а не минуты.
+    test('длинная запись — кусками: время и язык сквозные', () async {
+      final (speech, _) = engine!.decodeMemory(read('speech/ru.wav'), 1 << 30);
+      final words = Float32List.fromList(
+        speech!.samples.asTypedList(speech.length),
       );
-      final result = await convert('speech/ru.wav', using: short);
-      final text = result.markdown.toLowerCase();
-      expect(text, contains('привет'));
-      expect(text, isNot(contains('понедельник')));
-      expect(
-        messages(result),
-        contains(contains('распознаны первые 0:03 из 0:06')),
+      speech.dispose();
+      const gap = 16000 * 630;
+      final all = Float32List(words.length * 2 + gap)
+        ..setAll(0, words)
+        ..setAll(words.length + gap, words);
+      final bytes = _wav16(all);
+
+      final control = TranscriptionControl();
+      try {
+        final long = ConverterRegistry.defaultRegistry(
+          transcription: settings.withControl(control),
+        );
+        final info = StreamInfo.fromHead(bytes, filename: 'long.wav');
+        final outcome = await long.convert(bytes, info);
+        final result = (outcome as ConversionSuccess).result;
+        final paragraphs = result.markdown
+            .split('\n\n')
+            .where((block) => block.startsWith('**'))
+            .toList();
+        expect(paragraphs, hasLength(2), reason: result.markdown);
+        expect(paragraphs[0], startsWith('**0:00** '));
+        expect(paragraphs[1], matches(RegExp(r'^\*\*10:3\d\*\* ')));
+        for (final paragraph in paragraphs) {
+          expectMostOf(paragraph, [
+            'распознавания речи',
+            'встреча',
+            'понедельник',
+            'утра',
+          ]);
+        }
+        expect(result.markdown, contains('- **Язык речи:** русский'));
+        expect(messages(result), isNot(contains(contains('остановлено'))));
+        expect(control.progress, 100);
+      } finally {
+        control.dispose();
+      }
+    }, skip: noModel);
+
+    // Граница куска посреди речи: тишина до 9:40, затем фраза шесть раз
+    // подряд до 10:16 — в последних 15 секундах куска тишины нет, и он
+    // режется в паузе между фразами. Остаток куска переносится в следующий:
+    // потеряй или испорти его — пропала бы фраза.
+    test('граница куска в речи — ни одна фраза не потеряна', () async {
+      final (speech, _) = engine!.decodeMemory(read('speech/ru.wav'), 1 << 30);
+      final words = Float32List.fromList(
+        speech!.samples.asTypedList(speech.length),
       );
+      speech.dispose();
+      const silence = 16000 * 580;
+      final all = Float32List(silence + words.length * 6);
+      for (var i = 0; i < 6; i++) {
+        all.setAll(silence + words.length * i, words);
+      }
+      final bytes = _wav16(all);
+      final info = StreamInfo.fromHead(bytes, filename: 'boundary.wav');
+      final outcome = await registry.convert(bytes, info);
+      final markdown = (outcome as ConversionSuccess).result.markdown;
+      final count = 'понедельник'.allMatches(markdown.toLowerCase()).length;
+      expect(count, greaterThanOrEqualTo(5), reason: markdown);
+      expect(markdown, contains('- **Язык речи:** русский'));
     }, skip: noModel);
   });
 
@@ -317,4 +406,35 @@ void main() {
       audio.dispose();
     }, skip: noLibrary);
   });
+}
+
+/// 16 кГц моно float → WAV 16 бит: длинная запись для теста кусков без
+/// фикстуры на 20 МБ.
+Uint8List _wav16(Float32List samples) {
+  final data = ByteData(44 + samples.length * 2);
+  void ascii(int at, String text) {
+    for (var i = 0; i < text.length; i++) {
+      data.setUint8(at + i, text.codeUnitAt(i));
+    }
+  }
+
+  ascii(0, 'RIFF');
+  data.setUint32(4, 36 + samples.length * 2, Endian.little);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  data
+    ..setUint32(16, 16, Endian.little)
+    ..setUint16(20, 1, Endian.little) // PCM
+    ..setUint16(22, 1, Endian.little) // моно
+    ..setUint32(24, 16000, Endian.little)
+    ..setUint32(28, 32000, Endian.little)
+    ..setUint16(32, 2, Endian.little)
+    ..setUint16(34, 16, Endian.little);
+  ascii(36, 'data');
+  data.setUint32(40, samples.length * 2, Endian.little);
+  for (var i = 0; i < samples.length; i++) {
+    final value = (samples[i].clamp(-1.0, 1.0) * 32767).round();
+    data.setInt16(44 + i * 2, value, Endian.little);
+  }
+  return data.buffer.asUint8List();
 }
