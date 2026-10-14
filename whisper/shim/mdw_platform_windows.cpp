@@ -83,7 +83,6 @@ std::wstring widen(const char *utf8) {
 int decode(const MediaFoundation &mf, const std::wstring &path, mdw_sink *sink) {
   IMFSourceReader *reader = nullptr;
   IMFMediaType *requested = nullptr;
-  IMFMediaType *actual = nullptr;
   int status = MDW_OK;
 
   const DWORD stream = static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM);
@@ -103,15 +102,36 @@ int decode(const MediaFoundation &mf, const std::wstring &path, mdw_sink *sink) 
   if (SUCCEEDED(hr)) hr = requested->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
   if (SUCCEEDED(hr)) hr = requested->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_Float);
   if (SUCCEEDED(hr)) hr = reader->SetCurrentMediaType(stream, nullptr, requested);
-  if (SUCCEEDED(hr)) hr = reader->GetCurrentMediaType(stream, &actual);
-  UINT32 channels = 0, rate = 0;
-  if (SUCCEEDED(hr)) hr = actual->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &channels);
-  if (SUCCEEDED(hr)) hr = actual->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &rate);
-  if (FAILED(hr) || channels == 0 || rate == 0) {
-    status = MDW_ERR_UNSUPPORTED;
-  } else {
-    status = mdw_sink_set_rate(sink, rate);
+  if (FAILED(hr)) {
+    release(requested);
+    release(reader);
+    return MDW_ERR_UNSUPPORTED;
   }
+
+  // Что на самом деле отдаёт декодер. Читается заново и после
+  // MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED: декодер AAC уточняет частоту
+  // и каналы по первому кадру (HE-AAC — вдвое чаще, чем в заголовке), и
+  // старые числа превратили бы звук в шум, на котором VAD не найдёт речи.
+  // Float просили, но принимаем и 16-битный PCM — не читать его как float.
+  UINT32 channels = 0, rate = 0, bits = 32;
+  bool is_float = true;
+  auto read_format = [&]() -> int {
+    IMFMediaType *actual = nullptr;
+    HRESULT result = reader->GetCurrentMediaType(stream, &actual);
+    GUID subtype = {};
+    if (SUCCEEDED(result)) result = actual->GetGUID(MF_MT_SUBTYPE, &subtype);
+    if (SUCCEEDED(result)) result = actual->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &channels);
+    if (SUCCEEDED(result)) result = actual->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &rate);
+    if (SUCCEEDED(result) && FAILED(actual->GetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, &bits))) {
+      bits = subtype == MFAudioFormat_Float ? 32 : 16;
+    }
+    release(actual);
+    if (FAILED(result) || channels == 0 || rate == 0) return MDW_ERR_UNSUPPORTED;
+    is_float = subtype == MFAudioFormat_Float && bits == 32;
+    if (!is_float && !(subtype == MFAudioFormat_PCM && bits == 16)) return MDW_ERR_UNSUPPORTED;
+    return mdw_sink_set_rate(sink, rate);
+  };
+  status = read_format();
 
   while (status == MDW_OK && !mdw_sink_full(sink)) {
     DWORD flags = 0;
@@ -121,14 +141,24 @@ int decode(const MediaFoundation &mf, const std::wstring &path, mdw_sink *sink) 
       status = MDW_ERR_DECODE;
       break;
     }
+    if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) {
+      status = read_format();
+      if (status != MDW_OK) {
+        release(sample);
+        break;
+      }
+    }
     if (sample != nullptr) {
       IMFMediaBuffer *buffer = nullptr;
       if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buffer))) {
         BYTE *data = nullptr;
         DWORD length = 0;
         if (SUCCEEDED(buffer->Lock(&data, nullptr, &length))) {
-          UINT64 frames = length / (sizeof(float) * channels);
-          status = mdw_sink_push(sink, reinterpret_cast<const float *>(data), frames, channels);
+          UINT64 frames = length / ((bits / 8) * channels);
+          status = is_float
+                       ? mdw_sink_push(sink, reinterpret_cast<const float *>(data), frames, channels)
+                       : mdw_sink_push_s16(sink, reinterpret_cast<const int16_t *>(data), frames,
+                                           channels);
           buffer->Unlock();
         }
         release(buffer);
@@ -142,7 +172,6 @@ int decode(const MediaFoundation &mf, const std::wstring &path, mdw_sink *sink) 
     }
   }
 
-  release(actual);
   release(requested);
   release(reader);
   return status;
