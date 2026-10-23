@@ -41,7 +41,10 @@ YouTube — название, просмотры, описание и субти
 Подробно — `docs/offline-and-privacy.md`.
 
 Заодно: в результат обычного HTML больше не попадает лишней строкой
-заголовок из `<title>`; `archive` 4 и `image` 4.12.
+заголовок из `<title>`; `archive` 4 и `image` 4.12. Tesseract4Android
+(`.so` для OCR на Android) пропал с JitPack — сборка качает тот же файл
+(sha256 прежний) из служебного пререлиза
+`deps-tesseract4android-4.9.0` этого репозитория.
 
 ## 0.8.2 — только GitHub Releases
 
