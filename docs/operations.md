@@ -115,7 +115,7 @@ make verify-version BASE_REF=origin/main
 
 | что | где лежит | для чего |
 |---|---|---|
-| Android keystore | вне репозитория, путь в `android/key.properties` (в `.gitignore`) | подпись `.aab` |
+| Android keystore | **нет** — Этап 7; будет вне репозитория (`android/key.properties` в `.gitignore`) и в GitHub Secrets | подпись APK; без постоянного ключа новая версия не ставится поверх старой |
 | Сертификат Authenticode (Windows) | **нет** — открытый вопрос (Этап 5, п. 6 → Этап 7) | подпись `.exe`/MSIX; без него SmartScreen предупреждает при первом запуске |
 | Apple Developer ID cert | Keychain сборочной машины | подпись macOS-бандла |
 | App-specific password / notarytool profile | Keychain (`xcrun notarytool store-credentials`) | нотаризация |
@@ -302,16 +302,15 @@ make fetch-tesseract  # libtesseract/libleptonica/libjpeg/libpngx.so туда ж
 ./whisper/build.sh --android  # libmarkitdown_whisper/libwhisper/libggml*.so
                               # туда же — NDK 27.0.12077973, ≈10 минут
 ./whisper/fetch.sh    # модели Whisper в app/assets/whisper/ (265 МБ)
-cd app && flutter build appbundle --release
+cd app && flutter build apk --release --target-platform android-arm64
 ```
 
 Без `fetch-tesseract` APK собирается (в `assets/tessdata/` лежит только
 `.gitkeep`), но OCR в нём недоступен — приложение так и пишет в
 предупреждении. То же с распознаванием речи без `whisper/`-шагов. Релизный
 джоб проверяет, что `.so` и модели в APK есть. С моделью Whisper APK весит
-≈300 МБ: выше лимита базового модуля Play (200 МБ) — для Play понадобится
-Play Asset Delivery, см.
-[future-development.md](future-development.md#распознавание-речи-что-дальше).
+≈300 МБ. Лимит Play (200 МБ базового модуля) нас не касается: в Google
+Play не публикуем, APK раздаётся через GitHub Releases.
 
 Без этого шага приложение всё равно собирается, но PDF падает в рантайме с
 «не удалось прочитать файл»: `DynamicLibrary.open('libpdfium.so')` просто не
@@ -321,9 +320,11 @@ Play Asset Delivery, см.
 в APK (Android-библиотека — `arm64`, кладётся туда же скриптом) — см.
 `pdfium/fetch.sh`.
 
-`compileSdk`/`targetSdk` держать на том, что требует Play; значения прибивать
-числом в `android/app/build.gradle.kts`, а не через переменные — чтобы при
-обновлении Flutter требование Play не поехало молча.
+`compileSdk`/`targetSdk` прибивать числом в `android/app/build.gradle.kts`,
+а не через переменные — чтобы при обновлении Flutter они не поехали молча.
+Требования Play к `targetSdk` нам не указ (в Play не публикуем), но совсем
+старый `targetSdk` Android ставит с предупреждением Play Protect или не
+ставит вовсе (Android 14+ отказывает при `targetSdk` < 23).
 
 ### iOS
 
@@ -349,14 +350,16 @@ macOS 12 слишком стар, `ITMS-90111`). Путь, если понадо
    ссылкой на `CHANGELOG.md`.
 
    **Подпись пока временная.** APK подписан debug-ключом раннера (своего
-   ключа нет) — для установки из файла хватает, для Play нет; ключ у
-   каждого релиза свой, поэтому новую версию поверх старой не поставить —
-   сначала удалить. Windows-сборка не подписана вовсе — SmartScreen
+   ключа нет) — для установки из файла хватает, но ключ у каждого релиза
+   свой, поэтому новую версию поверх старой не поставить — сначала
+   удалить. Лечится постоянным ключом в GitHub Secrets (Play для этого не
+   нужен). Windows-сборка не подписана вовсе — SmartScreen
    предупреждает. Оба вопроса — Этап 7.
 4. **Размер бандла по платформам записать в README.** Он — честная цена
    офлайна, и пользователь имеет право увидеть её до скачивания, а не после.
-5. Сейчас обе платформы — в GitHub Releases (Windows — zip, решение
-   Этапа 5); к Этапу 7 — Android в Play; macOS (вторичная) — DMG в GitHub Releases, только по отдельному
+5. Обе платформы — только в GitHub Releases (Windows — zip, решение
+   Этапа 5; в Google Play не публикуем — решение автора, 14.10.2026);
+   macOS (вторичная) — DMG в GitHub Releases, только по отдельному
    запросу (Mac App Store — отдельное решение, см.
    [python-sidecar.md](python-sidecar.md#про-app-store)).
 
