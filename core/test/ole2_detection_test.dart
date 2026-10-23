@@ -85,23 +85,39 @@ void main() {
   group('xls/msg/doc через реестр без сайдкара', () {
     final registry = ConverterRegistry.defaultRegistry();
 
-    for (final (name, streams, label) in [
-      ('xls', ['Workbook'], '.xls'),
-      ('msg', ['__properties_version1.0'], '.msg'),
-      ('doc', ['WordDocument'], '.doc'),
-    ]) {
-      test('$name — честное «не поддерживается» с названием формата', () async {
-        final bytes = buildCfb(streams);
-        final info = StreamInfo.fromHead(bytes, filename: 'file.$name');
+    test('doc — честное «не поддерживается» с названием формата', () async {
+      final bytes = buildCfb(['WordDocument']);
+      final info = StreamInfo.fromHead(bytes, filename: 'file.doc');
+      final outcome = await registry.convert(bytes, info);
+      expect(outcome, isA<ConversionError>());
+      final failure = (outcome as ConversionError).failure;
+      expect(failure, isA<UnsupportedFormatFailure>());
+      expect(
+        (failure as UnsupportedFormatFailure).detectedTypeLabel,
+        contains('.doc'),
+      );
+    });
+
+    // С 0.9 у xls и msg есть Dart-разбор.
+    test(
+      'xls с пустым потоком книги — «повреждён», а не «не поддерживается»',
+      () async {
+        final bytes = buildCfb(['Workbook']);
+        final info = StreamInfo.fromHead(bytes, filename: 'file.xls');
         final outcome = await registry.convert(bytes, info);
-        expect(outcome, isA<ConversionError>());
         final failure = (outcome as ConversionError).failure;
-        expect(failure, isA<UnsupportedFormatFailure>());
-        expect(
-          (failure as UnsupportedFormatFailure).detectedTypeLabel,
-          contains(label),
-        );
-      });
-    }
+        expect((failure as CorruptedFileFailure).converterId, 'xls');
+      },
+    );
+
+    test('msg без свойств — пустой шаблон письма, как у markitdown', () async {
+      final bytes = buildCfb(['__properties_version1.0']);
+      final info = StreamInfo.fromHead(bytes, filename: 'file.msg');
+      final outcome = await registry.convert(bytes, info);
+      expect(
+        (outcome as ConversionSuccess).result.markdown,
+        '# Email Message\n\n## Content',
+      );
+    });
   });
 }

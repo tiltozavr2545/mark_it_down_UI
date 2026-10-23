@@ -30,6 +30,11 @@ class StreamInfo {
   /// временный файл сам. Конвертеры Dart-ядра его не читают.
   final String? localPath;
 
+  /// Адрес, с которого файл скачан (режим «вставить ссылку»), — как
+  /// `stream_info.url` у markitdown: от него разрешаются относительные
+  /// ссылки в HTML и лентах. У файлов с диска `null`.
+  final String? url;
+
   const StreamInfo({
     required this.filename,
     required this.extension,
@@ -37,6 +42,7 @@ class StreamInfo {
     required this.lengthBytes,
     required this.detectedType,
     this.localPath,
+    this.url,
   });
 
   /// [head] — первые байты файла, достаточные для распознавания (для
@@ -48,6 +54,7 @@ class StreamInfo {
     String? mimeType,
     int? lengthBytes,
     String? localPath,
+    String? url,
   }) {
     final extension = _extensionOf(filename);
     return StreamInfo(
@@ -57,6 +64,7 @@ class StreamInfo {
       lengthBytes: lengthBytes ?? head.length,
       detectedType: detectType(head, extension: extension),
       localPath: localPath,
+      url: url,
     );
   }
 

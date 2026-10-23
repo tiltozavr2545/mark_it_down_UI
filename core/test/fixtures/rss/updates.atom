@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title type="html">&lt;b&gt;Обновления&lt;/b&gt; проекта</title>
+  <subtitle>Что нового</subtitle>
+  <id>urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6</id>
+  <updated>2026-10-15T12:00:00Z</updated>
+  <entry>
+    <title>Версия 0.9</title>
+    <id>urn:1</id>
+    <updated>2026-10-15T12:00:00Z</updated>
+    <summary>
+      Текст с отступами,
+        который не должен стать кодом.
+      Тег &lt;job_id&gt; остаётся текстом.
+    </summary>
+    <content type="xhtml" xml:base="https://example.ru/releases/">
+      <div xmlns="http://www.w3.org/1999/xhtml">
+        <p>Добавлены <strong>xls</strong> и <a href="0.9">msg</a> &amp; RSS.</p>
+      </div>
+    </content>
+  </entry>
+  <entry>
+    <title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Версия <em>0.8</em></div></title>
+    <id>urn:2</id>
+    <updated>2026-10-14T09:00:00Z</updated>
+    <summary type="html">&lt;p&gt;Распознавание &lt;i&gt;речи&lt;/i&gt;&lt;/p&gt;</summary>
+    <content type="application/octet-stream">AAECAw==</content>
+  </entry>
+</feed>

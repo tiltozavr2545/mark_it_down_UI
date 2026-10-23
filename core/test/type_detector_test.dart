@@ -12,7 +12,7 @@ Uint8List _buildZip(Map<String, String> entries) {
     archive.addFile(ArchiveFile(entry.key, bytes.length, bytes));
   }
   final encoded = ZipEncoder().encode(archive);
-  return Uint8List.fromList(encoded!);
+  return Uint8List.fromList(encoded);
 }
 
 void main() {

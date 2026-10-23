@@ -124,3 +124,13 @@ String codeBlock(String content, {String? language}) {
   final body = content.endsWith('\n') ? content : '$content\n';
   return '$fence\n$body```';
 }
+
+/// Нормализация, которую markitdown применяет к выводу любого конвертера:
+/// `\r\n` → `\n`, пробелы в конце строк убираются, три и больше переводов
+/// строки подряд схлопываются в два. Нужна там, где Dart-конвертер обязан
+/// совпасть с markitdown символ в символ (`msg`, `rss`).
+String normalizeLikeMarkitdown(String text) => text
+    .split(RegExp(r'\r?\n'))
+    .map((line) => line.trimRight())
+    .join('\n')
+    .replaceAll(RegExp(r'\n{3,}'), '\n\n');

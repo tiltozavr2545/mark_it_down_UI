@@ -122,6 +122,48 @@ abstract class AppLocalizations {
   /// **'(unnamed)'**
   String get noFilename;
 
+  /// Opens the dialog for converting a web page or a file by its URL
+  ///
+  /// In en, this message translates to:
+  /// **'Paste a link'**
+  String get pasteLinkButton;
+
+  /// No description provided for @linkDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Link to a page or file'**
+  String get linkDialogTitle;
+
+  /// No description provided for @linkDialogHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://…'**
+  String get linkDialogHint;
+
+  /// Under the URL field: the only network use of the app is downloading what the link points to
+  ///
+  /// In en, this message translates to:
+  /// **'The page or file is downloaded from this link. Your files are not sent anywhere.'**
+  String get linkDialogNote;
+
+  /// No description provided for @linkConvertButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert'**
+  String get linkConvertButton;
+
+  /// No description provided for @cancelButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancelButton;
+
+  /// Shown next to the spinner while the linked page or file is being downloaded
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get downloadingLabel;
+
   /// Shown next to the spinner while conversion runs
   ///
   /// In en, this message translates to:
@@ -223,6 +265,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{description}'**
   String errorLimitBody(String description);
+
+  /// No description provided for @errorNetworkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t download'**
+  String get errorNetworkTitle;
+
+  /// Link mode: the page or file couldn't be downloaded (no connection, HTTP error)
+  ///
+  /// In en, this message translates to:
+  /// **'{description}'**
+  String errorNetworkBody(String description);
 }
 
 class _AppLocalizationsDelegate

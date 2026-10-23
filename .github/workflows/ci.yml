@@ -68,9 +68,10 @@ jobs:
           git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
           make verify-version BASE_REF="origin/$BASE_BRANCH"
 
-      # Главная гарантия продукта — см. docs/offline-and-privacy.md. Ловим
-      # сетевую зависимость, как только она приезжает транзитивно, а не
-      # когда их наберётся тридцать.
+      # Сеть в приложении — только режим «ссылка», и только через dart:io в
+      # core/lib/src/web/ (docs/offline-and-privacy.md). Сетевой пакет —
+      # это сеть мимо этого модуля: ловим его, как только он приезжает
+      # транзитивно, а не когда их наберётся тридцать.
       #
       # web_socket_channel/http_parser/http_multi_server/shelf* сюда не
       # попадают намеренно: это внутренняя инфраструктура package:test,
@@ -92,20 +93,29 @@ jobs:
             exit 1
           fi
 
-      - name: нет android.permission.INTERNET в манифесте
+      # С 0.9 у APK есть INTERNET (режим «ссылка»), и гарантия держится на
+      # коде: сокеты и HTTP-клиент — только в core/lib/src/web/, где сеть
+      # ходит лишь по ссылке, которую дал человек. Новое место с сетью —
+      # осознанное решение с правкой этого шага, а не мимоходом.
+      - name: сеть только в core/lib/src/web/
         run: |
-          if grep -q 'android.permission.INTERNET' app/android/app/src/main/AndroidManifest.xml; then
-            echo "::error::AndroidManifest.xml запрашивает INTERNET"
+          if grep -rnE '\b(HttpClient|HttpServer|HttpOverrides|Socket|RawSocket|SecureSocket|ServerSocket|RawDatagramSocket|WebSocket|InternetAddress|NetworkInterface)\b' \
+               app/lib core/lib --include='*.dart' | grep -v '^core/lib/src/web/'; then
+            echo "::error::Сетевой код вне core/lib/src/web/"
             exit 1
           fi
 
-      # Ту же линию держит macOS: в Release нет сетевых entitlements, а
-      # песочница включена — без неё их отсутствие ничего не запрещает (см.
-      # docs/offline-and-privacy.md). Entitlements сайдкара — туда же.
-      - name: нет com.apple.security.network.* в Release.entitlements и сайдкаре
+      # macOS: в Release только исходящие соединения (network.client) —
+      # входящих (network.server) нет, песочница включена. Сайдкару сеть не
+      # нужна вовсе: его собственные entitlements без network.*.
+      - name: в Release.entitlements нет network.server, у сайдкара нет сети
         run: |
-          if grep -q '<key>com.apple.security.network' app/macos/Runner/Release.entitlements sidecar/*.entitlements; then
-            echo "::error::Сетевой entitlement в Release.entitlements или sidecar/*.entitlements"
+          if grep -q '<key>com.apple.security.network.server' app/macos/Runner/Release.entitlements; then
+            echo "::error::Входящие соединения (network.server) в Release.entitlements"
+            exit 1
+          fi
+          if grep -q '<key>com.apple.security.network' sidecar/*.entitlements; then
+            echo "::error::Сетевой entitlement в sidecar/*.entitlements"
             exit 1
           fi
           if ! grep -A1 '<key>com.apple.security.app-sandbox</key>' app/macos/Runner/Release.entitlements | grep -q '<true/>'; then

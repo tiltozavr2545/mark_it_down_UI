@@ -15,10 +15,15 @@ class PickedFile {
   /// временный файл; у буфера обмена путей нет.
   final String? localPath;
 
+  /// Адрес, с которого файл скачан (режим «ссылка»): по нему конвертеры
+  /// узнают YouTube и Wikipedia и разрешают относительные ссылки.
+  final String? url;
+
   const PickedFile({
     required this.bytes,
     this.filename,
     this.mimeType,
     this.localPath,
+    this.url,
   });
 }

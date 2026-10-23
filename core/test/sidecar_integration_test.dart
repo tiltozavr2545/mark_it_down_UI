@@ -15,8 +15,9 @@ import 'package:test/test.dart';
 ///     MARKITDOWN_PDFIUM_PATH=$PWD/../pdfium/native/host/libpdfium.dylib \
 ///     dart test test/sidecar_integration_test.dart
 ///
-/// Для `xls`/`msg` эталон (`*.expected.md`) — вывод самого сайдкара: Dart-
-/// конвертеров для них нет. Для остальных форматов расхождения с Dart-ядром
+/// Для `xls`/`msg` эталон (`*.expected.md`) — вывод самого сайдкара (у
+/// Dart-разбора `xls` эталон свой — `simple_dart.expected.md`; `msg` Dart
+/// повторяет символ в символ). Для остальных форматов расхождения с Dart-ядром
 /// разбирает `make compare-sidecar`, а здесь проверяется только, что сайдкар
 /// отработал и это именно он — по характерным для markitdown признакам.
 void main() {
@@ -73,7 +74,7 @@ void main() {
       );
     });
 
-    // xls и msg: Dart-конвертеров нет, поэтому эталон — вывод сайдкара, а
+    // xls и msg: сайдкар в приложении идёт на них первым, эталон — его вывод, а
     // главное — что детекция ядра сама отправляет их туда. Имя файла
     // нарочно без расширения: тип должен определиться по содержимому
     // (каталог OLE2), а не по подсказке.
@@ -144,9 +145,9 @@ void main() {
       expect(result.markdown, contains('## Первый слайд'));
     });
 
-    test('битый xls: отказ сайдкара — окончательный (запасного нет)', () async {
-      // Сигнатура OLE2 и каталог от .xls, но дальше мусор: markitdown не
-      // откроет, Dart-конвертера нет.
+    test('битый xls: отказали и сайдкар, и Dart-разбор', () async {
+      // Сигнатура OLE2 и каталог от .xls, но дальше мусор: не откроет ни
+      // markitdown, ни запасной Dart-разбор (0.9).
       final bytes = read('xls/simple.xls');
       final broken = Uint8List.fromList([
         ...bytes.sublist(0, 1024),

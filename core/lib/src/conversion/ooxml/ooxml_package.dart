@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
+import '../../type_detection/zip_family.dart';
+
 import '../document_converter.dart';
 
 /// Тонкая обёртка над `archive` для частей OOXML-пакета (`docx`/`xlsx`/
@@ -16,23 +18,19 @@ class OoxmlPackage {
   OoxmlPackage._(this._archive);
 
   factory OoxmlPackage.read(Uint8List bytes) {
-    try {
-      return OoxmlPackage._(ZipDecoder().decodeBytes(bytes, verify: false));
-    } catch (_) {
+    final archive = decodeZip(bytes);
+    if (archive == null) {
       throw const ConversionCorruptedException(
         'не удалось прочитать как zip-пакет',
       );
     }
+    return OoxmlPackage._(archive);
   }
 
   bool hasPart(String path) => _archive.findFile(path) != null;
 
   Uint8List? partBytes(String path) {
-    final file = _archive.findFile(path);
-    if (file == null) return null;
-    final content = file.content;
-    if (content is List<int>) return Uint8List.fromList(content);
-    return null;
+    return _archive.findFile(path)?.content;
   }
 
   /// `null`, если части нет или она не разбирается как XML — отсутствие

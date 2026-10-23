@@ -21,6 +21,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noFilename => '(unnamed)';
 
   @override
+  String get pasteLinkButton => 'Paste a link';
+
+  @override
+  String get linkDialogTitle => 'Link to a page or file';
+
+  @override
+  String get linkDialogHint => 'https://…';
+
+  @override
+  String get linkDialogNote =>
+      'The page or file is downloaded from this link. Your files are not sent anywhere.';
+
+  @override
+  String get linkConvertButton => 'Convert';
+
+  @override
+  String get cancelButton => 'Cancel';
+
+  @override
+  String get downloadingLabel => 'Downloading…';
+
+  @override
   String get convertingLabel => 'Converting…';
 
   @override
@@ -77,6 +99,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String errorLimitBody(String description) {
+    return '$description';
+  }
+
+  @override
+  String get errorNetworkTitle => 'Couldn\'t download';
+
+  @override
+  String errorNetworkBody(String description) {
     return '$description';
   }
 }

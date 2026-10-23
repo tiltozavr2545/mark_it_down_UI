@@ -14,11 +14,16 @@ TESSDATA_URL="https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/${TE
 TESSDATA_RUS_SHA256="e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225"
 TESSDATA_ENG_SHA256="7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
 
-# --- Android: готовые .so из Tesseract4Android (JitPack). Из AAR берутся
+# --- Android: готовые .so из Tesseract4Android. Из AAR берутся
 # только нативные библиотеки arm64-v8a; Java-обёртка не нужна — зовём C API
-# через FFI из core/. ---
+# через FFI из core/. Сам AAR — с JitPack, но в октябре 2026 JitPack
+# пересобрал тег 4.9.0 с ошибкой и файл пропал (у автора в GitHub Releases
+# AAR нет). Поэтому качаем копию того же файла (sha256 прежний) из
+# служебного пререлиза этого репозитория; исходный адрес был
+# https://jitpack.io/com/github/adaptech-cz/Tesseract4Android/tesseract4android/4.9.0/tesseract4android-4.9.0.aar
+# ---
 T4A_VERSION="4.9.0"
-T4A_URL="https://jitpack.io/com/github/adaptech-cz/Tesseract4Android/tesseract4android/${T4A_VERSION}/tesseract4android-${T4A_VERSION}.aar"
+T4A_URL="https://github.com/tiltozavr2545/mark_it_down_UI/releases/download/deps-tesseract4android-${T4A_VERSION}/tesseract4android-${T4A_VERSION}.aar"
 T4A_SHA256="bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a"
 
 # --- десктоп: исходники для build.sh ---

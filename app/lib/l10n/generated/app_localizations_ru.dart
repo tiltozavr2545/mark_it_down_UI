@@ -21,6 +21,28 @@ class AppLocalizationsRu extends AppLocalizations {
   String get noFilename => '(без имени)';
 
   @override
+  String get pasteLinkButton => 'Вставить ссылку';
+
+  @override
+  String get linkDialogTitle => 'Ссылка на страницу или файл';
+
+  @override
+  String get linkDialogHint => 'https://…';
+
+  @override
+  String get linkDialogNote =>
+      'Страница или файл скачаются по этой ссылке. Ваши файлы никуда не отправляются.';
+
+  @override
+  String get linkConvertButton => 'Конвертировать';
+
+  @override
+  String get cancelButton => 'Отмена';
+
+  @override
+  String get downloadingLabel => 'Скачивается…';
+
+  @override
   String get convertingLabel => 'Конвертируется…';
 
   @override
@@ -78,6 +100,14 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String errorLimitBody(String description) {
+    return '$description';
+  }
+
+  @override
+  String get errorNetworkTitle => 'Не удалось скачать';
+
+  @override
+  String errorNetworkBody(String description) {
     return '$description';
   }
 }

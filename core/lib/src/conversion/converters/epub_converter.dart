@@ -6,6 +6,7 @@ import 'package:xml/xml.dart';
 
 import '../../stream_info.dart';
 import '../../type_detection/detected_type.dart';
+import '../../type_detection/zip_family.dart';
 import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../converter_registry.dart';
@@ -32,10 +33,8 @@ class EpubConverter implements DocumentConverter {
 
   @override
   Future<ConversionResult> convert(ConversionRequest request) async {
-    Archive archive;
-    try {
-      archive = ZipDecoder().decodeBytes(request.bytes, verify: false);
-    } catch (_) {
+    final archive = decodeZip(request.bytes);
+    if (archive == null) {
       throw const ConversionCorruptedException(
         'не удалось прочитать как zip-пакет',
       );
@@ -76,13 +75,12 @@ class EpubConverter implements DocumentConverter {
       if (href == null) continue;
 
       final file = archive.findFile(href);
-      final content = file?.content;
-      if (content is! List<int>) {
+      final bytes = file?.content;
+      if (bytes == null) {
         warnings.add(ConversionWarning('глава "$href" отсутствует в архиве'));
         continue;
       }
 
-      final bytes = Uint8List.fromList(content);
       final info = StreamInfo.fromHead(bytes, filename: href);
       final outcome = await request.recurse(bytes, info);
       switch (outcome) {
@@ -114,7 +112,7 @@ class EpubConverter implements DocumentConverter {
 XmlDocument? _readXml(Archive archive, String path) {
   final file = archive.findFile(path);
   final content = file?.content;
-  if (content is! List<int>) return null;
+  if (content == null) return null;
   try {
     return XmlDocument.parse(utf8.decode(content, allowMalformed: true));
   } on XmlException {

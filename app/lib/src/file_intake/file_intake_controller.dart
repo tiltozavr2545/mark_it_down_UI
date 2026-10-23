@@ -12,7 +12,12 @@ enum FileIntakePhase { idle, converting, ready, failed }
 
 class FileIntakeState {
   final FileIntakePhase phase;
+
+  /// `null`, пока ссылка скачивается ([link]) или если она не скачалась.
   final StreamInfo? info;
+
+  /// Ссылка, которая сейчас скачивается (режим «ссылка»).
+  final String? link;
   final ConversionResult? result;
   final ConversionFailure? failure;
 
@@ -28,6 +33,7 @@ class FileIntakeState {
   const FileIntakeState._(
     this.phase, {
     this.info,
+    this.link,
     this.result,
     this.failure,
     this.transcribing = false,
@@ -50,10 +56,13 @@ class FileIntakeState {
          stopping: stopping,
        );
 
+  const FileIntakeState.downloading(String link)
+    : this._(FileIntakePhase.converting, link: link);
+
   const FileIntakeState.ready(StreamInfo info, ConversionResult result)
     : this._(FileIntakePhase.ready, info: info, result: result);
 
-  const FileIntakeState.failed(StreamInfo info, ConversionFailure failure)
+  const FileIntakeState.failed(StreamInfo? info, ConversionFailure failure)
     : this._(FileIntakePhase.failed, info: info, failure: failure);
 }
 
@@ -78,6 +87,7 @@ class FileIntakeController extends Notifier<FileIntakeState> {
       filename: file.filename,
       mimeType: file.mimeType,
       localPath: file.localPath,
+      url: file.url,
     );
     state = FileIntakeState.converting(info);
 
@@ -139,14 +149,46 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     }
   }
 
+  /// Режим «ссылка»: скачать страницу или файл по [text] (ссылка или текст
+  /// со ссылкой из «Поделиться») и дальше — как файл через [accept]: та же
+  /// конвертация, тот же прогресс распознавания речи у аудио по ссылке.
+  Future<void> acceptUrl(String text) async {
+    final generation = _supersede();
+    state = FileIntakeState.downloading(parseUserUrl(text)?.toString() ?? text);
+    final DownloadedUrl downloaded;
+    try {
+      downloaded = await downloadUrl(text);
+    } on WebFetchException catch (e) {
+      if (generation == _generation) {
+        state = FileIntakeState.failed(null, NetworkFailure(e.reason));
+      }
+      return;
+    }
+    // Пока качалось, человек мог выбрать файл или другую ссылку.
+    if (generation != _generation) return;
+    await accept(
+      PickedFile(
+        bytes: downloaded.bytes,
+        filename: downloaded.filename,
+        mimeType: downloaded.mimeType,
+        url: downloaded.url,
+      ),
+    );
+  }
+
   /// Остановить распознавание речи: уже распознанное придёт результатом с
   /// предупреждением, что расшифровка неполная.
   void stopTranscription() {
     final control = _control;
-    if (control == null || state.phase != FileIntakePhase.converting) return;
+    final info = state.info;
+    if (control == null ||
+        info == null ||
+        state.phase != FileIntakePhase.converting) {
+      return;
+    }
     control.cancel();
     state = FileIntakeState.converting(
-      state.info!,
+      info,
       transcribing: true,
       speechProgress: control.progress,
       stopping: true,

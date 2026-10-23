@@ -13,15 +13,21 @@ import 'converters/html_converter.dart';
 import 'converters/image_converter.dart';
 import 'converters/ipynb_converter.dart';
 import 'converters/json_converter.dart';
+import 'converters/msg_converter.dart';
 import 'converters/pdf_converter.dart';
 import 'converters/plain_text_converter.dart';
 import 'converters/pptx_converter.dart';
+import 'converters/rss_converter.dart';
+import 'converters/xls_converter.dart';
 import 'converters/xlsx_converter.dart';
+import 'converters/wikipedia_converter.dart';
 import 'converters/xml_converter.dart';
+import 'converters/youtube_converter.dart';
 import 'converters/zip_converter.dart';
 import 'document_converter.dart';
 import 'ocr/tesseract_ocr.dart';
 import 'speech/whisper_transcriber.dart';
+import '../web/web_fetcher.dart';
 
 /// Итог прогона через реестр: либо результат, либо один из трёх понятных
 /// отказов. См. `docs/conversion-pipeline.md#ошибки`.
@@ -59,19 +65,27 @@ class ConverterRegistry {
   /// [ocr] — где лежат модели Tesseract; без него картинки и PDF-сканы
   /// отдаются без распознанного текста (так гоняются фикстуры: их вывод не
   /// должен зависеть от версии движка на машине). [transcription] — то же
-  /// для речи в аудио (whisper.cpp).
+  /// для речи в аудио (whisper.cpp). [web] — сеть для режима «ссылка»:
+  /// субтитры YouTube; конвертеры YouTube и Wikipedia берут только
+  /// страницы, скачанные по ссылке (`StreamInfo.url`), и без [web].
   factory ConverterRegistry.defaultRegistry({
     List<DocumentConverter> extra = const [],
     OcrSettings? ocr,
     TranscriptionSettings? transcription,
+    WebFetcher? web,
   }) => ConverterRegistry([
     ...extra,
+    YouTubeConverter(web: web),
+    const WikipediaConverter(),
     const CsvConverter(),
     const JsonConverter(),
+    const RssConverter(),
     const XmlConverter(),
     const IpynbConverter(),
     const DocxConverter(),
     const XlsxConverter(),
+    const XlsConverter(),
+    const MsgConverter(),
     const PptxConverter(),
     const EpubConverter(),
     const ZipConverter(),

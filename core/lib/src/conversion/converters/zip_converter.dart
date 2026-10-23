@@ -1,10 +1,9 @@
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
-
 import '../../markdown_writer.dart' as md;
 import '../../stream_info.dart';
 import '../../type_detection/detected_type.dart';
+import '../../type_detection/zip_family.dart';
 import '../conversion_failure.dart';
 import '../conversion_request.dart';
 import '../conversion_result.dart';
@@ -44,10 +43,8 @@ class ZipConverter implements DocumentConverter {
 
   @override
   Future<ConversionResult> convert(ConversionRequest request) async {
-    Archive archive;
-    try {
-      archive = ZipDecoder().decodeBytes(request.bytes, verify: false);
-    } catch (_) {
+    final archive = decodeZip(request.bytes);
+    if (archive == null) {
       throw const ConversionCorruptedException(
         'не удалось прочитать как zip-архив',
       );
@@ -58,10 +55,7 @@ class ZipConverter implements DocumentConverter {
 
     for (final file in archive.files) {
       if (!file.isFile) continue;
-      final content = file.content;
-      if (content is! List<int>) continue;
-
-      final bytes = Uint8List.fromList(content);
+      final bytes = file.content;
       final info = StreamInfo.fromHead(bytes, filename: file.name);
       final outcome = await request.recurse(bytes, info);
 

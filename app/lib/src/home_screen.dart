@@ -31,16 +31,44 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _dragging = false;
-  StreamSubscription<List<PickedFile>>? _shareSubscription;
+  StreamSubscription<SharedInput>? _shareSubscription;
 
   @override
   void initState() {
     super.initState();
     if (Platform.isAndroid) {
       final shareIntake = ShareIntake();
-      shareIntake.initialFiles().then(_acceptAll);
-      _shareSubscription = shareIntake.fileStream().listen(_acceptAll);
+      shareIntake.initial().then(_acceptShared);
+      _shareSubscription = shareIntake.stream().listen(_acceptShared);
     }
+  }
+
+  /// Поделились файлом — как файл; ссылкой (YouTube, браузер) — режим
+  /// «ссылка». Текст без ссылки молча не принимается.
+  void _acceptShared(SharedInput input) {
+    if (input.files.isNotEmpty) {
+      _acceptAll(input.files);
+      return;
+    }
+    final link = input.link;
+    if (link != null && parseUserUrl(link) != null) {
+      ref.read(fileIntakeControllerProvider.notifier).acceptUrl(link);
+    }
+  }
+
+  Future<void> _pasteLink() async {
+    // Ссылка из буфера обмена — сразу в поле: обычно её только что
+    // скопировали. Читается по нажатию кнопки, а не на старте.
+    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+    final copied = clipboard?.text?.trim() ?? '';
+    if (!mounted) return;
+    final link = await showDialog<String>(
+      context: context,
+      builder: (context) =>
+          _LinkDialog(initial: parseUserUrl(copied) == null ? '' : copied),
+    );
+    if (link == null || link.trim().isEmpty) return;
+    ref.read(fileIntakeControllerProvider.notifier).acceptUrl(link);
   }
 
   @override
@@ -94,6 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               FileIntakePhase.idle => _EmptyState(
                 dragging: _dragging,
                 onPickFile: _pickFile,
+                onPasteLink: _pasteLink,
               ),
               FileIntakePhase.converting => _Converting(
                 state: state,
@@ -123,8 +152,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class _EmptyState extends StatelessWidget {
   final bool dragging;
   final VoidCallback onPickFile;
+  final VoidCallback onPasteLink;
 
-  const _EmptyState({required this.dragging, required this.onPickFile});
+  const _EmptyState({
+    required this.dragging,
+    required this.onPickFile,
+    required this.onPasteLink,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -154,8 +188,71 @@ class _EmptyState extends StatelessWidget {
           Text(l10n.dropHint),
           const SizedBox(height: 16),
           FilledButton(onPressed: onPickFile, child: Text(l10n.pickFileButton)),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: onPasteLink,
+            icon: const Icon(Icons.link),
+            label: Text(l10n.pasteLinkButton),
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _LinkDialog extends StatefulWidget {
+  final String initial;
+
+  const _LinkDialog({required this.initial});
+
+  @override
+  State<_LinkDialog> createState() => _LinkDialogState();
+}
+
+class _LinkDialogState extends State<_LinkDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      title: Text(l10n.linkDialogTitle),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(hintText: l10n.linkDialogHint),
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l10n.linkDialogNote,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancelButton),
+        ),
+        FilledButton(onPressed: _submit, child: Text(l10n.linkConvertButton)),
+      ],
     );
   }
 }
@@ -169,9 +266,11 @@ class _Converting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final info = state.info!;
+    final info = state.info;
     final progress = state.speechProgress;
-    final label = !state.transcribing
+    final label = info == null
+        ? l10n.downloadingLabel
+        : !state.transcribing
         ? l10n.convertingLabel
         : state.stopping
         ? l10n.stoppingLabel
@@ -186,11 +285,17 @@ class _Converting extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              info.filename ?? l10n.noFilename,
+              info == null
+                  ? state.link ?? ''
+                  : info.filename ?? info.url ?? l10n.noFilename,
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 8),
-            Text('${info.detectedType.label}, ${formatSize(info.lengthBytes)}'),
+            if (info != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${info.detectedType.label}, ${formatSize(info.lengthBytes)}',
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -261,7 +366,9 @@ class _PreviewResult extends StatelessWidget {
   Future<void> _save(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
     final path = await FilePicker.saveFile(
-      fileName: _markdownFileName(info.filename),
+      fileName: info.filename != null
+          ? _markdownFileName(info.filename)
+          : _titleFileName(result.title),
       type: FileType.custom,
       allowedExtensions: const ['md'],
       bytes: Uint8List.fromList(utf8.encode(result.markdown)),
@@ -290,7 +397,7 @@ class _PreviewResult extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                info.filename ?? l10n.noFilename,
+                info.filename ?? info.url ?? l10n.noFilename,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 4),
@@ -395,6 +502,10 @@ class _ConversionError extends StatelessWidget {
         l10n.errorLimitTitle,
         l10n.errorLimitBody(description),
       ),
+      NetworkFailure(description: final description) => (
+        l10n.errorNetworkTitle,
+        l10n.errorNetworkBody(description),
+      ),
     };
 
     return Container(
@@ -431,4 +542,18 @@ String _markdownFileName(String? originalFilename) {
   final dot = originalFilename.lastIndexOf('.');
   final base = dot > 0 ? originalFilename.substring(0, dot) : originalFilename;
   return '$base.md';
+}
+
+/// Страница по ссылке имени файла не имеет — берётся её заголовок, без
+/// символов, запрещённых в именах файлов Windows, и не длиннее разумного.
+String _titleFileName(String? title) {
+  final cleaned = (title ?? '')
+      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (cleaned.isEmpty) return 'converted.md';
+  final short = cleaned.length > 100
+      ? cleaned.substring(0, 100).trim()
+      : cleaned;
+  return '$short.md';
 }

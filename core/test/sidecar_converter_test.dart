@@ -684,35 +684,41 @@ void main() {
       });
     });
 
-    group('xls/msg: запасного нет — отказ сайдкара и есть ответ', () {
-      final xls = buildCfb(['Workbook']);
-      Future<ConversionOutcome> convertXls() =>
+    group('xls/msg: отказ сайдкара — запасной Dart-разбор (0.9)', () {
+      final xls = Uint8List.fromList(
+        File('test/fixtures/xls/simple.xls').readAsBytesSync(),
+      );
+      Future<ConversionOutcome> convertXls(Uint8List bytes) =>
           ConverterRegistry.defaultRegistry(
             extra: [converter()],
-          ).convert(xls, StreamInfo.fromHead(xls, filename: 'book.xls'));
+          ).convert(bytes, StreamInfo.fromHead(bytes, filename: 'book.xls'));
 
-      test('успех', () async {
-        final result = (await convertXls() as ConversionSuccess).result;
+      test('успех — отвечает сайдкар', () async {
+        final result = (await convertXls(xls) as ConversionSuccess).result;
         expect(result.converterId, 'sidecar');
         expect(result.markdown, contains('format=xls'));
       });
 
-      test('код 2 → UnsupportedFormatFailure', () async {
-        fake.mode = 'exit2';
-        final failure = (await convertXls() as ConversionError).failure;
-        expect(failure, isA<UnsupportedFormatFailure>());
-      });
+      for (final mode in ['exit1', 'exit2', 'exit3']) {
+        test('$mode → результат Dart-разбора с пометкой', () async {
+          fake.mode = mode;
+          final result = (await convertXls(xls) as ConversionSuccess).result;
+          expect(result.converterId, 'xls');
+          expect(result.markdown, contains('| Город | Население | Доля |'));
+          expect(
+            result.warnings.first.message,
+            startsWith('сайдкар не смог обработать файл'),
+          );
+        });
+      }
 
-      test('код 3 → CorruptedFileFailure', () async {
+      test('сайдкар и Dart оба не смогли — отказ Dart-разбора', () async {
+        // Каталог от .xls, но поток книги пуст: читать нечего никому.
         fake.mode = 'exit3';
-        final failure = (await convertXls() as ConversionError).failure;
+        final empty = buildCfb(['Workbook']);
+        final failure = (await convertXls(empty) as ConversionError).failure;
         expect(failure, isA<CorruptedFileFailure>());
-      });
-
-      test('код 1 → CorruptedFileFailure', () async {
-        fake.mode = 'exit1';
-        final failure = (await convertXls() as ConversionError).failure;
-        expect(failure, isA<CorruptedFileFailure>());
+        expect((failure as CorruptedFileFailure).converterId, 'xls');
       });
     });
   });

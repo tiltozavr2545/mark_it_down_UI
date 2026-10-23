@@ -49,8 +49,8 @@ workflow:
 
 | workflow | когда | что делает |
 |---|---|---|
-| `ci.yml` | push в ветку, PR; вызывается из `release.yml` | джоб `verify` (ubuntu): `make verify` + проверка «нет сети» + проверка бампа версии в PR; джоб `windows` (`windows-latest`): те же проверки, `flutter build windows --release`, артефакт `markitdown_ui-windows-x64` (zip каталога `Release/`) |
-| `release.yml` | тег `v*` | весь `ci.yml` (через `workflow_call`) + APK для arm64 с проверкой «нет INTERNET» на собранном файле → GitHub Release с `markitdown_ui-X.Y.Z-windows-x64.zip` (с сайдкаром) и `markitdown_ui-X.Y.Z-android-arm64.apk`; macOS — только по отдельному запросу |
+| `ci.yml` | push в ветку, PR; вызывается из `release.yml` | джоб `verify` (ubuntu): `make verify` + проверка «сеть только по ссылке» + проверка бампа версии в PR; джоб `windows` (`windows-latest`): те же проверки, `flutter build windows --release`, артефакт `markitdown_ui-windows-x64` (zip каталога `Release/`) |
+| `release.yml` | тег `v*` | весь `ci.yml` (через `workflow_call`) + APK для arm64 с проверкой сетевых разрешений на собранном файле → GitHub Release с `markitdown_ui-X.Y.Z-windows-x64.zip` (с сайдкаром) и `markitdown_ui-X.Y.Z-android-arm64.apk`; macOS — только по отдельному запросу |
 
 **Windows-джоб** (план — [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
 п. 2): шаги идут в `shell: bash` (Git Bash), потому что `run:` на Windows по
@@ -65,22 +65,28 @@ workflow:
 (Actions → запуск → Artifacts → распаковать → `markitdown_ui.exe`). Ручная
 проверка — чек-лист в п. 8 Этапа 5.
 
-**Проверка «нет сети»** — не формальность, а главная гарантия продукта (см.
-[offline-and-privacy.md](offline-and-privacy.md)). Два шага, оба падающие:
+**Проверка «сеть только по ссылке»** — не формальность, а главная гарантия
+продукта (см. [offline-and-privacy.md](offline-and-privacy.md)). До 0.9 это
+была проверка «нет сети» (нет `INTERNET` в APK); с режимом «ссылка» гарантия
+держится на коде. Шаги, все падающие:
 
 ```bash
-# 1. сетевой пакет в дереве зависимостей
-dart pub deps --style=list | grep -E '^- (http|dio|web_socket_channel|grpc|sentry|firebase)' && exit 1
+# 1. сетевой пакет в дереве зависимостей — сеть мимо core/lib/src/web/
+dart pub deps --style=list | grep -E '^- (http|dio|grpc|sentry|firebase)[^a-zA-Z0-9_]' && exit 1
 
-# 2. разрешение INTERNET в собранном APK
+# 2. сокеты и HTTP-клиент — только в core/lib/src/web/
+grep -rnE '\b(HttpClient|HttpServer|Socket|RawSocket|SecureSocket|ServerSocket|WebSocket|InternetAddress)\b' \
+  app/lib core/lib --include='*.dart' | grep -v '^core/lib/src/web/' && exit 1
+
+# 3. в собранном APK из сетевых разрешений — только INTERNET
 aapt dump permissions build/app/outputs/flutter-apk/app-release.apk \
-  | grep -q 'android.permission.INTERNET' && exit 1
+  | grep -qE 'ACCESS_NETWORK_STATE|ACCESS_WIFI_STATE|CHANGE_NETWORK_STATE|CHANGE_WIFI_STATE' && exit 1
 ```
 
-Второй шаг гоняется на сборке, то есть в `release.yml` (с `aapt` из
-Android SDK раннера); первый — на каждом PR,
+Третий шаг гоняется на сборке, то есть в `release.yml` (с `aapt` из
+Android SDK раннера); первые два — на каждом PR,
 потому что именно там сетевая зависимость и приезжает транзитивно. Для
-Windows аналога нет: упаковка пока zip, а zip о разрешениях не знает. Шаг
+Windows разрешений нет вовсе: упаковка пока zip, а zip о них не знает. Шаг
 `нет сетевых библиотек в app/windows/` ловит только то, что мы добавили сами
 (`ws2_32`, `winhttp`, `wininet`, `internetClient`); если в Этапе 7 выберут
 MSIX — добавится grep по его манифесту. См. Этап 5, п. 7, и
@@ -217,7 +223,7 @@ codesign --force --sign "$ID" --options runtime --timestamp \
 
 # 5. Проверки до отправки.
 codesign --verify --deep --strict --verbose=2 "$APP"
-codesign -d --entitlements - "$APP"      # app-sandbox есть, network.* нет
+codesign -d --entitlements - "$APP"      # app-sandbox есть, network.server нет
 codesign -d --entitlements - "$APP/Contents/Resources/sidecar/python/bin/python3.12"
 spctl -a -vv -t exec "$APP"              # до нотаризации: "rejected (Unnotarized Developer ID)" — это норма
 
@@ -246,13 +252,15 @@ Dart-ядром, разработка), а скрипт подписи сам п
 
 | где | что | зачем |
 |---|---|---|
-| `Release.entitlements` (Runner) | `app-sandbox`, `files.user-selected.read-only` | **песочница включена намеренно**: «нет сети» на macOS — это не просто отсутствие `network.client`, а *песочница без него*. В несандбоксном приложении отсутствие этого ключа ничего не запрещает |
+| `Release.entitlements` (Runner) | `app-sandbox`, `files.user-selected.read-only`, `network.client` (с 0.9) | **песочница включена намеренно**; `network.client` — исходящие соединения режима «ссылка» ([offline-and-privacy.md](offline-and-privacy.md)) |
 | `DebugProfile.entitlements` | то же + `allow-jit`, `network.server` | инструменты Flutter (hot reload, VM service); только debug/profile, в релиз не попадает |
 | `sidecar/sidecar.entitlements` (интерпретатор) | `cs.disable-library-validation` | см. [python-sidecar.md](python-sidecar.md#подпись-проверено-ad-hoc-с-hardened-runtime) |
-| нигде | `network.client`, `network.server` в Release | CI-шаг «нет com.apple.security.network.* в Release.entitlements и сайдкаре» |
+| нигде | `network.server` в Release, любой `network.*` у сайдкара | CI-шаг «в Release.entitlements нет network.server, у сайдкара нет сети» |
 
-Решение по Runner: **песочницу оставить**, сетевые ключи в Release не
-добавлять. Аргументы: (а) распространение — DMG, не MAS, так что sandbox
+Решение по Runner (Этап 4, пересмотрено в 0.9): **песочницу оставить**;
+из сетевых ключей в Release — только `network.client`. Ниже — исходные
+аргументы Этапа 4; пункт (б) с 0.9 не действует: сайдкар наследует и
+`network.client`, без сети его держит отсутствие сетевых конвертеров. Аргументы: (а) распространение — DMG, не MAS, так что sandbox
 формально не обязателен, но он единственное, что делает гарантию «нет сети»
 проверяемой операционной системой; (б) сайдкар как подпроцесс наследует
 песочницу родителя и потому тоже без сети — Python-зависимости не смогут
@@ -344,8 +352,8 @@ macOS 12 слишком стар, `ITMS-90111`). Путь, если понадо
    ```
 
    Падает, если версия в `app/pubspec.yaml` не совпадает с тегом, если в
-   APK оказалось `android.permission.INTERNET` или в Windows-сборке нет
-   сайдкара — урезанный или «сетевой» релиз не публикуется. Текст релиза —
+   APK оказалось сетевое разрешение сверх `INTERNET` или в Windows-сборке
+   нет сайдкара — урезанный релиз не публикуется. Текст релиза —
    `.github/release-notes.md` (установка на каждой платформе), что нового —
    ссылкой на `CHANGELOG.md`.
 

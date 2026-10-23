@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:image/image.dart' as img;
+
 import '../../markdown_writer.dart' as md;
 import '../../stream_info.dart';
 import '../../type_detection/detected_type.dart';
@@ -22,8 +24,13 @@ const _imageKinds = {
 };
 
 /// Форматы, которые декодирует Leptonica обеих сборок (Android и десктоп,
-/// см. `tesseract/build.sh`), — только их можно отдать в OCR.
+/// см. `tesseract/build.sh`), — их байты уходят в OCR как есть.
 const _ocrKinds = {FileKind.jpeg, FileKind.png, FileKind.bmp};
+
+/// Их Leptonica наших сборок не знает (без giflib, libwebp, libtiff), а
+/// декодирует чистый Dart (`package:image`): первый кадр перекодируется в
+/// PNG и идёт тем же путём. HEIC не декодирует никто из них.
+const _dartDecodedKinds = {FileKind.gif, FileKind.webp, FileKind.tiff};
 
 /// Изображение → список метаданных: формат, размер и то, что есть в EXIF
 /// (камера, дата, параметры съёмки, геометка, подписи), а с [ocr] — и
@@ -129,7 +136,7 @@ class ImageConverter implements DocumentConverter {
       );
       return null;
     }
-    if (!_ocrKinds.contains(kind)) {
+    if (!_ocrKinds.contains(kind) && !_dartDecodedKinds.contains(kind)) {
       warnings.add(
         ConversionWarning(
           'распознавание текста для ${_kindName(kind)} не поддерживается — '
@@ -149,10 +156,13 @@ class ImageConverter implements DocumentConverter {
       return null;
     }
     try {
-      final result = engine.recognizeEncoded(
-        bytes,
-        quarterTurns: _quarterTurns(exif?.image[_orientation]?.ints),
-      );
+      final encoded = _ocrKinds.contains(kind) ? bytes : _pngForOcr(bytes);
+      final result = encoded == null
+          ? null
+          : engine.recognizeEncoded(
+              encoded,
+              quarterTurns: _quarterTurns(exif?.image[_orientation]?.ints),
+            );
       if (result == null) {
         warnings.add(
           const ConversionWarning(
@@ -187,10 +197,32 @@ class ImageConverter implements DocumentConverter {
   }
 }
 
+/// Первый кадр GIF/WebP/TIFF → PNG для Leptonica. Прозрачность кладётся
+/// на белый фон: иначе прозрачный фон стикера или анимации Tesseract видит
+/// чёрным, и чёрный текст на нём пропадает. `null` — не декодировалось.
+Uint8List? _pngForOcr(Uint8List bytes) {
+  final img.Image? decoded;
+  try {
+    decoded = img.decodeImage(bytes, frame: 0);
+  } catch (_) {
+    return null;
+  }
+  if (decoded == null) return null;
+  var frame = decoded;
+  if (frame.hasAlpha) {
+    final background = img.Image(
+      width: frame.width,
+      height: frame.height,
+      numChannels: 3,
+    )..clear(img.ColorRgb8(255, 255, 255));
+    frame = img.compositeImage(background, frame);
+  }
+  // Сжатие минимальное: PNG живёт до конца распознавания, а время на
+  // упаковку крупного кадра в чистом Dart заметно.
+  return img.encodePng(frame, level: 1);
+}
+
 String _kindName(FileKind kind) => switch (kind) {
-  FileKind.gif => 'GIF',
-  FileKind.webp => 'WebP',
-  FileKind.tiff => 'TIFF',
   FileKind.heic => 'HEIC',
   _ => 'этого формата',
 };

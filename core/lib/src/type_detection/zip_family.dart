@@ -13,10 +13,8 @@ import 'detected_type.dart';
 /// Только имена записей читаются заранее (центральная директория); архив не
 /// распаковывается целиком — это и держит проверку дешёвой.
 DetectedType refineZipFamily(Uint8List bytes) {
-  Archive archive;
-  try {
-    archive = ZipDecoder().decodeBytes(bytes, verify: false);
-  } catch (_) {
+  final archive = decodeZip(bytes);
+  if (archive == null) {
     return const DetectedType(
       FileKind.zipArchive,
       'zip-архив (не удалось прочитать как zip — возможно, повреждён)',
@@ -55,12 +53,29 @@ DetectedType refineZipFamily(Uint8List bytes) {
 
 String? _tryReadAsString(ArchiveFile file) {
   try {
-    final content = file.content;
-    if (content is List<int>) {
-      return utf8.decode(content, allowMalformed: true);
-    }
-    return null;
+    return utf8.decode(file.content, allowMalformed: true);
   } catch (_) {
     return null;
   }
+}
+
+/// Каталог zip или `null`, если файл как zip не читается. `archive` 4 на
+/// битом файле не бросает, а отдаёт пустой архив, — пустым он может быть
+/// честно только у файла, который и начинается с конца каталога
+/// (`PK\x05\x06`, архив без записей).
+Archive? decodeZip(Uint8List bytes) {
+  final Archive archive;
+  try {
+    archive = ZipDecoder().decodeBytes(bytes, verify: false);
+  } catch (_) {
+    return null;
+  }
+  final emptyZip =
+      bytes.length >= 4 &&
+      bytes[0] == 0x50 &&
+      bytes[1] == 0x4B &&
+      bytes[2] == 0x05 &&
+      bytes[3] == 0x06;
+  if (archive.isEmpty && !emptyZip) return null;
+  return archive;
 }

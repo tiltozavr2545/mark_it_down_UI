@@ -2,13 +2,13 @@ import 'dart:typed_data';
 
 import 'package:xml/xml.dart';
 
-import '../../markdown_writer.dart' as md;
 import '../../stream_info.dart';
 import '../../type_detection/detected_type.dart';
 import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
 import '../ooxml/ooxml_package.dart';
+import '../spreadsheet/sheet_markdown.dart';
 
 /// `xl/workbook.xml` + `sharedStrings.xml` + листы → Markdown-таблицы, по
 /// одной под заголовком с именем листа. Формулы отдаются кэшированным
@@ -84,9 +84,6 @@ String _renderSheet(
   List<ConversionWarning> warnings,
 ) {
   final grid = <int, Map<int, String>>{};
-  var maxCol = -1;
-  var maxRow = -1;
-
   final rows = sheetXml
       .findAllElements('sheetData')
       .expand((sheetData) => sheetData.findElements('row'));
@@ -94,48 +91,18 @@ String _renderSheet(
     for (final cell in row.findElements('c')) {
       final ref = cell.getAttribute('r');
       if (ref == null) continue;
-      final colIndex = _columnIndex(ref);
-      final rowIndex = _rowFromRef(ref) - 1;
-      grid.putIfAbsent(rowIndex, () => {})[colIndex] = _cellValue(
-        cell,
-        sharedStrings,
-        dates,
-      );
-      if (colIndex > maxCol) maxCol = colIndex;
-      if (rowIndex > maxRow) maxRow = rowIndex;
+      grid.putIfAbsent(_rowFromRef(ref) - 1, () => {})[_columnIndex(ref)] =
+          _cellValue(cell, sharedStrings, dates);
     }
   }
 
-  final heading = md.heading(2, name);
-  if (maxCol < 0) {
-    return '$heading\n\n*лист пуст*';
-  }
-
-  final headers = List.generate(maxCol + 1, _columnLetter);
-  final body = List.generate(
-    maxRow + 1,
-    (r) => List.generate(maxCol + 1, (c) => grid[r]?[c] ?? ''),
-  );
-
-  final mergeRefs = sheetXml
+  final merges = sheetXml
       .findAllElements('mergeCell')
       .map((m) => m.getAttribute('ref'))
       .whereType<String>()
+      .map(_parseMergeRange)
       .toList();
-  if (mergeRefs.isNotEmpty) {
-    warnings.add(
-      ConversionWarning(
-        'лист "$name": объединённые ячейки, таблица отдана как HTML',
-      ),
-    );
-    final merges = mergeRefs.map(_parseMergeRange).toList();
-    return '$heading\n\n${md.htmlTable(headers, body, merges)}';
-  }
-
-  // `md.table` заканчивается собственным `\n` после последней строки —
-  // обрезаем, чтобы не плодить лишнюю пустую строку между листами при
-  // склейке через `\n\n`.
-  return '$heading\n\n${md.table(headers, body).trimRight()}';
+  return renderSheet(name, grid, merges, warnings);
 }
 
 String _cellValue(
@@ -203,53 +170,14 @@ class _DateStyles {
         .toList();
     for (var i = 0; xfs != null && i < xfs.length; i++) {
       final id = int.tryParse(xfs[i].getAttribute('numFmtId') ?? '');
-      if (id != null && _isDateFormat(id, codes[id])) dateXfs.add(i);
+      if (id != null && isExcelDateFormat(id, codes[id])) dateXfs.add(i);
     }
     return _DateStyles._(dateXfs, date1904);
   }
 
   bool isDateStyle(int index) => _dateXfs.contains(index);
 
-  /// `yyyy-MM-dd` для целого числа дней, `HH:mm:ss` для доли суток,
-  /// `yyyy-MM-dd HH:mm:ss` для остального; `null` — число не похоже на
-  /// дату (отрицательное, не конечное), тогда остаётся как есть.
-  String? format(double serial) {
-    if (!serial.isFinite || serial < 0) return null;
-    // Excel считает 1900 високосным: до 1 марта 1900 серийные номера
-    // сдвинуты на день относительно «честной» эпохи 30.12.1899.
-    final epoch = date1904
-        ? DateTime.utc(1904)
-        : serial < 60
-        ? DateTime.utc(1899, 12, 31)
-        : DateTime.utc(1899, 12, 30);
-    final at = epoch.add(Duration(milliseconds: (serial * 86400000).round()));
-    String two(int n) => n.toString().padLeft(2, '0');
-    final date =
-        '${at.year.toString().padLeft(4, '0')}-${two(at.month)}-${two(at.day)}';
-    final time = '${two(at.hour)}:${two(at.minute)}:${two(at.second)}';
-    if (serial == serial.floorToDouble()) return date;
-    if (serial < 1) return time;
-    return '$date $time';
-  }
-}
-
-/// Встроенные форматы дат/времени Excel (14–22, 27–36, 45–47, 50–58) и
-/// пользовательские коды, где вне кавычек и скобок встречаются `y`, `m`, `d`,
-/// `h`, `s` (`[h]`, `[mm]`, `[ss]` — тоже время). `General` и числовые
-/// форматы этих букв не содержат.
-bool _isDateFormat(int id, String? code) {
-  if ((id >= 14 && id <= 22) ||
-      (id >= 27 && id <= 36) ||
-      (id >= 45 && id <= 47) ||
-      (id >= 50 && id <= 58)) {
-    return true;
-  }
-  if (code == null) return false;
-  final stripped = code
-      .replaceAll(RegExp(r'"[^"]*"'), '')
-      .replaceAll(RegExp(r'\\.'), '')
-      .replaceAll(RegExp(r'\[(?![hms]+\])[^\]]*\]', caseSensitive: false), '');
-  return RegExp(r'[ymdhs]', caseSensitive: false).hasMatch(stripped);
+  String? format(double serial) => formatExcelDate(serial, date1904: date1904);
 }
 
 /// `A1`-стиль ссылки → индекс столбца с нуля.
@@ -265,21 +193,9 @@ int _columnIndex(String ref) {
 int _rowFromRef(String ref) =>
     int.parse(RegExp(r'[0-9]+$').firstMatch(ref)!.group(0)!);
 
-/// Индекс столбца с нуля → буквы (`0` → `A`, `26` → `AA`).
-String _columnLetter(int index) {
-  var n = index + 1;
-  final letters = <String>[];
-  while (n > 0) {
-    final remainder = (n - 1) % 26;
-    letters.add(String.fromCharCode('A'.codeUnitAt(0) + remainder));
-    n = (n - 1) ~/ 26;
-  }
-  return letters.reversed.join();
-}
-
 /// `A1:B2` → `(startRow, startCol, rowSpan, colSpan)`, индексы с нуля — то,
-/// что принимает [md.htmlTable].
-(int, int, int, int) _parseMergeRange(String ref) {
+/// что принимает `htmlTable`.
+MergeRange _parseMergeRange(String ref) {
   final parts = ref.split(':');
   final start = parts.first;
   final end = parts.length > 1 ? parts[1] : parts.first;

@@ -33,6 +33,9 @@ Future<ConversionOutcome> isolatedConvert(
       extra: [if (sidecar != null) sidecar],
       ocr: ocr,
       transcription: transcription,
+      // Сеть — только для страниц, скачанных по ссылке (субтитры YouTube);
+      // конвертеры файлов с диска её не трогают.
+      web: info.url == null ? null : const WebFetcher(),
     );
     return registry.convert(bytes, info);
   });

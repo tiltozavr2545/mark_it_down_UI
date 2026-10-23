@@ -7,6 +7,17 @@
   "pickAnotherButton": "Choose another file",
   "noFilename": "(unnamed)",
 
+  "pasteLinkButton": "Paste a link",
+  "@pasteLinkButton": {"description": "Opens the dialog for converting a web page or a file by its URL"},
+  "linkDialogTitle": "Link to a page or file",
+  "linkDialogHint": "https://…",
+  "linkDialogNote": "The page or file is downloaded from this link. Your files are not sent anywhere.",
+  "@linkDialogNote": {"description": "Under the URL field: the only network use of the app is downloading what the link points to"},
+  "linkConvertButton": "Convert",
+  "cancelButton": "Cancel",
+  "downloadingLabel": "Downloading…",
+  "@downloadingLabel": {"description": "Shown next to the spinner while the linked page or file is being downloaded"},
+
   "convertingLabel": "Converting…",
   "@convertingLabel": {"description": "Shown next to the spinner while conversion runs"},
   "transcribingLabel": "Recognizing speech…",
@@ -47,6 +58,12 @@
   "errorLimitBody": "{description}",
   "@errorLimitBody": {
     "description": "Shown when a ConversionLimits value is exceeded",
+    "placeholders": {"description": {"type": "String"}}
+  },
+  "errorNetworkTitle": "Couldn't download",
+  "errorNetworkBody": "{description}",
+  "@errorNetworkBody": {
+    "description": "Link mode: the page or file couldn't be downloaded (no connection, HTTP error)",
     "placeholders": {"description": {"type": "String"}}
   }
 }

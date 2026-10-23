@@ -6,6 +6,14 @@
   "pickAnotherButton": "Выбрать другой файл",
   "noFilename": "(без имени)",
 
+  "pasteLinkButton": "Вставить ссылку",
+  "linkDialogTitle": "Ссылка на страницу или файл",
+  "linkDialogHint": "https://…",
+  "linkDialogNote": "Страница или файл скачаются по этой ссылке. Ваши файлы никуда не отправляются.",
+  "linkConvertButton": "Конвертировать",
+  "cancelButton": "Отмена",
+  "downloadingLabel": "Скачивается…",
+
   "convertingLabel": "Конвертируется…",
   "transcribingLabel": "Распознаётся речь…",
   "transcribingProgressLabel": "Распознаётся речь… {percent} %",
@@ -24,5 +32,7 @@
   "errorCorruptedTitle": "Файл повреждён",
   "errorCorruptedBody": "Не удалось прочитать содержимое: {reason}",
   "errorLimitTitle": "Превышен лимит",
-  "errorLimitBody": "{description}"
+  "errorLimitBody": "{description}",
+  "errorNetworkTitle": "Не удалось скачать",
+  "errorNetworkBody": "{description}"
 }
