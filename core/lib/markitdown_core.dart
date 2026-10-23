@@ -19,3 +19,5 @@ export 'src/conversion/sidecar/sidecar_manifest.dart';
 export 'src/stream_info.dart';
 export 'src/type_detection/detected_type.dart';
 export 'src/type_detection/type_detector.dart';
+export 'src/web/url_conversion.dart';
+export 'src/web/web_fetcher.dart';

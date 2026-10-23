@@ -73,6 +73,34 @@ const _fixtures = [
   _Fixture('zip/simple.zip', 'zip/simple.expected.md'),
   _Fixture('zip/nested.zip', 'zip/nested.expected.md'), // zip в zip
   _Fixture('ipynb/simple.ipynb', 'ipynb/simple.expected.md'),
+  // Excel 97–2003 и Outlook: Dart-разбор OLE2 (0.9). Эталон simple.xls для
+  // Dart — свой (заголовок — буквы столбцов, как у xlsx); simple.msg —
+  // общий с сайдкаром: вывод повторяет markitdown символ в символ.
+  _Fixture('xls/simple.xls', 'xls/simple_dart.expected.md'),
+  _Fixture(
+    'xls/evil.xls',
+    'xls/evil.expected.md',
+    expectedWarningContains: 'объединённые ячейки',
+  ), // SST через CONTINUE с разрывом посреди символов, даты, RK, пустой лист
+  _Fixture('xls/biff5.xls', 'xls/biff5.expected.md'), // Excel 95, cp1251
+  _Fixture('msg/simple.msg', 'msg/simple.expected.md'),
+  _Fixture('msg/ansi.msg', 'msg/ansi.expected.md'), // 001E, cp1251, не мини
+  _Fixture(
+    'msg/html_only.msg',
+    'msg/html_only.expected.md',
+    expectedWarningContains: 'HTML-версии',
+  ),
+  // Ленты (0.9): порт RssConverter markitdown; тела записей — html2md.
+  _Fixture('rss/news.rss', 'rss/news.expected.md'), // CDATA, xml:base
+  _Fixture(
+    'rss/updates.atom',
+    'rss/updates.expected.md',
+  ), // text с отступами, html, xhtml, бинарный content
+  _Fixture(
+    'rss/feed_no_extension',
+    'rss/news.expected.md',
+    filenameOverride: 'feed_no_extension',
+  ), // корень <rss> узнаётся без расширения
   // Этап 3 — PDF.
   _Fixture('pdf/simple.pdf', 'pdf/simple.expected.md'),
   // ИЗВЕСТНОЕ ОТСТАВАНИЕ: таблицу PDFium-конвертер не распознаёт, ячейки
@@ -287,5 +315,5 @@ Uint8List _buildZip(Map<String, String> files) {
     final data = Uint8List.fromList(entry.value.codeUnits);
     archive.addFile(ArchiveFile(entry.key, data.length, data));
   }
-  return Uint8List.fromList(ZipEncoder().encode(archive)!);
+  return Uint8List.fromList(ZipEncoder().encode(archive));
 }

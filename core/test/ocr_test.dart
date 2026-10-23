@@ -59,6 +59,17 @@ void main() {
     expectInvoiceText(result.markdown);
   }, skip: skip);
 
+  // Leptonica наших сборок этих форматов не читает: кадр декодирует Dart.
+  // GIF и WebP — с прозрачным фоном, как стикер: без подложки текст
+  // пропал бы на «чёрной» прозрачности.
+  for (final name in ['invoice.gif', 'invoice.webp', 'invoice.tiff']) {
+    test('$name — текст через декодер Dart', () async {
+      final result = await convert('ocr/$name');
+      expect(result.markdown, contains('## Текст на изображении'));
+      expectInvoiceText(result.markdown);
+    }, skip: skip);
+  }
+
   test('PDF без текстового слоя — текст страницы из OCR', () async {
     final result = await convert('ocr/invoice_scan.pdf');
     expectInvoiceText(result.markdown);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:markitdown_core/markitdown_core.dart';
@@ -176,6 +177,73 @@ void main() {
     );
     expect(find.text('Выбрать другой файл'), findsOneWidget);
   });
+
+  testWidgets('«Вставить ссылку»: диалог отдаёт ссылку контроллеру', (
+    tester,
+  ) async {
+    final controller = _FakeFileIntakeController(const FileIntakeState.idle());
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fileIntakeControllerProvider.overrideWith(() => controller),
+        ],
+        child: const MarkItDownApp(locale: _ru),
+      ),
+    );
+
+    // Буфер обмена в тестах пуст — поле тоже.
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    await tester.tap(find.text('Вставить ссылку'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ссылка на страницу или файл'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'youtu.be/abc');
+    await tester.tap(find.text('Конвертировать'));
+    await tester.pumpAndSettle();
+    expect(controller.acceptedUrl, 'youtu.be/abc');
+  });
+
+  testWidgets('ссылка скачивается — адрес и «Скачивается…»', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fileIntakeControllerProvider.overrideWith(
+            () => _FakeFileIntakeController(
+              const FileIntakeState.downloading('https://example.com/a.pdf'),
+            ),
+          ),
+        ],
+        child: const MarkItDownApp(locale: _ru),
+      ),
+    );
+
+    expect(find.text('https://example.com/a.pdf'), findsOneWidget);
+    expect(find.text('Скачивается…'), findsOneWidget);
+  });
+
+  testWidgets('ссылка не скачалась — понятная сетевая ошибка', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fileIntakeControllerProvider.overrideWith(
+            () => _FakeFileIntakeController(
+              const FileIntakeState.failed(
+                null,
+                NetworkFailure('по этой ссылке ничего нет (HTTP 404)'),
+              ),
+            ),
+          ),
+        ],
+        child: const MarkItDownApp(locale: _ru),
+      ),
+    );
+
+    expect(find.text('Не удалось скачать'), findsOneWidget);
+    expect(find.text('по этой ссылке ничего нет (HTTP 404)'), findsOneWidget);
+  });
 }
 
 final _voiceInfo = StreamInfo(
@@ -195,6 +263,11 @@ class _FakeFileIntakeController extends FileIntakeController {
   @override
   FileIntakeState build() => initial;
 
+  String? acceptedUrl;
+
   @override
   void stopTranscription() => stopped = true;
+
+  @override
+  Future<void> acceptUrl(String text) async => acceptedUrl = text;
 }

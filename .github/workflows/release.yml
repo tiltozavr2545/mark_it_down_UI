@@ -90,15 +90,16 @@ jobs:
         working-directory: app
         run: flutter build apk --release --target-platform android-arm64
 
-      # Главная гарантия продукта — на собранном APK, а не только на
-      # манифесте в исходниках (docs/offline-and-privacy.md): разрешения
-      # приезжают и из манифестов зависимостей.
-      - name: нет android.permission.INTERNET в APK
+      # Разрешения — на собранном APK, а не только в манифесте исходников:
+      # они приезжают и из манифестов зависимостей. С 0.9 INTERNET есть
+      # (режим «ссылка», docs/offline-and-privacy.md); из сетевых больше
+      # ничего — ни состояния сети, ни Wi-Fi: приложению они не нужны.
+      - name: разрешения APK
         run: |
           aapt="$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -n 1)"
           "$aapt" dump permissions app/build/app/outputs/flutter-apk/app-release.apk | tee permissions.txt
-          if grep -q 'android.permission.INTERNET' permissions.txt; then
-            echo "::error::APK запрашивает INTERNET"
+          if grep -qE 'android.permission.(ACCESS_NETWORK_STATE|ACCESS_WIFI_STATE|CHANGE_NETWORK_STATE|CHANGE_WIFI_STATE)' permissions.txt; then
+            echo "::error::APK запрашивает сетевое разрешение сверх INTERNET"
             exit 1
           fi
 
@@ -141,8 +142,9 @@ jobs:
           name: markitdown_ui-android-arm64
           path: dist/android
 
-      # Релиз без сайдкара на Windows — не тот продукт (xls/msg и таблицы PDF
-      # пропадут молча), поэтому падаем, а не публикуем урезанную сборку.
+      # Релиз без сайдкара на Windows — не тот продукт (таблицы PDF пропадут
+      # молча, xls/msg уйдут запасному разбору), поэтому падаем, а не
+      # публикуем урезанную сборку.
       - name: файлы релиза
         run: |
           v="${GITHUB_REF_NAME#v}"

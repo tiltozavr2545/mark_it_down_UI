@@ -3,14 +3,15 @@
 настоящим EXIF (Pillow) и злой JPEG с петлёй в IFD, аудио с тегами
 (libsndfile через soundfile + mutagen).
 
-Зачем: Dart-ядро не читает .xls и .msg, поэтому исходник пары «исходник +
+Зачем: .xls и .msg руками не написать, поэтому исходник пары «исходник +
 ожидаемый Markdown» (core/test/fixtures/{xls,msg}/) берётся отсюда; .pptx,
 написанный руками под Dart-парсер, настоящим python-pptx не открывается (нет
 <p:spPr> в фигуре) и живёт как злая фикстура pptx/no_sppr.pptx, а валидный
 pptx/simple.pptx порождается здесь. Образцы собираются скриптом, а не берутся
 «откуда-то», чтобы их происхождение было воспроизводимо и объяснимо.
-Ожидаемый Markdown для .xls/.msg — вывод сайдкара (других конвертеров нет),
-для остальных — вывод Dart-ядра после сверки (make compare-sidecar).
+Ожидаемый Markdown для xls/simple.xls и msg/simple.msg — вывод сайдкара
+(эталон интеграционного теста), для остальных — вывод Dart-ядра после сверки
+(make compare-sidecar).
 
 Запуск (интерпретатором из собранного сайдкара; xlwt нужен только здесь, в
 сайдкар не ставится — кладётся в отдельный каталог):
@@ -193,6 +194,45 @@ def make_msg(path):
         fh.write(build_cfb(streams, storages))
 
 
+def make_msg_ansi(path):
+    """Письмо в старом, не-Unicode формате: строки PT_STRING8 (001E) в
+    кодовой странице письма (PR_MESSAGE_CODEPAGE = 1251), а тело длиннее
+    4096 байт — лежит обычными секторами, а не в мини-потоке."""
+    props = b"\x00" * 32 + struct.pack("<IIII", 0x3FFD0003, 0x6, 1251, 0)
+    paragraph = "Строка тела письма с кириллицей и пробелами в конце.   \r\n"
+    body = "Здравствуйте!\r\n\r\n\r\n\r\n" + paragraph * 90 + "До свидания.\r\n"
+    streams = {
+        "__properties_version1.0": props,
+        "__substg1.0_0037001E": "Счёт № 15 за октябрь".encode("cp1251") + b"\x00",
+        "__substg1.0_0C1F001E": "buh@example.ru".encode("cp1251") + b"\x00",
+        "__substg1.0_0E04001E": "Бухгалтерия; Иван Петров".encode("cp1251") + b"\x00",
+        "__substg1.0_1000001E": body.encode("cp1251") + b"\x00",
+    }
+    assert len(streams["__substg1.0_1000001E"]) >= 4096
+    storages = ["__recip_version1.0_#00000000", "__recip_version1.0_#00000001"]
+    with open(path, "wb") as fh:
+        fh.write(build_cfb(streams, storages))
+
+
+def make_msg_html(path):
+    """Тело только в HTML (PR_HTML, PT_BINARY): markitdown отдаёт пустой
+    раздел, Dart-ядро — HTML, переведённый в Markdown."""
+    props = b"\x00" * 32 + struct.pack("<IIII", 0x3FDE0003, 0x6, 65001, 0)
+    html = (
+        "<html><body><h1>Новости</h1><p>Первый <b>абзац</b> и "
+        '<a href="https://example.com">ссылка</a>.</p>'
+        "<ul><li>пункт один</li><li>пункт два</li></ul></body></html>"
+    )
+    streams = {
+        "__properties_version1.0": props,
+        "__substg1.0_0037001F": "Рассылка".encode("utf-16-le"),
+        "__substg1.0_0C1F001F": "news@example.com".encode("utf-16-le"),
+        "__substg1.0_10130102": html.encode("utf-8"),
+    }
+    with open(path, "wb") as fh:
+        fh.write(build_cfb(streams, ["__recip_version1.0_#00000000"]))
+
+
 def make_xls(path):
     import xlwt  # только для генерации; в сайдкар не ставится
 
@@ -210,6 +250,109 @@ def make_xls(path):
     ws2.write(0, 1, "b")
     ws2.write(1, 0, 1)
     wb.save(path)
+
+
+def make_xls_evil(path):
+    """То, на чём ломается рукописный разбор BIFF8: таблица строк SST длиннее
+    одной записи (продолжение в CONTINUE, разрыв посреди символов, и строка
+    то сжатая Latin-1, то UTF-16), даты/время/булевы, числа RK и IEEE,
+    объединённые ячейки, пустой лист, разметка Markdown в тексте."""
+    import datetime
+
+    import xlwt  # только для генерации; в сайдкар не ставится
+
+    wb = xlwt.Workbook(encoding="utf-8")
+
+    ws = wb.add_sheet("Строки")
+    for r in range(120):
+        # Чередуются строки только из Latin-1 (xlwt пишет их сжатыми) и с
+        # кириллицей (UTF-16) — на границе CONTINUE флаг сжатия меняется.
+        latin = "latin %03d " % r + "x" * (40 + r % 17)
+        cyrillic = "строка %03d " % r + "я" * (30 + r % 13)
+        ws.write(r, 0, latin)
+        ws.write(r, 1, cyrillic)
+
+    ws = wb.add_sheet("Типы")
+    date = xlwt.easyxf(num_format_str="YYYY-MM-DD")
+    stamp = xlwt.easyxf(num_format_str="YYYY-MM-DD HH:MM:SS")
+    clock = xlwt.easyxf(num_format_str="HH:MM:SS")
+    rows = [
+        ("Дата", datetime.date(2024, 3, 1), date),
+        ("Дата и время", datetime.datetime(2024, 3, 5, 13, 30), stamp),
+        ("Время", datetime.time(8, 15, 30), clock),
+        ("Правда", True, None),
+        ("Ложь", False, None),
+        ("Целое (RK)", 42, None),
+        ("Отрицательное", -7, None),
+        ("Дробное", 0.1, None),
+        ("Большое", 12345678901234.5, None),
+        ("Сотые (RK ×100)", 1.25, None),
+        ("Разметка", "a | b *c* [d]", None),
+        ("Две строки", "первая\nвторая", None),
+    ]
+    for r, (label, value, style) in enumerate(rows):
+        ws.write(r, 0, label)
+        if style is None:
+            ws.write(r, 1, value)
+        else:
+            ws.write(r, 1, value, style)
+
+    ws = wb.add_sheet("Объединения")
+    ws.write_merge(0, 0, 0, 2, "Шапка на три столбца")
+    ws.write(1, 0, "a")
+    ws.write(1, 1, "b")
+    ws.write(1, 2, "c")
+    ws.write_merge(2, 3, 0, 0, "две строки")
+    ws.write(2, 1, 1)
+    ws.write(3, 1, 2)
+
+    wb.add_sheet("Пустой")
+    wb.save(path)
+
+
+def make_xls_biff5(path):
+    """Excel 95 (BIFF5, поток `Book`): строки однобайтовые в кодовой странице
+    книги (CODEPAGE = 1251), а не UTF-16. xlwt BIFF5 не пишет — записи
+    собраны вручную; xlrd их читает, это и есть проверка образца."""
+
+    def rec(rid, data=b""):
+        return struct.pack("<HH", rid, len(data)) + data
+
+    def bof(kind):
+        return rec(0x0809, struct.pack("<HHHH", 0x0500, kind, 0x0DBB, 0x07CC))
+
+    def label(row, col, text):
+        raw = text.encode("cp1251")
+        return rec(0x0204, struct.pack("<HHHH", row, col, 0x0F, len(raw)) + raw)
+
+    def number(row, col, value):
+        return rec(0x0203, struct.pack("<HHHd", row, col, 0x0F, value))
+
+    # 16 XF: xlrd ждёт хотя бы стиль по умолчанию под индексом 15.
+    xf = rec(0x00E0, struct.pack("<HHHBBBBII", 0, 0, 0xFFF5, 0x20, 0, 0, 0, 0, 0))
+    font = rec(0x0031, struct.pack("<HHHHHBBBB", 200, 0, 0x7FFF, 400, 0, 0, 0, 0, 0) + b"\x05Arial")
+    sheet_name = "Лист".encode("cp1251")
+
+    globals_head = bof(0x0005) + rec(0x0042, struct.pack("<H", 1251)) + font * 5 + xf * 16
+    boundsheet_len = 4 + 4 + 1 + 1 + 1 + len(sheet_name)  # заголовок записи + поля
+    sheet_offset = len(globals_head) + boundsheet_len + 4  # + EOF
+    globals_ = globals_head + rec(
+        0x0085, struct.pack("<IBBB", sheet_offset, 0, 0, len(sheet_name)) + sheet_name
+    ) + rec(0x000A)
+    sheet = (
+        bof(0x0010)
+        + label(0, 0, "Город")
+        + label(0, 1, "Население")
+        + label(1, 0, "Москва")
+        + number(1, 1, 13010112)
+        + label(2, 0, "Санкт-Петербург")
+        + number(2, 1, 5601911.5)
+        + rec(0x000A)
+    )
+    stream = globals_ + sheet
+    stream += b"\x00" * max(0, 4096 - len(stream))  # не в мини-поток: так пишет Excel
+    with open(path, "wb") as fh:
+        fh.write(build_cfb({"Book": stream}, []))
 
 
 def make_pptx(path):
@@ -601,6 +744,29 @@ def make_ocr_png(path):
     _text_image().save(path)
 
 
+def _transparent_text_image():
+    """Текст на прозрачном фоне — как стикер или анимация: белое стало
+    прозрачным, буквы непрозрачные чёрные."""
+    gray = _text_image()
+    rgba = gray.convert("RGBA")
+    rgba.putalpha(gray.point(lambda v: 255 - v))
+    return rgba
+
+
+def make_ocr_gif(path):
+    """GIF с прозрачным фоном: Leptonica наших сборок GIF не читает, кадр
+    декодирует Dart (package:image) и кладёт на белый фон."""
+    _transparent_text_image().save(path, transparency=0, optimize=False)
+
+
+def make_ocr_webp(path):
+    _transparent_text_image().save(path, lossless=True)
+
+
+def make_ocr_tiff(path):
+    _text_image().save(path, compression="tiff_lzw")
+
+
 def make_ocr_rotated_jpeg(path):
     """Тот же текст, но пиксели лежат «боком» (повёрнуты на 90° против
     часовой), а EXIF Orientation = 6 велит показать их повёрнутыми по
@@ -630,8 +796,10 @@ def main():
     sys.path[:0] = [args.lib] + ([args.extra_path] if args.extra_path else [])
 
     jobs = {
-        "xls": [(make_xls, "xls/simple.xls")],
-        "msg": [(make_msg, "msg/simple.msg")],
+        "xls": [(make_xls, "xls/simple.xls"), (make_xls_evil, "xls/evil.xls"),
+                (make_xls_biff5, "xls/biff5.xls")],
+        "msg": [(make_msg, "msg/simple.msg"), (make_msg_ansi, "msg/ansi.msg"),
+                (make_msg_html, "msg/html_only.msg")],
         "pptx": [(make_pptx, "pptx/simple.pptx")],
         "xlsx": [(make_xlsx_types, "xlsx/types_and_gaps.xlsx")],
         "pdf": [(make_pdf_table, "pdf/table.pdf")],
@@ -657,6 +825,9 @@ def main():
             (make_ocr_png, "ocr/invoice.png"),
             (make_ocr_rotated_jpeg, "ocr/invoice_rotated.jpg"),
             (make_ocr_scan_pdf, "ocr/invoice_scan.pdf"),
+            (make_ocr_gif, "ocr/invoice.gif"),
+            (make_ocr_webp, "ocr/invoice.webp"),
+            (make_ocr_tiff, "ocr/invoice.tiff"),
         ],
     }
     for key in args.only:

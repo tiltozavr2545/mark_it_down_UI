@@ -159,6 +159,7 @@ String _describe(ConversionFailure failure) => switch (failure) {
   CorruptedFileFailure(:final converterId, :final reason) =>
     '$converterId: $reason',
   LimitExceededFailure(:final description) => 'лимит: $description',
+  NetworkFailure(:final description) => 'сеть: $description',
 };
 
 class _Row {

@@ -34,3 +34,12 @@ class LimitExceededFailure extends ConversionFailure {
 
   const LimitExceededFailure(this.description);
 }
+
+/// Режим «ссылка»: страницу или файл не удалось скачать (нет сети, сервер
+/// ответил ошибкой, ссылка не http). Файлов с диска не касается.
+class NetworkFailure extends ConversionFailure {
+  /// Что случилось, человекочитаемо («нет соединения с сервером…»).
+  final String description;
+
+  const NetworkFailure(this.description);
+}

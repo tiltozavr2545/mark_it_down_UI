@@ -12,27 +12,29 @@ import 'picked_file.dart';
 ///
 /// Файлы уже лежат во временном кеше плагина — [SharedMediaFile.path] ведёт
 /// на диск, поэтому [PickedFile.bytes] здесь читается через `File.readAsBytes`.
-/// Текст и URL (а не файл) этим входом не принимаются — это не то, что
-/// конвертирует продукт, см. `docs/project-brief.md`.
+/// Текст и URL (ссылкой делятся YouTube и браузер) приходят как
+/// [SharedInput.link] — для режима «ссылка»; текст без ссылки отбрасывается
+/// уже там.
 class ShareIntake {
-  Future<List<PickedFile>> initialFiles() async {
+  Future<SharedInput> initial() async {
     final media = await ReceiveSharingIntent.instance.getInitialMedia();
-    final files = await _toPickedFiles(media);
+    final input = await _toInput(media);
     await ReceiveSharingIntent.instance.reset();
-    return files;
+    return input;
   }
 
-  Stream<List<PickedFile>> fileStream() {
-    return ReceiveSharingIntent.instance.getMediaStream().asyncMap(
-      _toPickedFiles,
-    );
+  Stream<SharedInput> stream() {
+    return ReceiveSharingIntent.instance.getMediaStream().asyncMap(_toInput);
   }
 
-  Future<List<PickedFile>> _toPickedFiles(List<SharedMediaFile> media) async {
+  Future<SharedInput> _toInput(List<SharedMediaFile> media) async {
     final result = <PickedFile>[];
+    String? link;
     for (final shared in media) {
       if (shared.type == SharedMediaType.text ||
           shared.type == SharedMediaType.url) {
+        // У текста плагин кладёт сам текст в `path`.
+        link ??= shared.path;
         continue;
       }
       final bytes = await File(shared.path).readAsBytes();
@@ -45,6 +47,14 @@ class ShareIntake {
         ),
       );
     }
-    return result;
+    return SharedInput(result, link);
   }
+}
+
+/// Чем поделились: файлы или текст со ссылкой.
+class SharedInput {
+  final List<PickedFile> files;
+  final String? link;
+
+  const SharedInput(this.files, this.link);
 }

@@ -1,5 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Сеть — только режиму «ссылка» (0.9, решение автора): скачать то, на
+         что указывает вставленная или присланная ссылка. Весь сетевой код —
+         в core/lib/src/web/, это проверяет CI; файлы пользователя в сеть не
+         уходят. См. docs/offline-and-privacy.md. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- usesCleartextTraffic: ссылка может быть и http://, как у markitdown;
+         без этого Android 9+ молча отказал бы в соединении. -->
     <application
+        android:usesCleartextTraffic="true"
         android:label="markitdown_ui"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

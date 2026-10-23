@@ -11,7 +11,9 @@ import '../conversion_result.dart';
 import '../document_converter.dart';
 
 /// Как `json` — фенс-блок кода, не попытка построить markdown-структуру из
-/// произвольного XML. См. `docs/format-coverage.md`.
+/// произвольного XML. См. `docs/format-coverage.md`. Приоритет ниже
+/// конкретных форматов поверх XML (лента RSS/Atom — [RssConverter]): XML
+/// здесь — общий случай.
 class XmlConverter implements DocumentConverter {
   const XmlConverter();
 
@@ -19,7 +21,7 @@ class XmlConverter implements DocumentConverter {
   String get id => 'xml';
 
   @override
-  double get priority => 0.0;
+  double get priority => 5.0;
 
   @override
   bool accepts(StreamInfo info, Uint8List head) =>
