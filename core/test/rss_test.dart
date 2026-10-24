@@ -39,25 +39,34 @@ void main() {
     expect(result.title, 'Канал');
   });
 
-  test('server response with no filename: feed recognized by type and root', () async {
-    final result = await convert(
-      rss,
-      mimeType: 'application/rss+xml; charset=utf-8',
-      url: 'https://example.com/feed/',
-    );
-    expect(result.converterId, 'rss');
-    // The relative link is resolved against the feed's address.
-    expect(result.markdown, contains('[ссылка](https://example.com/a)'));
-  });
+  test(
+    'server response with no filename: feed recognized by type and root',
+    () async {
+      final result = await convert(
+        rss,
+        mimeType: 'application/rss+xml; charset=utf-8',
+        url: 'https://example.com/feed/',
+      );
+      expect(result.converterId, 'rss');
+      // The relative link is resolved against the feed's address.
+      expect(result.markdown, contains('[ссылка](https://example.com/a)'));
+    },
+  );
 
-  test('<feed> with no entries — not Atom: goes to the XML converter', () async {
-    final result = await convert(
-      '<feed xmlns="http://www.w3.org/2005/Atom"><title>t</title></feed>',
-      filename: 'empty.xml',
-    );
-    expect(result.converterId, 'xml');
-    expect(result.warnings.single.message, contains('похож на ленту RSS/Atom'));
-  });
+  test(
+    '<feed> with no entries — not Atom: goes to the XML converter',
+    () async {
+      final result = await convert(
+        '<feed xmlns="http://www.w3.org/2005/Atom"><title>t</title></feed>',
+        filename: 'empty.xml',
+      );
+      expect(result.converterId, 'xml');
+      expect(
+        result.warnings.single.message,
+        contains('похож на ленту RSS/Atom'),
+      );
+    },
+  );
 
   test('plain XML is not counted as a feed', () async {
     final result = await convert('<root><a>1</a></root>', filename: 'x.xml');

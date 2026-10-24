@@ -108,25 +108,22 @@ void main() {
     expect(warnings, contains(contains('только для первых 1')));
   }, skip: skip);
 
-  test(
-    'no models — metadata and a clear warning, not a failure',
-    () async {
-      final noModels = ConverterRegistry.defaultRegistry(
-        ocr: const OcrSettings(tessdataDir: '/нет/такого/каталога'),
-      );
-      final bytes = Uint8List.fromList(
-        File(p.join(fixtures, 'ocr', 'invoice.png')).readAsBytesSync(),
-      );
-      final outcome = await noModels.convert(
-        bytes,
-        StreamInfo.fromHead(bytes, filename: 'invoice.png'),
-      );
-      final result = (outcome as ConversionSuccess).result;
-      expect(result.markdown, contains('- **Формат:** PNG'));
-      expect(
-        result.warnings.map((w) => w.message),
-        contains(contains('распознавание текста недоступно')),
-      );
-    },
-  );
+  test('no models — metadata and a clear warning, not a failure', () async {
+    final noModels = ConverterRegistry.defaultRegistry(
+      ocr: const OcrSettings(tessdataDir: '/нет/такого/каталога'),
+    );
+    final bytes = Uint8List.fromList(
+      File(p.join(fixtures, 'ocr', 'invoice.png')).readAsBytesSync(),
+    );
+    final outcome = await noModels.convert(
+      bytes,
+      StreamInfo.fromHead(bytes, filename: 'invoice.png'),
+    );
+    final result = (outcome as ConversionSuccess).result;
+    expect(result.markdown, contains('- **Формат:** PNG'));
+    expect(
+      result.warnings.map((w) => w.message),
+      contains(contains('распознавание текста недоступно')),
+    );
+  });
 }

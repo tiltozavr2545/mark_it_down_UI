@@ -183,26 +183,29 @@ void main() {
       expect(fake.read('input_copy'), 'payload-bytes');
     });
 
-    test('command substitution: the factory gets the path and format id', () async {
-      final calls = <String>[];
-      final c = SidecarConverter(
-        formats: {'xls'},
-        tempDirectory: scratch,
-        commandBuilder: (path, format) {
-          calls.add('$format:${p.extension(path)}');
-          return SidecarCommand('/bin/sh', [
-            '-c',
-            'printf \'{"markdown": "m"}\'',
-          ]);
-        },
-      );
-      final result = await c.convert(
-        _request(_payload, _info(FileKind.xls, 'Excel 97–2003 (.xls)')),
-      );
-      expect(calls, ['xls:.xls']);
-      expect(result.markdown, 'm');
-      expect(result.title, isNull);
-    });
+    test(
+      'command substitution: the factory gets the path and format id',
+      () async {
+        final calls = <String>[];
+        final c = SidecarConverter(
+          formats: {'xls'},
+          tempDirectory: scratch,
+          commandBuilder: (path, format) {
+            calls.add('$format:${p.extension(path)}');
+            return SidecarCommand('/bin/sh', [
+              '-c',
+              'printf \'{"markdown": "m"}\'',
+            ]);
+          },
+        );
+        final result = await c.convert(
+          _request(_payload, _info(FileKind.xls, 'Excel 97–2003 (.xls)')),
+        );
+        expect(calls, ['xls:.xls']);
+        expect(result.markdown, 'm');
+        expect(result.title, isNull);
+      },
+    );
 
     test('code 2 → "not supported"', () async {
       fake.mode = 'exit2';
@@ -244,11 +247,14 @@ void main() {
     });
 
     for (final mode in ['garbage', 'prefixed', 'wrongshape']) {
-      test('code 0, but the response breaks protocol ($mode) → error', () async {
-        fake.mode = mode;
-        final e = await declined(converter());
-        expect(e.failure, isA<CorruptedFileFailure>());
-      });
+      test(
+        'code 0, but the response breaks protocol ($mode) → error',
+        () async {
+          fake.mode = mode;
+          final e = await declined(converter());
+          expect(e.failure, isA<CorruptedFileFailure>());
+        },
+      );
     }
 
     test('timeout: the process is actually killed, error is "limit"', () async {
@@ -436,22 +442,19 @@ void main() {
       }
     });
 
-    test(
-      'macOS: Contents/Resources/sidecar next to the executable',
-      () async {
-        final contents = Directory(p.join(root.path, 'X.app', 'Contents'))
-          ..createSync(recursive: true);
-        await _FakeSidecar.create(
-          Directory(p.join(contents.path, 'Resources'))..createSync(),
-        );
-        final c = SidecarConverter.discover(
-          environment: const {},
-          operatingSystem: 'macos',
-          resolvedExecutable: p.join(contents.path, 'MacOS', 'X'),
-        );
-        expect(c, isNotNull);
-      },
-    );
+    test('macOS: Contents/Resources/sidecar next to the executable', () async {
+      final contents = Directory(p.join(root.path, 'X.app', 'Contents'))
+        ..createSync(recursive: true);
+      await _FakeSidecar.create(
+        Directory(p.join(contents.path, 'Resources'))..createSync(),
+      );
+      final c = SidecarConverter.discover(
+        environment: const {},
+        operatingSystem: 'macos',
+        resolvedExecutable: p.join(contents.path, 'MacOS', 'X'),
+      );
+      expect(c, isNotNull);
+    });
 
     test('in the app — only pdf/xls/msg with a page threshold (item 5)', () {
       final c = SidecarConverter.discover(
@@ -468,26 +471,23 @@ void main() {
       );
     });
 
-    test(
-      'manifest has none of pdf, xls, msg → null in the app',
-      () async {
-        final docxOnly = await _FakeSidecar.create(
-          root,
-          name: 'docx_only',
-          manifest: jsonEncode({
-            'schema': 1,
-            'formats': ['docx', 'xlsx'],
-          }),
-        );
-        expect(
-          SidecarConverter.discover(
-            environment: {SidecarConverter.sidecarDirEnvVar: docxOnly.dir.path},
-            operatingSystem: 'linux',
-          ),
-          isNull,
-        );
-      },
-    );
+    test('manifest has none of pdf, xls, msg → null in the app', () async {
+      final docxOnly = await _FakeSidecar.create(
+        root,
+        name: 'docx_only',
+        manifest: jsonEncode({
+          'schema': 1,
+          'formats': ['docx', 'xlsx'],
+        }),
+      );
+      expect(
+        SidecarConverter.discover(
+          environment: {SidecarConverter.sidecarDirEnvVar: docxOnly.dir.path},
+          operatingSystem: 'linux',
+        ),
+        isNull,
+      );
+    });
 
     test('Windows: sidecar next to the .exe', () async {
       final release = Directory(p.join(root.path, 'Release'))..createSync();
@@ -526,17 +526,20 @@ void main() {
       );
     });
 
-    test('variable is set, but the directory is bad → null, no substitution', () {
-      expect(
-        SidecarConverter.discover(
-          environment: {
-            SidecarConverter.sidecarDirEnvVar: p.join(root.path, 'нет'),
-          },
-          operatingSystem: 'macos',
-        ),
-        isNull,
-      );
-    });
+    test(
+      'variable is set, but the directory is bad → null, no substitution',
+      () {
+        expect(
+          SidecarConverter.discover(
+            environment: {
+              SidecarConverter.sidecarDirEnvVar: p.join(root.path, 'нет'),
+            },
+            operatingSystem: 'macos',
+          ),
+          isNull,
+        );
+      },
+    );
   });
 
   group('in the registry: fallback to the Dart converter', () {
@@ -585,25 +588,17 @@ void main() {
       expect(result.warnings.first.message, contains('время ожидания'));
     });
 
-    test(
-      'the Dart converter also fails → error, no stderr leak',
-      () async {
-        fake.mode = 'exit1';
-        final broken = Uint8List.fromList([...docx.take(200)]);
-        final registry = ConverterRegistry.defaultRegistry(
-          extra: [converter()],
-        );
-        final outcome = await registry.convert(
-          broken,
-          _info(FileKind.docx, 'OOXML Word (.docx)', size: broken.length),
-        );
-        expect(outcome, isA<ConversionError>());
-        expect(
-          (outcome as ConversionError).failure,
-          isA<CorruptedFileFailure>(),
-        );
-      },
-    );
+    test('the Dart converter also fails → error, no stderr leak', () async {
+      fake.mode = 'exit1';
+      final broken = Uint8List.fromList([...docx.take(200)]);
+      final registry = ConverterRegistry.defaultRegistry(extra: [converter()]);
+      final outcome = await registry.convert(
+        broken,
+        _info(FileKind.docx, 'OOXML Word (.docx)', size: broken.length),
+      );
+      expect(outcome, isA<ConversionError>());
+      expect((outcome as ConversionError).failure, isA<CorruptedFileFailure>());
+    });
 
     group('PDF page threshold (item 5)', () {
       Future<ConversionResult> convertPdf(int pages) async {
@@ -639,13 +634,18 @@ void main() {
         expect((outcome as ConversionSuccess).result.converterId, 'sidecar');
       });
 
-      test('PDF failed to open — sidecar decides, threshold doesn\'t matter', () async {
-        final broken = Uint8List.fromList('%PDF-1.4\nне PDF дальше'.codeUnits);
-        final result = await converter(maxPdfPages: 3).convert(
-          _request(broken, _info(FileKind.pdf, 'PDF', size: broken.length)),
-        );
-        expect(result.converterId, 'sidecar');
-      });
+      test(
+        'PDF failed to open — sidecar decides, threshold doesn\'t matter',
+        () async {
+          final broken = Uint8List.fromList(
+            '%PDF-1.4\nне PDF дальше'.codeUnits,
+          );
+          final result = await converter(maxPdfPages: 3).convert(
+            _request(broken, _info(FileKind.pdf, 'PDF', size: broken.length)),
+          );
+          expect(result.converterId, 'sidecar');
+        },
+      );
     });
 
     group('PDF with scans when OCR is available (Stage 6)', () {

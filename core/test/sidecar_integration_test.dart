@@ -139,15 +139,18 @@ void main() {
       });
     }
 
-    test('pptx/no_sppr.pptx: python-pptx failed → falls back to Dart', () async {
-      final result = await convert('pptx/no_sppr.pptx');
-      expect(result.converterId, 'pptx');
-      expect(
-        result.warnings.first.message,
-        startsWith('сайдкар не смог обработать файл'),
-      );
-      expect(result.markdown, contains('## Первый слайд'));
-    });
+    test(
+      'pptx/no_sppr.pptx: python-pptx failed → falls back to Dart',
+      () async {
+        final result = await convert('pptx/no_sppr.pptx');
+        expect(result.converterId, 'pptx');
+        expect(
+          result.warnings.first.message,
+          startsWith('сайдкар не смог обработать файл'),
+        );
+        expect(result.markdown, contains('## Первый слайд'));
+      },
+    );
 
     test('corrupted xls: both the sidecar and Dart parsing fail', () async {
       // The OLE2 signature and directory are from .xls, but what follows

@@ -99,7 +99,8 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     // seconds — that's why its files get the progress bar and "Stop" button.
     if (AudioConverter.handles(info.detectedType.kind)) {
       speech = await transcriptionSettings();
-      if (!current()) return; // another file arrived while we waited for the model
+      // Another file arrived while we waited for the model.
+      if (!current()) return;
       if (speech != null) {
         control = _control = TranscriptionControl();
         speech = speech.withControl(control);

@@ -20,12 +20,15 @@ void main() {
       );
     });
 
-    test('link inside "Share" text — the first one, without a trailing period', () {
-      expect(
-        parseUserUrl('Смотри: https://youtu.be/abc123. Классно!').toString(),
-        'https://youtu.be/abc123',
-      );
-    });
+    test(
+      'link inside "Share" text — the first one, without a trailing period',
+      () {
+        expect(
+          parseUserUrl('Смотри: https://youtu.be/abc123. Классно!').toString(),
+          'https://youtu.be/abc123',
+        );
+      },
+    );
 
     test('no scheme — https', () {
       expect(
@@ -102,17 +105,20 @@ void main() {
     ConversionResult success(UrlConversion c) =>
         (c.outcome as ConversionSuccess).result;
 
-    test('HTML: no script/style, links are relative to the page address', () async {
-      final c = await convert('/page');
-      final result = success(c);
-      expect(result.converterId, 'html');
-      expect(result.title, 'Страница');
-      expect(result.markdown, isNot(contains('color:red')));
-      expect(result.markdown, isNot(contains('var x')));
-      expect(result.markdown, contains('[ссылкой]($base/wiki/Ссылка)'));
-      expect(result.markdown, contains('[сноской](#note)'));
-      expect(c.info!.url, '$base/page');
-    });
+    test(
+      'HTML: no script/style, links are relative to the page address',
+      () async {
+        final c = await convert('/page');
+        final result = success(c);
+        expect(result.converterId, 'html');
+        expect(result.title, 'Страница');
+        expect(result.markdown, isNot(contains('color:red')));
+        expect(result.markdown, isNot(contains('var x')));
+        expect(result.markdown, contains('[ссылкой]($base/wiki/Ссылка)'));
+        expect(result.markdown, contains('[сноской](#note)'));
+        expect(c.info!.url, '$base/page');
+      },
+    );
 
     test('redirect: links are relative to the final address', () async {
       final c = await convert('/old');
@@ -124,17 +130,23 @@ void main() {
       expect(success(await convert('/cp1251')).markdown, 'Привет');
     });
 
-    test('filename from Content-Disposition (RFC 5987) — type follows it', () async {
-      final c = await convert('/download');
-      expect(c.info!.filename, 'данные.csv');
-      expect(success(c).converterId, 'csv');
-    });
+    test(
+      'filename from Content-Disposition (RFC 5987) — type follows it',
+      () async {
+        final c = await convert('/download');
+        expect(c.info!.filename, 'данные.csv');
+        expect(success(c).converterId, 'csv');
+      },
+    );
 
-    test('feed by response type, links are relative to the feed address', () async {
-      final result = success(await convert('/feed'));
-      expect(result.converterId, 'rss');
-      expect(result.markdown, contains('[пост]($base/post)'));
-    });
+    test(
+      'feed by response type, links are relative to the feed address',
+      () async {
+        final result = success(await convert('/feed'));
+        expect(result.converterId, 'rss');
+        expect(result.markdown, contains('[пост]($base/post)'));
+      },
+    );
 
     test('404 — a clear network failure', () async {
       final c = await convert('/missing');

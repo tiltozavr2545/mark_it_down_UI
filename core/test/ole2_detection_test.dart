@@ -110,14 +110,17 @@ void main() {
       },
     );
 
-    test('msg with no properties — empty email template, like markitdown', () async {
-      final bytes = buildCfb(['__properties_version1.0']);
-      final info = StreamInfo.fromHead(bytes, filename: 'file.msg');
-      final outcome = await registry.convert(bytes, info);
-      expect(
-        (outcome as ConversionSuccess).result.markdown,
-        '# Email Message\n\n## Content',
-      );
-    });
+    test(
+      'msg with no properties — empty email template, like markitdown',
+      () async {
+        final bytes = buildCfb(['__properties_version1.0']);
+        final info = StreamInfo.fromHead(bytes, filename: 'file.msg');
+        final outcome = await registry.convert(bytes, info);
+        expect(
+          (outcome as ConversionSuccess).result.markdown,
+          '# Email Message\n\n## Content',
+        );
+      },
+    );
   });
 }

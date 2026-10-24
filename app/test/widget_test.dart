@@ -103,9 +103,7 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('successful conversion shows markdown preview', (
-    tester,
-  ) async {
+  testWidgets('successful conversion shows markdown preview', (tester) async {
     final fakeInfo = StreamInfo(
       filename: 'заметка.txt',
       extension: 'txt',
@@ -138,9 +136,7 @@ void main() {
     expect(find.text('Сохранить как .md'), findsOneWidget);
   });
 
-  testWidgets('unsupported format shows the error screen', (
-    tester,
-  ) async {
+  testWidgets('unsupported format shows the error screen', (tester) async {
     // `.sketch` — same example as in
     // docs/conversion-pipeline.md#errors: signatures don't match, and it's
     // genuinely "unsupported", not PDF, which we've handled since Stage 3.
@@ -206,7 +202,9 @@ void main() {
     expect(controller.acceptedUrl, 'youtu.be/abc');
   });
 
-  testWidgets('link is downloading — address and "Downloading…"', (tester) async {
+  testWidgets('link is downloading — address and "Downloading…"', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [

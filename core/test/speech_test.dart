@@ -183,86 +183,97 @@ void main() {
     // Dart checks the flag before the shim itself, so its early exit is
     // tested directly: cancelling before the call means nothing is decoded
     // and no model is loaded.
-    test('cancel before mdw_transcribe_memory — immediately "cancelled"', () {
-      final bindings = WhisperBindings(loadWhisperLibrary()!.library);
-      final bytes = read('speech/ru.wav');
-      final data = malloc<Uint8>(bytes.length);
-      data.asTypedList(bytes.length).setAll(0, bytes);
-      final modelPath = settings.modelPath.toNativeUtf8();
-      final session = bindings.newSession(modelPath);
-      final language = 'auto'.toNativeUtf8();
-      final control = TranscriptionControl()..cancel();
-      try {
-        final status = bindings.transcribeMemory(
-          session,
-          data,
-          bytes.length,
-          0,
-          language,
-          nullptr,
-          1,
-          Pointer<MdwControl>.fromAddress(control.address),
-        );
-        expect(status, MdwStatus.cancelled);
-        expect(bindings.segmentCount(session), 0);
-        expect(bindings.processedMs(session), 0, reason: 'не декодировалось');
-      } finally {
-        control.dispose();
-        bindings.freeSession(session);
-        malloc
-          ..free(data)
-          ..free(modelPath)
-          ..free(language);
-      }
-    }, skip: noModel);
+    test(
+      'cancel before mdw_transcribe_memory — immediately "cancelled"',
+      () {
+        final bindings = WhisperBindings(loadWhisperLibrary()!.library);
+        final bytes = read('speech/ru.wav');
+        final data = malloc<Uint8>(bytes.length);
+        data.asTypedList(bytes.length).setAll(0, bytes);
+        final modelPath = settings.modelPath.toNativeUtf8();
+        final session = bindings.newSession(modelPath);
+        final language = 'auto'.toNativeUtf8();
+        final control = TranscriptionControl()..cancel();
+        try {
+          final status = bindings.transcribeMemory(
+            session,
+            data,
+            bytes.length,
+            0,
+            language,
+            nullptr,
+            1,
+            Pointer<MdwControl>.fromAddress(control.address),
+          );
+          expect(status, MdwStatus.cancelled);
+          expect(bindings.segmentCount(session), 0);
+          expect(bindings.processedMs(session), 0, reason: 'не декодировалось');
+        } finally {
+          control.dispose();
+          bindings.freeSession(session);
+          malloc
+            ..free(data)
+            ..free(modelPath)
+            ..free(language);
+        }
+      },
+      skip: noModel,
+    );
 
     // A chunk is 10 minutes: speech, 10.5 minutes of silence, speech again.
     // The chunk boundary falls in the silence, the second phrase is in the
     // second chunk with a time offset, the language comes from the first
     // chunk. Only speech is recognized (VAD), so the test runs in seconds,
     // not minutes.
-    test('long recording — in chunks: time and language carry through', () async {
-      final (speech, _) = engine!.decodeMemory(read('speech/ru.wav'), 1 << 30);
-      final words = Float32List.fromList(
-        speech!.samples.asTypedList(speech.length),
-      );
-      speech.dispose();
-      const gap = 16000 * 630;
-      final all = Float32List(words.length * 2 + gap)
-        ..setAll(0, words)
-        ..setAll(words.length + gap, words);
-      final bytes = _wav16(all);
-
-      final control = TranscriptionControl();
-      try {
-        final long = ConverterRegistry.defaultRegistry(
-          transcription: settings.withControl(control),
+    test(
+      'long recording — in chunks: time and language carry through',
+      () async {
+        final (speech, _) = engine!.decodeMemory(
+          read('speech/ru.wav'),
+          1 << 30,
         );
-        final info = StreamInfo.fromHead(bytes, filename: 'long.wav');
-        final outcome = await long.convert(bytes, info);
-        final result = (outcome as ConversionSuccess).result;
-        final paragraphs = result.markdown
-            .split('\n\n')
-            .where((block) => block.startsWith('**'))
-            .toList();
-        expect(paragraphs, hasLength(2), reason: result.markdown);
-        expect(paragraphs[0], startsWith('**0:00** '));
-        expect(paragraphs[1], matches(RegExp(r'^\*\*10:3\d\*\* ')));
-        for (final paragraph in paragraphs) {
-          expectMostOf(paragraph, [
-            'распознавания речи',
-            'встреча',
-            'понедельник',
-            'утра',
-          ]);
+        final words = Float32List.fromList(
+          speech!.samples.asTypedList(speech.length),
+        );
+        speech.dispose();
+        const gap = 16000 * 630;
+        final all = Float32List(words.length * 2 + gap)
+          ..setAll(0, words)
+          ..setAll(words.length + gap, words);
+        final bytes = _wav16(all);
+
+        final control = TranscriptionControl();
+        try {
+          final long = ConverterRegistry.defaultRegistry(
+            transcription: settings.withControl(control),
+          );
+          final info = StreamInfo.fromHead(bytes, filename: 'long.wav');
+          final outcome = await long.convert(bytes, info);
+          final result = (outcome as ConversionSuccess).result;
+          final paragraphs = result.markdown
+              .split('\n\n')
+              .where((block) => block.startsWith('**'))
+              .toList();
+          expect(paragraphs, hasLength(2), reason: result.markdown);
+          expect(paragraphs[0], startsWith('**0:00** '));
+          expect(paragraphs[1], matches(RegExp(r'^\*\*10:3\d\*\* ')));
+          for (final paragraph in paragraphs) {
+            expectMostOf(paragraph, [
+              'распознавания речи',
+              'встреча',
+              'понедельник',
+              'утра',
+            ]);
+          }
+          expect(result.markdown, contains('- **Язык речи:** русский'));
+          expect(messages(result), isNot(contains(contains('остановлено'))));
+          expect(control.progress, 100);
+        } finally {
+          control.dispose();
         }
-        expect(result.markdown, contains('- **Язык речи:** русский'));
-        expect(messages(result), isNot(contains(contains('остановлено'))));
-        expect(control.progress, 100);
-      } finally {
-        control.dispose();
-      }
-    }, skip: noModel);
+      },
+      skip: noModel,
+    );
 
     // Chunk boundary in the middle of speech: silence until 9:40, then the
     // phrase six times in a row until 10:16 — there's no silence in the last
