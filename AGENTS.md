@@ -215,6 +215,13 @@ release time.
 
 ## Working conventions
 
+- **Write all repo-facing text in English**: commit messages, docs,
+  code comments/docstrings, GitHub release bodies, and the repo
+  description. Exception: anything genuinely user-facing that the app
+  itself produces — error/warning strings, Markdown-output field labels
+  — stays as-is, since changing it would alter behavior, not just
+  internal language. `app/lib/l10n/app_ru.arb` is a real localization
+  resource, not a comment — never touch it for this.
 - **Run `make verify` before submitting anything**: `pub get`,
   `dart format --set-exit-if-changed`, `flutter analyze`, `flutter test`
   for `app/`, and `dart test` for `core/`. CI runs the same thing.
