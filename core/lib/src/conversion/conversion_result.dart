@@ -1,5 +1,5 @@
-/// Нефатальное замечание о конвертации — список, а не исключение, потому что
-/// частичный результат полезнее отказа. См.
+/// A non-fatal remark about the conversion — a list, not an exception,
+/// because a partial result is more useful than a failure. See
 /// `docs/conversion-pipeline.md#3-конвертация`.
 class ConversionWarning {
   final String message;
@@ -10,12 +10,12 @@ class ConversionWarning {
   String toString() => message;
 }
 
-/// Результат успешной конвертации одного файла.
+/// The result of successfully converting one file.
 class ConversionResult {
   final String markdown;
 
-  /// Из метаданных документа, если есть (на Этапе 1 не заполняется ни одним
-  /// конвертером — появится у docx/xlsx/pptx на Этапе 2).
+  /// From the document's metadata, if present (not filled in by any
+  /// converter at Stage 1 — will appear for docx/xlsx/pptx at Stage 2).
   final String? title;
 
   final List<ConversionWarning> warnings;
@@ -30,8 +30,8 @@ class ConversionResult {
     this.warnings = const [],
   });
 
-  /// Конвертеры не измеряют собственное время — это делает
-  /// [ConverterRegistry] вокруг вызова `convert()`, и подставляет его сюда.
+  /// Converters do not measure their own time — [ConverterRegistry] does
+  /// that around the `convert()` call, and plugs it in here.
   ConversionResult withElapsed(Duration elapsed) => ConversionResult(
     markdown: markdown,
     converterId: converterId,
@@ -40,8 +40,8 @@ class ConversionResult {
     warnings: warnings,
   );
 
-  /// Заменяет список [warnings] — реестр дописывает пометку о запасном пути
-  /// (см. `ConversionDeclinedException`).
+  /// Replaces the [warnings] list — the registry appends a note about the
+  /// fallback path (see `ConversionDeclinedException`).
   ConversionResult withWarnings(List<ConversionWarning> warnings) =>
       ConversionResult(
         markdown: markdown,

@@ -5,11 +5,12 @@ import 'package:markitdown_core/markitdown_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// Обрезанные и испорченные картинки и аудио. Сигнатура опознана — значит
-/// отказа быть не должно (см. `ImageConverter`, `AudioConverter`): формат
-/// есть всегда, остальное — что удалось прочитать. Ловит выход за границы в
-/// разборе заголовков, EXIF, ID3, коробок MP4 и страниц Ogg, который на
-/// целых фикстурах не проявляется.
+/// Truncated and corrupted images and audio. If the signature is
+/// recognized, there must be no failure (see `ImageConverter`,
+/// `AudioConverter`): the format is always there, the rest is whatever
+/// could be read. Catches out-of-bounds access in header parsing, EXIF,
+/// ID3, MP4 boxes, and Ogg pages, which doesn't show up on whole
+/// fixtures.
 void main() {
   final fixturesDir = p.join(Directory.current.path, 'test', 'fixtures');
   final registry = ConverterRegistry.defaultRegistry();
@@ -24,23 +25,23 @@ void main() {
     final name = p.basename(file.path);
     final full = Uint8List.fromList(file.readAsBytesSync());
 
-    test('$name, обрезанный на любой длине — результат, а не отказ', () async {
+    test('$name, truncated at any length — a result, not a failure', () async {
       final kind = StreamInfo.fromHead(full).detectedType.kind;
       for (final length in _truncationPoints(full.length)) {
         final bytes = Uint8List.sublistView(full, 0, length);
         final info = StreamInfo.fromHead(bytes, filename: name);
-        // Слишком короткое начало может не дотянуть до сигнатуры — это уже
-        // другой тип, и судьба его не здесь.
+        // A start that's too short may not reach the signature — that's
+        // already a different type, and its fate isn't decided here.
         if (info.detectedType.kind != kind) continue;
         final outcome = await registry.convert(bytes, info);
         expect(outcome, isA<ConversionSuccess>(), reason: 'длина $length');
       }
     });
 
-    test('$name с испорченными байтами — результат, а не отказ', () async {
+    test('$name with corrupted bytes — a result, not a failure', () async {
       final kind = StreamInfo.fromHead(full).detectedType.kind;
-      // Детерминированная «порча»: каждый 7-й байт после первых 16 (там
-      // сигнатуры) инвертирован.
+      // Deterministic "corruption": every 7th byte after the first 16
+      // (where the signatures are) is inverted.
       for (var phase = 0; phase < 7; phase++) {
         final bytes = Uint8List.fromList(full);
         for (var i = 16 + phase; i < bytes.length; i += 7) {
@@ -55,9 +56,9 @@ void main() {
   }
 }
 
-/// Каждая длина в первых 2 КБ (там все заголовки), дальше — около тысячи
-/// точек равномерно: аудиофикстуры по десятки КБ, а каждая длина — полный
-/// прогон разбора.
+/// Every length in the first 2 KB (all the headers are there), then
+/// around a thousand points evenly spaced: audio fixtures run tens of KB,
+/// and each length is a full parsing pass.
 Iterable<int> _truncationPoints(int length) sync* {
   final dense = length < 2048 ? length : 2048;
   for (var i = 1; i < dense; i++) {

@@ -12,10 +12,11 @@ import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
 
-/// Общий формат, но не настоящий catch-all: приоритет между конкретными
-/// форматами (`0.0`) и `plain text` (`10.0`), и `accepts()` проверяет
-/// реальные html-сигналы — иначе он забрал бы себе любой текстовый файл
-/// раньше `plain text`. См. `docs/conversion-pipeline.md#2-реестр-конвертеров`.
+/// A generic format, but not a true catch-all: priority sits between
+/// specific formats (`0.0`) and `plain text` (`10.0`), and `accepts()`
+/// checks for real HTML signals — otherwise it would claim any text file
+/// before `plain text` got a chance. See
+/// `docs/conversion-pipeline.md#2-реестр-конвертеров`.
 class HtmlConverter implements DocumentConverter {
   const HtmlConverter();
 
@@ -29,7 +30,7 @@ class HtmlConverter implements DocumentConverter {
   bool accepts(StreamInfo info, Uint8List head) {
     if (info.detectedType.kind != FileKind.text) return false;
     if (info.extension == 'html' || info.extension == 'htm') return true;
-    // Страница по ссылке: сервер сам говорит, что это HTML.
+    // A page fetched from a URL: the server itself says it's HTML.
     final mime = (info.mimeType ?? '').toLowerCase();
     if (mime.startsWith('text/html') || mime.startsWith('application/xhtml')) {
       return true;
@@ -61,11 +62,11 @@ class HtmlConverter implements DocumentConverter {
   }
 }
 
-/// HTML → Markdown через `html2md`, как у markitdown: сначала выбрасываются
-/// `script`/`style` (иначе CSS страницы попадает в текст), затем, если
-/// известен адрес страницы ([baseUrl]), относительные ссылки и картинки
-/// разрешаются от него — `/wiki/…` в тексте, скопированном из приложения,
-/// никуда не ведёт.
+/// HTML → Markdown via `html2md`, like markitdown: `script`/`style` are
+/// stripped first (otherwise the page's CSS ends up in the text), then, if
+/// the page's address is known ([baseUrl]), relative links and images are
+/// resolved against it — `/wiki/…` in text copied out of the app would
+/// otherwise lead nowhere.
 String htmlToMarkdown(dom.Node root, {String? baseUrl}) {
   for (final junk in _querySelectorAll(
     root,
@@ -91,9 +92,9 @@ List<dom.Element> _querySelectorAll(dom.Node root, String selector) =>
       _ => const [],
     };
 
-/// Разрешает `href` ссылок и `src`/`data-src` картинок от [baseUrl], с
-/// учётом вложенных `xml:base` (лента Atom). Обход стеком: вложенность
-/// приходит из сети.
+/// Resolves `href` on links and `src`/`data-src` on images against
+/// [baseUrl], honoring nested `xml:base` (Atom feeds). Stack-based
+/// traversal: the nesting comes from the network.
 void resolveHtmlLinks(dom.Node root, String baseUrl) {
   final stack = <(dom.Node, String)>[(root, baseUrl)];
   while (stack.isNotEmpty) {
@@ -109,8 +110,8 @@ void resolveHtmlLinks(dom.Node root, String baseUrl) {
       };
       for (final attribute in attributes) {
         final reference = node.attributes[attribute];
-        // Якорь на той же странице (`#cite_note-1`) — оставить: так он
-        // читается в тексте как ссылка на сноску.
+        // An anchor on the same page (`#cite_note-1`) — leave it: that way
+        // it still reads in the text as a footnote link.
         if (reference == null || reference.startsWith('#')) continue;
         if (reference.isNotEmpty || attribute == 'href') {
           node.attributes[attribute] = resolveUrl(current, reference);
@@ -123,10 +124,11 @@ void resolveHtmlLinks(dom.Node root, String baseUrl) {
   }
 }
 
-/// [reference] от [base]; битый адрес — как есть. `Uri` кодирует
-/// кириллицу в `%D0%A0…` — такие последовательности раскодируются обратно
-/// (`/wiki/Расширение`), а служебные ASCII-символы (`%20`, `%29`) остаются
-/// закодированными: иначе пробел или скобка сломали бы Markdown-ссылку.
+/// [reference] against [base]; a malformed address is returned as-is.
+/// `Uri` percent-encodes Cyrillic as `%D0%A0…` — such sequences are
+/// decoded back (`/wiki/Расширение`), while structural ASCII characters
+/// (`%20`, `%29`) stay encoded: otherwise a space or a parenthesis would
+/// break the Markdown link.
 String resolveUrl(String base, String reference) {
   if (base.isEmpty) return reference;
   final String resolved;
@@ -160,9 +162,9 @@ bool _looksLikeHtml(Uint8List head) {
       text.contains('<body');
 }
 
-/// Текст HTML: кодировка из `Content-Type` ответа (`charset=windows-1251`),
-/// если страница скачана по ссылке, иначе — та же догадка, что для любого
-/// текста ([decodeTextBytes]).
+/// HTML text: encoding from the response's `Content-Type`
+/// (`charset=windows-1251`) when the page was fetched from a URL,
+/// otherwise the same guess used for any text ([decodeTextBytes]).
 String decodeHtmlBytes(ConversionRequest request) {
   final charset = RegExp(
     r'charset\s*=\s*"?([\w-]+)',

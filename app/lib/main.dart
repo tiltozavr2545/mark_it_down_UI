@@ -9,8 +9,8 @@ void main() {
 }
 
 class MarkItDownApp extends StatelessWidget {
-  /// `null` — локаль системы (обычное поведение). Параметр существует ради
-  /// детерминированных тестов экранов на конкретном языке.
+  /// `null` — the system locale (normal behavior). This parameter exists
+  /// for deterministic screen tests in a specific language.
   final Locale? locale;
 
   const MarkItDownApp({super.key, this.locale});

@@ -16,13 +16,13 @@ Uint8List _buildZip(Map<String, String> entries) {
 }
 
 void main() {
-  group('детекция по сигнатуре', () {
+  group('detection by signature', () {
     test('PDF', () {
       final bytes = Uint8List.fromList(utf8.encode('%PDF-1.7\nостальное'));
       expect(detectType(bytes).kind, FileKind.pdf);
     });
 
-    test('OLE2 без подсказки по расширению — только контейнер', () {
+    test('OLE2 with no extension hint — container only', () {
       final bytes = Uint8List.fromList([
         0xD0,
         0xCF,
@@ -39,7 +39,7 @@ void main() {
       expect(result.label, isNot(contains('похоже на')));
     });
 
-    test('OLE2 с расширением .xls — расширение как подсказка', () {
+    test('OLE2 with a .xls extension — extension as a hint', () {
       final bytes = Uint8List.fromList([
         0xD0,
         0xCF,
@@ -78,36 +78,36 @@ void main() {
       expect(detectType(bytes).kind, FileKind.jpeg);
     });
 
-    test('TIFF в обоих порядках байтов', () {
+    test('TIFF in both byte orders', () {
       final little = Uint8List.fromList([0x49, 0x49, 0x2A, 0, 8, 0, 0, 0]);
       final big = Uint8List.fromList([0x4D, 0x4D, 0, 0x2A, 0, 0, 0, 8]);
       expect(detectType(little).kind, FileKind.tiff);
       expect(detectType(big).kind, FileKind.tiff);
     });
 
-    test('HEIC по марке в ftyp', () {
+    test('HEIC by the brand in ftyp', () {
       final bytes = Uint8List.fromList([0, 0, 0, 24, ...'ftypheic'.codeUnits]);
       expect(detectType(bytes).kind, FileKind.heic);
     });
 
-    test('MP3 по ID3v2 и по кадру MPEG без тега', () {
+    test('MP3 by ID3v2 and by an MPEG frame with no tag', () {
       final id3 = Uint8List.fromList([...'ID3'.codeUnits, 3, 0, 0, 0, 0, 0, 0]);
       final frame = Uint8List.fromList([0xFF, 0xFB, 0x90, 0x64, 0, 0]);
       expect(detectType(id3).kind, FileKind.mp3);
       expect(detectType(frame).kind, FileKind.mp3);
     });
 
-    test('текст, начинающийся с «ID3», — не MP3', () {
+    test('text starting with "ID3" is not MP3', () {
       final bytes = Uint8List.fromList('ID3 tags explained'.codeUnits);
       expect(detectType(bytes).kind, FileKind.text);
     });
 
-    test('AAC ADTS с тем же синхрословом — не MP3', () {
+    test('AAC ADTS with the same sync word is not MP3', () {
       final bytes = Uint8List.fromList([0xFF, 0xF1, 0x50, 0x80, 0, 0]);
       expect(detectType(bytes).kind, isNot(FileKind.mp3));
     });
 
-    test('FLAC за тегом ID3v2 — FLAC, а не MP3', () {
+    test('FLAC behind an ID3v2 tag — FLAC, not MP3', () {
       final bytes = Uint8List.fromList([
         ...'ID3'.codeUnits,
         4,
@@ -124,7 +124,7 @@ void main() {
       expect(detectType(bytes).kind, FileKind.flac);
     });
 
-    test('WAV и Ogg', () {
+    test('WAV and Ogg', () {
       final wav = Uint8List.fromList([
         ...'RIFF'.codeUnits,
         0,
@@ -138,7 +138,7 @@ void main() {
       expect(detectType(ogg).kind, FileKind.ogg);
     });
 
-    test('MP4 и M4A с той же коробкой ftyp — не изображение', () {
+    test('MP4 and M4A with the same ftyp box — not an image', () {
       for (final brand in ['isom', 'mp42', 'M4A ', 'qt  ']) {
         final bytes = Uint8List.fromList([
           0,
@@ -157,8 +157,8 @@ void main() {
     });
   });
 
-  group('zip-семья', () {
-    test('docx по word/document.xml', () {
+  group('zip family', () {
+    test('docx by word/document.xml', () {
       final bytes = _buildZip({
         '[Content_Types].xml': '<Types/>',
         'word/document.xml': '<document/>',
@@ -166,7 +166,7 @@ void main() {
       expect(detectType(bytes).kind, FileKind.docx);
     });
 
-    test('xlsx по xl/workbook.xml', () {
+    test('xlsx by xl/workbook.xml', () {
       final bytes = _buildZip({
         '[Content_Types].xml': '<Types/>',
         'xl/workbook.xml': '<workbook/>',
@@ -174,7 +174,7 @@ void main() {
       expect(detectType(bytes).kind, FileKind.xlsx);
     });
 
-    test('pptx по ppt/presentation.xml', () {
+    test('pptx by ppt/presentation.xml', () {
       final bytes = _buildZip({
         '[Content_Types].xml': '<Types/>',
         'ppt/presentation.xml': '<presentation/>',
@@ -182,7 +182,7 @@ void main() {
       expect(detectType(bytes).kind, FileKind.pptx);
     });
 
-    test('epub по mimetype первым файлом', () {
+    test('epub by mimetype as the first file', () {
       final bytes = _buildZip({
         'mimetype': 'application/epub+zip',
         'content.opf': '<package/>',
@@ -190,28 +190,28 @@ void main() {
       expect(detectType(bytes).kind, FileKind.epub);
     });
 
-    test('apk по AndroidManifest.xml', () {
+    test('apk by AndroidManifest.xml', () {
       final bytes = _buildZip({'AndroidManifest.xml': 'binary-xml'});
       expect(detectType(bytes).kind, FileKind.androidApk);
     });
 
-    test('обычный zip без OOXML-примет', () {
+    test('plain zip with no OOXML markers', () {
       final bytes = _buildZip({'readme.txt': 'привет'});
       expect(detectType(bytes).kind, FileKind.zipArchive);
     });
 
-    test('.docx под именем .pdf — содержимое важнее расширения', () {
+    test('.docx named .pdf — content matters more than the extension', () {
       final bytes = _buildZip({
         '[Content_Types].xml': '<Types/>',
         'word/document.xml': '<document/>',
       });
-      // Расширение из имени файла — заведомо лживое, как бывает после
-      // пересылки в мессенджере.
+      // The extension from the filename is known to lie, as happens after
+      // being forwarded in a messenger app.
       final result = detectType(bytes, extension: 'pdf');
       expect(result.kind, FileKind.docx);
     });
 
-    test('повреждённый zip не кидает исключение', () {
+    test('a corrupted zip does not throw an exception', () {
       final bytes = Uint8List.fromList([0x50, 0x4B, 0x03, 0x04, 1, 2, 3]);
       final result = detectType(bytes);
       expect(result.kind, FileKind.zipArchive);
@@ -219,36 +219,36 @@ void main() {
     });
   });
 
-  group('текст', () {
-    test('UTF-8 текст с подсказкой по расширению', () {
+  group('text', () {
+    test('UTF-8 text with an extension hint', () {
       final bytes = Uint8List.fromList(utf8.encode('a,b,c\n1,2,3'));
       final result = detectType(bytes, extension: 'csv');
       expect(result.kind, FileKind.text);
       expect(result.label, contains('.csv'));
     });
 
-    test('текст без BOM, не UTF-8 — предполагаем Windows-1251', () {
-      // Байт 0xC0 в одиночку — невалидный старт UTF-8-последовательности.
+    test('text with no BOM, not UTF-8 — assume Windows-1251', () {
+      // A lone 0xC0 byte is an invalid start of a UTF-8 sequence.
       final bytes = Uint8List.fromList([0x41, 0x42, 0xC0, 0x20, 0x43]);
       final result = detectType(bytes, extension: 'txt');
       expect(result.kind, FileKind.text);
       expect(result.label, contains('Windows-1251'));
     });
 
-    test('файл без расширения — определяем по содержимому', () {
+    test('file with no extension — determined by content', () {
       final bytes = Uint8List.fromList(utf8.encode('просто текст'));
       final result = detectType(bytes, extension: null);
       expect(result.kind, FileKind.text);
     });
   });
 
-  group('краевые случаи', () {
-    test('файл нулевой длины', () {
+  group('edge cases', () {
+    test('zero-length file', () {
       final result = detectType(Uint8List(0));
       expect(result.kind, FileKind.emptyFile);
     });
 
-    test('случайные бинарные байты — неизвестный формат', () {
+    test('random binary bytes — unknown format', () {
       final bytes = Uint8List.fromList(
         List.generate(64, (i) => (i * 37 + 11) % 256)
           ..[0] = 0x01
@@ -261,7 +261,7 @@ void main() {
   });
 
   group('StreamInfo', () {
-    test('извлекает расширение из имени файла', () {
+    test('extracts the extension from the filename', () {
       final info = StreamInfo.fromHead(
         Uint8List.fromList(utf8.encode('text')),
         filename: 'document.MD',
@@ -269,7 +269,7 @@ void main() {
       expect(info.extension, 'md');
     });
 
-    test('файл без точки в имени — расширения нет', () {
+    test('file with no dot in the name — no extension', () {
       final info = StreamInfo.fromHead(
         Uint8List.fromList(utf8.encode('text')),
         filename: 'document',
@@ -277,7 +277,7 @@ void main() {
       expect(info.extension, isNull);
     });
 
-    test('lengthBytes берётся из явного значения, не из head', () {
+    test('lengthBytes comes from the explicit value, not from head', () {
       final info = StreamInfo.fromHead(
         Uint8List.fromList(utf8.encode('%PDF-1.7')),
         filename: 'report.pdf',

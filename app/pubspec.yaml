@@ -1,7 +1,7 @@
 name: markitdown_ui
 description: >
-  Приложение, которое превращает файл в Markdown полностью на устройстве и
-  отдаёт результат в буфер обмена.
+  An app that turns a file into Markdown entirely on-device and
+  puts the result on the clipboard.
 publish_to: 'none'
 
 # The following defines the version and build number for your application.
@@ -62,14 +62,16 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Модели Tesseract для OCR (Этап 6). Качает tesseract/fetch.sh, в
-  # репозитории только .gitkeep — без моделей сборка проходит, а OCR честно
-  # пишет «недоступно». На Windows ассеты лежат файлами рядом с .exe, на
-  # Android копируются из APK при первом OCR (lib/src/conversion/ocr_data.dart).
+  # Tesseract models for OCR (Stage 6). Fetched by tesseract/fetch.sh; the
+  # repository only has a .gitkeep — without the models the build passes
+  # and OCR honestly reports "unavailable". On Windows the assets sit as
+  # files next to the .exe; on Android they're copied from the APK on the
+  # first OCR (lib/src/conversion/ocr_data.dart).
   assets:
     - assets/tessdata/
-    # Модели распознавания речи и их опись — whisper/fetch.sh (265 МБ, в
-    # репозиторий не коммитятся; каталог держит .gitkeep).
+    # Speech-recognition models and their manifest — whisper/fetch.sh
+    # (265 MB, not committed to the repository; the directory holds a
+    # .gitkeep).
     - assets/whisper/
 
   # To add assets to your application, add an assets section, like this:

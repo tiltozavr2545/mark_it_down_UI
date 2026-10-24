@@ -18,14 +18,14 @@ const _textExtensions = {
   'atom',
 };
 
-/// Порядок — от дешёвого к дорогому, первый уверенный ответ побеждает:
-/// магические байты → уточнение внутри zip-семьи → расширение как подсказка
-/// → кодировка для текстовых. Расширению самому по себе верить нельзя — оно
-/// врёт регулярно (файл без расширения, `.docx` под именем `.pdf`).
+/// Order — from cheap to expensive, the first confident answer wins:
+/// magic bytes → refinement within the zip family → extension as a hint
+/// → encoding for text files. The extension alone cannot be trusted — it
+/// lies regularly (a file with no extension, a `.docx` named `.pdf`).
 ///
-/// [head] — уже прочитанные байты файла (для маленьких файлов — файл
-/// целиком, для больших достаточно начала; решение, сколько читать, остаётся
-/// на вызывающей стороне).
+/// [head] — the bytes of the file already read (for small files, the
+/// whole file; for large ones the start is enough; the decision of how
+/// much to read stays with the caller).
 DetectedType detectType(Uint8List head, {String? extension}) {
   if (head.isEmpty) {
     return const DetectedType(FileKind.emptyFile, 'Пустой файл');
@@ -65,8 +65,9 @@ DetectedType _describeText(Uint8List head, String? extension) {
     utf8.decode(head, allowMalformed: false);
     return DetectedType(FileKind.text, label);
   } catch (_) {
-    // Без BOM и не разбирается как UTF-8 — почти наверняка Windows-1251,
-    // это обычное дело на русскоязычных выгрузках, а не признак битого файла.
+    // No BOM and doesn't parse as UTF-8 — almost certainly Windows-1251,
+    // which is routine for Russian-language exports, not a sign of a
+    // corrupt file.
     return DetectedType(
       FileKind.text,
       '$label, не UTF-8 (вероятно Windows-1251)',
@@ -74,8 +75,9 @@ DetectedType _describeText(Uint8List head, String? extension) {
   }
 }
 
-/// Доля управляющих байтов (кроме `\t`, `\n`, `\r`) среди первых байтов —
-/// грубая, но дешёвая проверка «это вообще похоже на текст».
+/// The share of control bytes (other than `\t`, `\n`, `\r`) among the
+/// first bytes — a rough but cheap check for "does this even look like
+/// text".
 bool _looksBinary(Uint8List head) {
   final sample = head.length > 1024 ? head.sublist(0, 1024) : head;
   var controlBytes = 0;

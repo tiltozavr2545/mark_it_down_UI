@@ -1,23 +1,27 @@
-# Собирает markitdown_whisper — прослойку mdw (mdw.h) — вместе с whisper.cpp,
-# ggml и libopus. Запускается из whisper/build.sh, пути к исходникам
-# передаются им же (-DMDW_*_DIR).
+# Builds markitdown_whisper — the mdw layer (mdw.h) — together with
+# whisper.cpp, ggml, and libopus. Launched from whisper/build.sh, which
+# also passes the paths to the sources (-DMDW_*_DIR).
 #
-# На выходе в ${CMAKE_BINARY_DIR}/bin (туда же пишет сам whisper.cpp) — всё,
-# что едет в приложение:
-#   markitdown_whisper  — наша прослойка (miniaudio, libopus вшиты статически)
-#   whisper, ggml, ggml-base — shared: варианты CPU-бэкенда ниже линкуются
-#                         с ggml-base и без shared-сборки невозможны
-#   ggml-cpu-<вариант>  — CPU-бэкенд под разные наборы инструкций (SSE4.2,
-#                         AVX2, AVX-512… / armv8.0 … armv9.2); при запуске
-#                         ggml берёт лучший, что тянет процессор
+# Output in ${CMAKE_BINARY_DIR}/bin (the same place whisper.cpp itself
+# writes to) — everything that ships with the app:
+#   markitdown_whisper  — our layer (miniaudio, libopus statically linked in)
+#   whisper, ggml, ggml-base — shared: the CPU backend variants below link
+#                         against ggml-base and aren't possible without a
+#                         shared build
+#   ggml-cpu-<variant>  — a CPU backend for different instruction sets
+#                         (SSE4.2, AVX2, AVX-512… / armv8.0 … armv9.2); at
+#                         runtime ggml picks the best one the processor
+#                         can handle
 #
-# Почему варианты, а не одна сборка: под AVX2 приложение падает целиком
-# («illegal instruction») на процессоре без AVX2 — а это ещё и Pentium/
-# Celeron 2020-х; под голый SSE — медленно в разы на всех остальных.
+# Why variants instead of a single build: under AVX2 the app crashes
+# entirely ("illegal instruction") on a processor without AVX2 — and
+# that's still Pentium/Celeron as of the 2020s; under plain SSE it's
+# several times slower on everything else.
 cmake_minimum_required(VERSION 3.16)
 project(markitdown_whisper C CXX)
-# whisper.cpp объявляет cmake_minimum_required старше 3.13, и без этого его
-# option(BUILD_SHARED_LIBS …) затирает значение, выставленное здесь.
+# whisper.cpp declares a cmake_minimum_required newer than 3.13, and
+# without this its option(BUILD_SHARED_LIBS …) overwrites the value set
+# here.
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 set(MDW_WHISPER_DIR "" CACHE PATH "исходники whisper.cpp")
@@ -32,7 +36,7 @@ endforeach()
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-# Каталог переносится целиком: библиотеки ищут соседей рядом с собой.
+# The directory is moved as a whole: libraries look for their neighbors right next to themselves.
 if(APPLE)
   set(CMAKE_INSTALL_NAME_DIR "@rpath")
   set(CMAKE_BUILD_RPATH "@loader_path")
@@ -41,17 +45,17 @@ elseif(UNIX)
   set(CMAKE_BUILD_RPATH "\$ORIGIN")
 endif()
 
-# --- libopus: статически внутрь markitdown_whisper. Добавляется ДО
-# whisper.cpp: глобальный BUILD_SHARED_LIBS=ON сделал бы её shared.
+# --- libopus: statically linked into markitdown_whisper. Added BEFORE
+# whisper.cpp: a global BUILD_SHARED_LIBS=ON would make it shared.
 set(BUILD_SHARED_LIBS OFF)
 set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
 set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
-# Нейросетевые надстройки Opus 1.5+ (восстановление потерь, улучшение
-# речи) — для декодирования файла без потерь пакетов не нужны, а весят
-# мегабайты.
+# Opus 1.5+ neural extensions (packet-loss recovery, speech enhancement) —
+# not needed for decoding a file without packet loss, and they weigh
+# megabytes.
 set(OPUS_DRED OFF CACHE BOOL "" FORCE)
 set(OPUS_OSCE OFF CACHE BOOL "" FORCE)
 add_subdirectory("${MDW_OPUS_DIR}" opus EXCLUDE_FROM_ALL)
@@ -61,16 +65,16 @@ set(BUILD_SHARED_LIBS ON)
 set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
-set(WHISPER_CURL OFF CACHE BOOL "" FORCE)   # скачивание модели по URL — нет
+set(WHISPER_CURL OFF CACHE BOOL "" FORCE)   # downloading the model by URL — no
 set(WHISPER_SDL2 OFF CACHE BOOL "" FORCE)
-set(GGML_NATIVE OFF CACHE BOOL "" FORCE)    # не под процессор сборочной машины
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)    # not for the build machine's own processor
 set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
-# Свой пул потоков ggml вместо OpenMP: иначе на Windows нужен vcomp140.dll,
-# которого у пользователя может не быть, на Android — libomp.so.
+# ggml's own thread pool instead of OpenMP: otherwise Windows needs
+# vcomp140.dll, which the user may not have, and Android needs libomp.so.
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
-set(GGML_RPC OFF CACHE BOOL "" FORCE)       # бэкенд по сети — нет
-set(GGML_METAL OFF CACHE BOOL "" FORCE)     # только CPU, одинаково везде
+set(GGML_RPC OFF CACHE BOOL "" FORCE)       # networked backend — no
+set(GGML_METAL OFF CACHE BOOL "" FORCE)     # CPU only, the same everywhere
 set(GGML_BLAS OFF CACHE BOOL "" FORCE)
 set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 add_subdirectory("${MDW_WHISPER_DIR}" whisper EXCLUDE_FROM_ALL)
@@ -92,18 +96,18 @@ set_target_properties(markitdown_whisper PROPERTIES
 if(ANDROID)
   target_link_libraries(markitdown_whisper PRIVATE mediandk log)
 elseif(WIN32)
-  # mfplat/mfreadwrite — не здесь: грузятся динамически
-  # (mdw_platform_windows.cpp), mfuuid — только GUID-ы, статическая.
+  # mfplat/mfreadwrite — not here: they're loaded dynamically
+  # (mdw_platform_windows.cpp); mfuuid is just GUIDs, a static library.
   target_link_libraries(markitdown_whisper PRIVATE mfuuid ole32)
-  # miniaudio и stb_vorbis зовут fopen/strcpy — предупреждения MSVC о
-  # «небезопасных» функциях к нам не относятся.
+  # miniaudio and stb_vorbis call fopen/strcpy — MSVC's warnings about
+  # "unsafe" functions don't apply to us.
   target_compile_definitions(markitdown_whisper PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
   target_link_libraries(markitdown_whisper PRIVATE m)
 endif()
 
-# Варианты CPU-бэкенда — MODULE-библиотеки, от которых whisper не зависит:
-# без явной зависимости `--target markitdown_whisper` их бы не собрал.
+# CPU backend variants are MODULE libraries that whisper doesn't depend
+# on: without an explicit dependency, `--target markitdown_whisper` wouldn't build them.
 get_property(GGML_TARGETS DIRECTORY "${MDW_WHISPER_DIR}/ggml/src"
   PROPERTY BUILDSYSTEM_TARGETS)
 set(MDW_CPU_VARIANTS "")

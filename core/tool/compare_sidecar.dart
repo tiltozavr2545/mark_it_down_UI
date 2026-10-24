@@ -1,31 +1,36 @@
-// Сверка двух реализаций: Dart-ядро против Python-сайдкара (настоящий
-// markitdown) на всех фикстурах из `test/fixtures/`. Этап 4, пункт 5 плана.
+// Checks two implementations against each other: the Dart core vs. the
+// Python sidecar (the real markitdown) on all fixtures from
+// `test/fixtures/`. Stage 4, plan item 5.
 //
 //   make compare-sidecar
-//   # или вручную, из core/:
+//   # or by hand, from core/:
 //   MARKITDOWN_SIDECAR_DIR=../sidecar/dist/macos-x86_64 \
 //   MARKITDOWN_PDFIUM_PATH=../pdfium/native/host/libpdfium.dylib \
 //     dart run tool/compare_sidecar.dart [--out build/sidecar-compare]
 //
-// Что делает: берёт каждую фикстуру (кроме `*.expected.md`), которую по
-// манифесту берёт сайдкар, получает Markdown двумя путями и пишет отчёт.
-// Не ходит по реестру с откатом: Dart — `defaultRegistry()` без сайдкара,
-// сайдкар — реестр из одного `SidecarConverter`, так что «сайдкар не
-// справился» не маскируется Dart-результатом.
+// What it does: takes every fixture (except `*.expected.md`) that the
+// sidecar picks up per the manifest, gets Markdown both ways, and
+// writes a report. Doesn't go through the registry's fallback chain:
+// Dart uses `defaultRegistry()` with no sidecar; the sidecar uses a
+// registry of just one `SidecarConverter`, so "the sidecar failed"
+// never gets masked by the Dart result.
 //
-// Нормализация текстов минимальна и явна (см. [normalize]): только переводы
-// строк, хвостовые пробелы и хвостовые пустые строки. Всё остальное, включая
-// `\f` из pdfminer, остаётся как есть — это и есть расхождение.
+// Text normalization is minimal and explicit (see [normalize]): only
+// line breaks, trailing whitespace, and trailing blank lines. Everything
+// else, including pdfminer's `\f`, is left as-is — that's the point of
+// comparison.
 //
-// Отчёт (по умолчанию `core/build/sidecar-compare/`, `build/` в .gitignore):
-//   summary.md                    сводка по всем фикстурам
-//   <формат>/<имя>.dart.md        нормализованный вывод Dart-ядра
-//   <формат>/<имя>.sidecar.md     нормализованный вывод сайдкара
-//   <формат>/<имя>.diff           построчный diff (`-` Dart, `+` сайдкар)
+// Report (default `core/build/sidecar-compare/`, `build/` is in
+// .gitignore):
+//   summary.md                    a summary across all fixtures
+//   <format>/<name>.dart.md       normalized output of the Dart core
+//   <format>/<name>.sidecar.md    normalized output of the sidecar
+//   <format>/<name>.diff          a line-by-line diff (`-` Dart, `+` sidecar)
 //
-// Разбор расхождений и их классификация — в docs/format-coverage.md,
-// «Сверка с эталоном». Код выхода 0, если сайдкар найден (расхождения —
-// не ошибка, а предмет разбора); 2 — сайдкара нет.
+// Discussion of the differences and their classification live in
+// docs/format-coverage.md, "Сверка с эталоном". Exit code 0 if the
+// sidecar was found (differences are something to review, not an
+// error); 2 if there's no sidecar.
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -101,8 +106,8 @@ Future<void> main(List<String> args) async {
   stdout.writeln('\nОтчёт: ${p.absolute(outDir)}/summary.md');
 }
 
-/// Минимальная нормализация перед сравнением. Намеренно не трогает ни
-/// пробелы внутри строки, ни пустые строки между блоками, ни `\f`.
+/// Minimal normalization before comparing. Deliberately leaves alone
+/// whitespace within a line, blank lines between blocks, and `\f`.
 String normalize(String text) {
   final lines = text
       .replaceAll('\r\n', '\n')
@@ -117,7 +122,7 @@ String normalize(String text) {
 }
 
 class _Side {
-  /// `null`, если конвертер отказал.
+  /// `null` if the converter declined.
   final String? markdown;
   final String? error;
   final List<String> warnings;
@@ -140,8 +145,8 @@ Future<_Side> _run(
       markdown: normalize(result.markdown),
       warnings: [
         for (final w in result.warnings)
-          // Строка «converterId: sidecar …» одинакова для всех файлов и
-          // только шумит в отчёте.
+          // The "converterId: sidecar …" line is the same for every file
+          // and is just noise in the report.
           if (!w.message.startsWith('converterId: sidecar')) w.message,
       ],
       time: stopwatch.elapsed,
@@ -170,8 +175,8 @@ class _Row {
 
   _Row(this.name, this.type, this.dart, this.sidecar);
 
-  /// Одно из: `same`, `diff`, `sidecar-only` (у Dart нет конвертера или он
-  /// отказал), `sidecar-failed`, `both-failed`.
+  /// One of: `same`, `diff`, `sidecar-only` (Dart has no converter for it,
+  /// or it declined), `sidecar-failed`, `both-failed`.
   String get status {
     if (dart.markdown != null && sidecar.markdown != null) {
       return dart.markdown == sidecar.markdown ? 'same' : 'diff';
@@ -187,8 +192,8 @@ class _Row {
 void _writeFiles(Directory out, _Row row) {
   final base = p.join(out.path, p.withoutExtension(row.name));
   Directory(p.dirname(base)).createSync(recursive: true);
-  // Расширение источника входит в имя, чтобы `simple.docx` и `simple.pdf`
-  // одного формата-каталога не затирали друг друга.
+  // The source extension is part of the name so that `simple.docx` and
+  // `simple.pdf` in the same format directory don't overwrite each other.
   final stem = '$base.${p.extension(row.name).replaceFirst('.', '')}';
   if (row.dart.markdown != null) {
     File('$stem.dart.md').writeAsStringSync(row.dart.markdown!);
@@ -273,9 +278,9 @@ String _console(List<_Row> rows) {
   return b.toString();
 }
 
-/// Построчный diff по наибольшей общей подпоследовательности. Для больших
-/// входов (n·m > 4 млн) срезает общие префикс и суффикс и показывает остаток
-/// как замену целиком — для отчёта этого достаточно.
+/// A line-by-line diff via longest common subsequence. For large inputs
+/// (n·m > 4 million) it trims the common prefix and suffix and shows the
+/// remainder as a wholesale replacement — good enough for the report.
 String lineDiff(String a, String b) {
   List<String> split(String s) => s.isEmpty
       ? <String>[]
@@ -297,8 +302,8 @@ String lineDiff(String a, String b) {
   final other = y.sublist(start, endY);
 
   final out = StringBuffer();
-  // Невидимый `\f` (разрыв страницы pdfminer) делаем видимым, иначе строки
-  // выглядят одинаковыми.
+  // Make the invisible `\f` (pdfminer's page break) visible, otherwise
+  // the lines look the same.
   void emit(String prefix, String line) =>
       out.writeln('$prefix${line.replaceAll('\f', '<FF>')}');
 

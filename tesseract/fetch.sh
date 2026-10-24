@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Быстрая часть OCR (секунды, а не минуты, как build.sh): то, что не
-# собирается, а только качается по закреплённым версиям и sha256 из
-# tesseract/versions.sh. Ничего из скачанного не коммитится — тот же порядок,
-# что у pdfium/fetch.sh.
+# The fast part of OCR (seconds, not minutes like build.sh): what isn't
+# built, only downloaded, by the pinned versions and sha256 from
+# tesseract/versions.sh. Nothing downloaded is committed — the same
+# arrangement as pdfium/fetch.sh.
 #
-#   tesseract/tessdata/{rus,eng}.traineddata  модели — для dart test в core/
-#   app/assets/tessdata/                      они же — ассетами приложения
-#                                             (на Windows лягут файлами рядом
-#                                             с .exe, на Android копируются из
-#                                             APK при первом OCR)
+#   tesseract/tessdata/{rus,eng}.traineddata  the models — for dart test in core/
+#   app/assets/tessdata/                      the same models as app assets
+#                                             (on Windows they end up as
+#                                             files next to .exe, on
+#                                             Android they're copied from
+#                                             the APK on the first OCR)
 #   app/android/app/src/main/jniLibs/arm64-v8a/
 #     libtesseract.so libleptonica.so libjpeg.so libpngx.so
-#                                             из AAR Tesseract4Android
+#                                             from the Tesseract4Android AAR
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tesseract/versions.sh

@@ -5,21 +5,23 @@ import 'package:markitdown_core/markitdown_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// Интеграция с НАСТОЯЩИМ сайдкаром (Python + markitdown), а не с фейковым
-/// shell-скриптом из `sidecar_converter_test.dart`. Пропускается, если
-/// `MARKITDOWN_SIDECAR_DIR` не задан: в CI сайдкара нет, и `make verify`
-/// его не собирает. Вручную:
+/// Integration with the REAL sidecar (Python + markitdown), not with the
+/// fake shell script from `sidecar_converter_test.dart`. Skipped if
+/// `MARKITDOWN_SIDECAR_DIR` is not set: there is no sidecar in CI, and
+/// `make verify` does not build it. Manually:
 ///
 ///   make sidecar
 ///   cd core && MARKITDOWN_SIDECAR_DIR=$PWD/../sidecar/dist/macos-x86_64 \
 ///     MARKITDOWN_PDFIUM_PATH=$PWD/../pdfium/native/host/libpdfium.dylib \
 ///     dart test test/sidecar_integration_test.dart
 ///
-/// Для `xls`/`msg` эталон (`*.expected.md`) — вывод самого сайдкара (у
-/// Dart-разбора `xls` эталон свой — `simple_dart.expected.md`; `msg` Dart
-/// повторяет символ в символ). Для остальных форматов расхождения с Dart-ядром
-/// разбирает `make compare-sidecar`, а здесь проверяется только, что сайдкар
-/// отработал и это именно он — по характерным для markitdown признакам.
+/// For `xls`/`msg` the expected file (`*.expected.md`) is the sidecar's
+/// own output (Dart `xls` parsing has its own expected file —
+/// `simple_dart.expected.md`; Dart `msg` matches it character for
+/// character). For the other formats, divergences from the Dart core are
+/// handled by `make compare-sidecar`, and here we only check that the
+/// sidecar actually ran and that it was indeed the sidecar — by markers
+/// characteristic of markitdown.
 void main() {
   final sidecarDir =
       Platform.environment[SidecarConverter.sidecarDirEnvVar] ?? '';
@@ -30,7 +32,7 @@ void main() {
 
   final fixturesDir = p.join(Directory.current.path, 'test', 'fixtures');
 
-  group('настоящий сайдкар', skip: skipReason, () {
+  group('real sidecar', skip: skipReason, () {
     late SidecarConverter sidecar;
     late ConverterRegistry registry;
 
@@ -67,17 +69,18 @@ void main() {
       return (outcome as ConversionSuccess).result;
     }
 
-    test('манифест: сайдкар берёт все шесть форматов', () {
+    test('manifest: the sidecar takes all six formats', () {
       expect(
         sidecar.formats,
         containsAll(['pdf', 'docx', 'xlsx', 'xls', 'pptx', 'msg']),
       );
     });
 
-    // xls и msg: сайдкар в приложении идёт на них первым, эталон — его вывод, а
-    // главное — что детекция ядра сама отправляет их туда. Имя файла
-    // нарочно без расширения: тип должен определиться по содержимому
-    // (каталог OLE2), а не по подсказке.
+    // xls and msg: in the app the sidecar takes them first, the expected
+    // file is its output, and the main point is that the core's own
+    // detection sends them there. The filename deliberately has no
+    // extension: the type must be determined by content (the OLE2
+    // directory), not by a hint.
     for (final entry in {
       'xls/simple.xls': FileKind.xls,
       'msg/simple.msg': FileKind.msg,
@@ -85,7 +88,7 @@ void main() {
       final source = entry.key;
       final expected = source.replaceAll(RegExp(r'\.\w+$'), '.expected.md');
 
-      test('$source: детекция по содержимому и вывод сайдкара', () async {
+      test('$source: content-based detection and sidecar output', () async {
         final bytes = read(source);
         final info = StreamInfo.fromHead(bytes, filename: 'attachment');
         expect(info.detectedType.kind, entry.value);
@@ -96,7 +99,7 @@ void main() {
           result.markdown,
           File(p.join(fixturesDir, expected)).readAsStringSync(),
         );
-        // По этой строке видно, что сработал сайдкар, а не Dart-ядро.
+        // This line shows that the sidecar ran, not the Dart core.
         expect(
           result.warnings.first.message,
           startsWith('converterId: sidecar'),
@@ -104,7 +107,7 @@ void main() {
       });
 
       test(
-        '$source: путь на диске и байты в памяти дают одно и то же',
+        '$source: a path on disk and in-memory bytes give the same result',
         () async {
           final byPath = await convert(source, withLocalPath: true);
           final byBytes = await convert(source);
@@ -113,8 +116,9 @@ void main() {
       );
     }
 
-    // Остальные форматы: сайдкар (приоритет −1.0) должен перехватывать их у
-    // Dart-конвертеров. Признак markitdown, которого у Dart-ядра нет.
+    // The other formats: the sidecar (priority -1.0) must intercept them
+    // from the Dart converters. A markitdown marker that the Dart core
+    // doesn't have.
     final markers = {
       'docx/simple.docx': ['* Первый пункт', '[[1]](#footnote-1)'],
       'xlsx/simple.xlsx': ['## Данные', '| Город | Население |'],
@@ -126,7 +130,7 @@ void main() {
       'pdf/table.pdf': ['| City   | Population | Country |'],
     };
     for (final entry in markers.entries) {
-      test('${entry.key}: отвечает сайдкар', () async {
+      test('${entry.key}: the sidecar answers', () async {
         final result = await convert(entry.key);
         expect(result.converterId, 'sidecar');
         for (final marker in entry.value) {
@@ -135,7 +139,7 @@ void main() {
       });
     }
 
-    test('pptx/no_sppr.pptx: python-pptx отказал → откат на Dart', () async {
+    test('pptx/no_sppr.pptx: python-pptx failed → falls back to Dart', () async {
       final result = await convert('pptx/no_sppr.pptx');
       expect(result.converterId, 'pptx');
       expect(
@@ -145,9 +149,10 @@ void main() {
       expect(result.markdown, contains('## Первый слайд'));
     });
 
-    test('битый xls: отказали и сайдкар, и Dart-разбор', () async {
-      // Сигнатура OLE2 и каталог от .xls, но дальше мусор: не откроет ни
-      // markitdown, ни запасной Dart-разбор (0.9).
+    test('corrupted xls: both the sidecar and Dart parsing fail', () async {
+      // The OLE2 signature and directory are from .xls, but what follows
+      // is garbage: neither markitdown nor the fallback Dart parsing (0.9)
+      // will open it.
       final bytes = read('xls/simple.xls');
       final broken = Uint8List.fromList([
         ...bytes.sublist(0, 1024),

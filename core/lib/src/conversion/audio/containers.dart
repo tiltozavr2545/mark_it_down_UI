@@ -4,8 +4,8 @@ import 'dart:typed_data';
 import '../../text_decoding.dart';
 import 'audio_info.dart';
 
-/// Поля `LIST/INFO` в WAV → поля [AudioTags]. Строки — в кодировке системы
-/// записавшего, отсюда [decodeLegacyText].
+/// `LIST/INFO` fields in WAV → [AudioTags] fields. The strings are in the
+/// recording system's own encoding, hence [decodeLegacyText].
 const _infoFields = {
   'INAM': 'title',
   'IART': 'artist',
@@ -26,10 +26,10 @@ const _wavCodecs = {
   0x55: 'MP3',
 };
 
-/// WAV: RIFF-чанки `fmt ` (формат, каналы, частота, байт в секунду) и
-/// `data` (её размер / байт в секунду = длительность). Диктофоны, пишущие
-/// поток, оставляют в размере `data` 0 или `0xFFFFFFFF` — тогда берётся
-/// реальный остаток файла.
+/// WAV: the RIFF chunks `fmt ` (format, channels, sample rate, bytes per
+/// second) and `data` (its size / bytes per second = duration). Voice
+/// recorders that write as a stream leave `data`'s size as 0 or
+/// `0xFFFFFFFF` — in that case the file's actual remainder is used.
 void readWav(Uint8List bytes, AudioInfo info) {
   final view = ByteData.sublistView(bytes);
   int? byteRate;
@@ -99,7 +99,7 @@ void _readInfo(Uint8List data, AudioInfo info) {
 
 // --- ISO BMFF (MP4, M4A, MOV, 3GP) ------------------------------------------
 
-/// Коробка ISO BMFF: тип и границы полезной нагрузки.
+/// An ISO BMFF box: its type and the bounds of its payload.
 class _Box {
   final String type;
   final int start;
@@ -108,9 +108,10 @@ class _Box {
   const _Box(this.type, this.start, this.end);
 }
 
-/// Дочерние коробки в `[start, end)`. Размер 1 — 64-битный размер следом,
-/// 0 — «до конца родителя». Коробка, вылезающая за родителя, обрезается по
-/// нему и помечает файл битым — но не роняет разбор.
+/// Child boxes within `[start, end)`. A size of 1 means a 64-bit size
+/// follows, 0 means "to the end of the parent". A box that extends past
+/// its parent is clamped to it and marks the file as damaged — but
+/// doesn't abort the parse.
 List<_Box> _children(Uint8List bytes, int start, int end, AudioInfo info) {
   final view = ByteData.sublistView(bytes);
   final boxes = <_Box>[];
@@ -148,7 +149,7 @@ _Box? _child(List<_Box> boxes, String type) {
   return null;
 }
 
-/// Ключи `ilst` (теги iTunes) → поля [AudioTags]. `©` — байт 0xA9.
+/// `ilst` keys (iTunes tags) → [AudioTags] fields. `©` is byte 0xA9.
 const _ilstFields = {
   '©nam': 'title',
   '©ART': 'artist',
@@ -173,9 +174,9 @@ const _audioCodecs = {
   '.mp3': 'MP3',
 };
 
-/// MP4/M4A/MOV/3GP: `moov/mvhd` — длительность, `moov/trak` — дорожки
-/// (`hdlr`: `soun` — звук, `vide` — видео; размер видео из `tkhd`, кодек и
-/// частота звука из `stsd`), `moov/udta/meta/ilst` — теги iTunes.
+/// MP4/M4A/MOV/3GP: `moov/mvhd` — duration, `moov/trak` — tracks (`hdlr`:
+/// `soun` — audio, `vide` — video; video size from `tkhd`, audio codec
+/// and sample rate from `stsd`), `moov/udta/meta/ilst` — iTunes tags.
 void readMp4(Uint8List bytes, AudioInfo info) {
   final view = ByteData.sublistView(bytes);
   final moov = _child(_children(bytes, 0, bytes.length, info), 'moov');
@@ -235,8 +236,9 @@ void _readTrack(Uint8List bytes, _Box trak, AudioInfo info) {
     }
   } else if (handler == 'soun' && !info.hasAudio) {
     info.hasAudio = true;
-    // mdia/minf/stbl/stsd → первая запись: 8 байт заголовка коробки, затем
-    // 6 резерв + 2 индекс + 8 резерв, каналы, бит, 4 резерв, частота 16.16.
+    // mdia/minf/stbl/stsd → the first entry: an 8-byte box header, then
+    // 6 reserved + 2 index + 8 reserved, channels, bits, 4 reserved,
+    // sample rate as 16.16.
     final minf = _child(mdiaBoxes, 'minf');
     final stbl = minf == null
         ? null
@@ -245,7 +247,7 @@ void _readTrack(Uint8List bytes, _Box trak, AudioInfo info) {
         ? null
         : _child(_children(bytes, stbl.start, stbl.end, info), 'stsd');
     if (stsd == null || stsd.start + 8 + 36 > stsd.end) return;
-    final entry = stsd.start + 8; // версия/флаги + число записей
+    final entry = stsd.start + 8; // version/flags + entry count
     final format = latin1.decode(bytes.sublist(entry + 4, entry + 8));
     info
       ..codec = _audioCodecs[format] ?? format.trim()
@@ -255,8 +257,9 @@ void _readTrack(Uint8List bytes, _Box trak, AudioInfo info) {
 }
 
 void _readMeta(Uint8List bytes, _Box meta, AudioInfo info) {
-  // `meta` в MP4 — full box (4 байта версии и флагов), в QuickTime — нет.
-  // Отличаем по содержимому: за full box сразу идут нули.
+  // `meta` in MP4 is a full box (4 bytes of version and flags), in
+  // QuickTime it isn't. Tell them apart by content: a full box is
+  // immediately followed by zeros.
   final view = ByteData.sublistView(bytes);
   final start = meta.start + 4 <= meta.end && view.getUint32(meta.start) == 0
       ? meta.start + 4

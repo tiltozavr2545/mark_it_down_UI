@@ -9,10 +9,10 @@ import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
 
-/// Jupyter-ноутбук — валидный JSON, но со своей структурой ячеек, поэтому
-/// отдельный конвертер, а не `json`: `code` → фенс-блок с языком ядра +
-/// текстовые выводы под ним, `markdown` — как есть (уже разметка), `raw` —
-/// как текст без изменений.
+/// A Jupyter notebook is valid JSON, but with its own cell structure, so it
+/// gets a separate converter rather than `json`: `code` → fenced block with
+/// the kernel language + text outputs below it, `markdown` stays as-is
+/// (already markup), `raw` stays as plain text unchanged.
 class IpynbConverter implements DocumentConverter {
   const IpynbConverter();
 
@@ -90,9 +90,10 @@ String _joinSource(Object? source) {
   return '';
 }
 
-// `.trimRight()`: вывод ноутбука почти всегда кончается своим `\n` (так
-// пишет Jupyter построчный stdout) — без обрезки это даёт лишнюю пустую
-// строку перед следующим блоком, который и так добавляет `\n\n` при склейке.
+// `.trimRight()`: notebook output almost always ends with its own `\n`
+// (that's how Jupyter writes line-buffered stdout) — without trimming this
+// leaves an extra blank line before the next block, which already adds
+// `\n\n` when joining.
 String _outputText(Map output) {
   switch (output['output_type']) {
     case 'stream':

@@ -1,272 +1,300 @@
 # Changelog
 
-История версий MarkItDown UI. Вынесена из [AGENTS.md](AGENTS.md), чтобы та не
-грузилась целиком в контекст на каждой сессии — здесь она читается по запросу.
+Version history of MarkItDown UI. Split out from [AGENTS.md](AGENTS.md) so
+that file doesn't have to load in full into context every session — this
+one is read on demand.
 
-Про **почему** решение принято именно так лучше смотреть не сюда, а в
-комментарий рядом с кодом или в `git log`. Здесь — хронология и что в какой
-версии появилось.
+For the **why** behind a decision, look not here but at the comment next
+to the code, or at `git log`. Here you'll find the timeline and what
+appeared in which version.
 
-Формат версий — `name+build` (`0.1.0+1`), `build` растёт монотонно. Бампается в
-каждом PR, см. «Конвенции работы» в [AGENTS.md](AGENTS.md).
+Version format is `name+build` (`0.1.0+1`), with `build` increasing
+monotonically. Bumped in every PR, see "Working conventions" in
+[AGENTS.md](AGENTS.md).
 
 ---
 
-## 0.9.0 — всё, что умеет markitdown, и ссылки
+## 0.9.0 — everything markitdown can do, plus links
 
-Запрос автора: «сделаем всё, что может обычный markitdown, … можно с
-подключением к интернету». Сеть — только по явной ссылке; LLM-подписи,
-Azure и поиск Bing — не делаются.
+Author's request: "do everything regular markitdown can do, … internet
+access is fine." The network is reached only via an explicit link;
+LLM-generated captions, Azure, and Bing search are not implemented.
 
-**Офлайн, на всех платформах.** `xls` (Excel 97–2003 и Excel 95) и `msg`
-(Outlook) теперь открываются и на Android — свой разбор в Dart-ядре; на
-Windows первым по-прежнему идёт встроенный markitdown, Dart-разбор — на
-случай его сбоя. Письмо выглядит так же, как у markitdown, символ в символ;
-письмо только с HTML-телом больше не пустое. Ленты RSS и Atom (`.rss`,
-`.atom`, `.xml` и без расширения) — канал, записи, даты, тексты. Текст
-распознаётся и на картинках GIF, WebP и TIFF, в том числе на прозрачном
-фоне (стикеры).
+**Offline, on all platforms.** `xls` (Excel 97–2003 and Excel 95) and
+`msg` (Outlook) now open on Android too — via a homegrown Dart-core
+parser; on Windows, the bundled markitdown still goes first, with the
+Dart parser as a fallback if it fails. A message now looks exactly like
+markitdown's output, character for character; a message with only an
+HTML body is no longer empty. RSS and Atom feeds (`.rss`, `.atom`, `.xml`,
+and no extension) — channel, entries, dates, entry text. Text is now also
+recognized on GIF, WebP, and TIFF images, including on a transparent
+background (stickers).
 
-**Ссылки.** Кнопка «Вставить ссылку» (подставит ссылку из буфера обмена),
-на Android — ещё и «Поделиться» ссылкой из YouTube или браузера. Видео
-YouTube — название, просмотры, описание и субтитры (ручные на языке видео
-лучше автоматических); статья Wikipedia — только текст статьи; любая
-страница — без скриптов и стилей, ссылки в ней — полные; ссылка на файл
-(PDF, docx, аудио…) — как сам файл, с распознаванием речи и OCR на
-устройстве.
+**Links.** A "Paste link" button (fills in the link from the clipboard),
+and on Android also "Share" a link from YouTube or a browser. A YouTube
+video gives title, view count, description, and subtitles (manual ones in
+the video's language are preferred over automatic ones); a Wikipedia
+article gives just the article text; any page comes through with no
+scripts or styles, and its links are made absolute; a link to a file
+(PDF, docx, audio…) is handled like the file itself, with on-device speech
+recognition and OCR.
 
-**Приватность.** У Android-сборки появилось разрешение `INTERNET` — для
-ссылок. Файлы по-прежнему никуда не уходят: весь сетевой код — в одном
-модуле, и CI на каждом коммите проверяет, что вне его сети нет.
-Подробно — `docs/offline-and-privacy.md`.
+**Privacy.** The Android build now has the `INTERNET` permission — for
+links. Files still never leave the device: all networking code lives in a
+single module, and CI checks on every commit that there's no networking
+outside it.
+Details — `docs/offline-and-privacy.md`.
 
-Заодно: в результат обычного HTML больше не попадает лишней строкой
-заголовок из `<title>`; `archive` 4 и `image` 4.12. Tesseract4Android
-(`.so` для OCR на Android) пропал с JitPack — сборка качает тот же файл
-(sha256 прежний) из служебного пререлиза
-`deps-tesseract4android-4.9.0` этого репозитория.
+Also: plain HTML output no longer gets an extra line from `<title>`
+leaking into the result; `archive` 4 and `image` 4.12. Tesseract4Android
+(the `.so` used for OCR on Android) disappeared from JitPack — the build
+now downloads the same file (same sha256) from this repository's own
+`deps-tesseract4android-4.9.0` prerelease.
 
-## 0.8.2 — только GitHub Releases
+## 0.8.2 — GitHub Releases only
 
-Решение автора: в Google Play приложение не публикуется, раздаётся только
-через GitHub Releases. Документы приведены в соответствие: снят Play Asset
-Delivery для модели речи (у APK с GitHub нет предела в 200 МБ), сборка для
-Android — APK, а не `.aab`. Главный пункт выкладки теперь — постоянный ключ
-подписи APK, чтобы новая версия ставилась поверх старой. Код не менялся.
+Author's decision: the app isn't published to Google Play, only
+distributed via GitHub Releases. Docs updated to match: Play Asset
+Delivery for the speech model was removed (a GitHub APK has no 200 MB
+cap), and the Android build produces an APK, not an `.aab`. The main
+remaining release item is now a persistent APK signing key, so a new
+version installs over the old one. No code changes.
 
-## 0.8.1 — распознавание без предела длительности
+## 0.8.1 — transcription with no duration limit
 
-По итогам ревью 0.8. Расшифровка больше не пропадает целиком из-за одной
-буквы, разрезанной между фразами (бывает с кириллицей): битый символ
-становится `�`. Новый файл, брошенный во время распознавания, останавливает
-старое распознавание, а не крутит его минутами в фоне и не подменяет
-результат. «Остановить» срабатывает и до начала распознавания — пока звук
-декодируется и грузится модель, а нажатая в последний момент больше не
-помечает полную расшифровку неполной. Сборка Windows падает, если не
-хватает любой из обязательных DLL распознавания, а не только при их общей
-нехватке.
+Following a review of 0.8. A transcription no longer disappears entirely
+because of a single character split between chunks (which can happen with
+Cyrillic): the broken character now becomes `�`. Dropping a new file
+while transcription is running now stops the old transcription, instead
+of letting it keep running in the background for minutes or silently
+swapping out the result. "Stop" now also works before transcription
+starts — while the audio is still decoding and the model is loading — and
+pressing it at the last moment no longer marks a complete transcript as
+incomplete. The Windows build now fails if any of the required
+speech-recognition DLLs is missing, not just when all of them are.
 
-Предела длительности больше нет — ни на Windows, ни на Android (в 0.8 было
-180 минут). Звук распознаётся кусками по 10 минут прямо по ходу
-декодирования, поэтому память не растёт с длиной записи: раньше час
-записи стоил ≈0,6 ГБ, теперь кусок — ≈100 МБ при любой длине. Кусок
-режется в самом тихом месте, чтобы не разрезать слово; время в
-расшифровке и язык — сквозные на весь файл. «Остановить» теперь
-останавливает и декодирование. Процент считается по длительности из
-метаданных; если её в файле нет, процента нет.
+There's no longer a duration limit — not on Windows, not on Android (it
+was 180 minutes in 0.8). Audio is transcribed in 10-minute chunks as
+decoding proceeds, so memory no longer grows with recording length: an
+hour-long recording used to cost ≈0.6 GB, now a chunk costs ≈100 MB
+regardless of overall length. A chunk is cut at the quietest point so as
+not to split a word; timestamps in the transcript and the detected
+language stay consistent across the whole file. "Stop" now also halts
+decoding. The percentage is computed from the duration in the file's
+metadata; if that's missing, there's no percentage shown.
 
-## 0.8 — распознавание речи
+## 0.8 — speech recognition
 
-Аудио теперь не только метаданные: речь распознаётся на устройстве, без
-сети — whisper.cpp 1.9.5 с моделью Whisper small (8-битная, 264 МБ),
-одинаково на Windows и на Android. Модель многоязычная: русский, английский,
-итальянский и ещё девять десятков языков, язык определяется сам и пишется в
-результат («Язык речи»). Расшифровка — раздел «Расшифровка», абзацы с
-отметкой времени начала; в предупреждениях — движок и просьба проверить
-имена и термины. Перед распознаванием Silero VAD вырезает тишину — на ней
-Whisper выдумывает текст.
+Audio is no longer just metadata: speech is now transcribed on-device,
+with no network — whisper.cpp 1.9.5 with the Whisper small model
+(8-bit, 264 MB), the same on Windows and Android. The model is
+multilingual: Russian, English, Italian, and about ninety other
+languages; the language is auto-detected and written into the result
+("Speech language"). The transcript appears under a "Transcript" section,
+as paragraphs with a start timestamp; the warnings note the engine and
+ask the user to check names and terms. Before transcription, Silero VAD
+strips out silence — Whisper tends to hallucinate text over silence.
 
-Распознаётся всё, что приложение уже открывало: голосовые из мессенджеров
-(Ogg Opus), MP3, FLAC, WAV, Ogg Vorbis — переносимым декодером, M4A с
-диктофона и звук MP4 — декодером системы. Пока идёт распознавание, видны
-процент и кнопка «Остановить»: остановленное отдаёт уже распознанное с
-пометкой, что расшифровка неполная. Предел — 180 минут звука на файл.
+Everything the app could already open gets transcribed: voice messages
+from messaging apps (Ogg Opus), MP3, FLAC, WAV, Ogg Vorbis — via a
+portable decoder — plus M4A from a voice recorder and MP4 audio via the
+system decoder. While transcription runs, a percentage and a "Stop"
+button are shown; stopping returns what's already been transcribed, with
+a note that the transcript is incomplete. Limit: 180 minutes of audio per
+file.
 
-Цена — размер: zip для Windows и APK выросли на ≈270 МБ (модель целиком в
-приложении — подкачать её нечем). На Android при первом аудиофайле модель
-один раз копируется из APK на диск. faster-whisper, о котором шла речь
-сначала, — Python, а Python есть только в десктопном сайдкаре; whisper.cpp
-— C/C++ через FFI, как Tesseract, и работает на телефоне так же, как на
-Windows. Скорость на телефоне ещё не измерена.
+The cost is size: the Windows zip and the APK grew by ≈270 MB (the whole
+model ships with the app — there's nothing to download on demand). On
+Android, the model is copied from the APK to disk once, on the first
+audio file. faster-whisper, which was considered initially, needs Python,
+and Python only exists in the desktop sidecar; whisper.cpp is C/C++ via
+FFI, like Tesseract, and works on a phone the same way it does on
+Windows. Speed on a phone hasn't been measured yet.
 
-Английский и итальянский проверены отдельно — записи по 15–50 секунд,
-четыре голоса, быстрая речь и шум: язык определяется верно, в английском
-ошибок нет, в итальянском — единичные слова («caldaia» → «caldàia»). Обе
-50-секундные записи теперь в тестах и гоняются в CI на Linux и Windows.
-Абзацы расшифровки рвутся по концу предложения, а не посреди фразы.
+English and Italian were verified separately — 15-to-50-second
+recordings, four voices, fast speech and noise: the language is detected
+correctly, there are no errors in English, and only isolated word errors
+in Italian ("caldaia" → "caldàia"). Both 50-second recordings are now in
+the test suite and run in CI on Linux and Windows. Transcript paragraphs
+now break at the end of a sentence, not mid-phrase.
 
-## 0.7 — без предела на размер файла
+## 0.7 — no file-size limit
 
-Предела в 50 МБ на файл больше нет — ни на Windows, ни на Android: что
-выбрали, то и конвертируется. Цена — файл по-прежнему читается в память
-целиком, и слишком большой для устройства файл (видео на несколько гигабайт
-на телефоне) может уронить приложение вместо понятного «превышен лимит».
-Остались только лимиты архивов, они защищают от zip-бомб: суммарно
-распакованное — до 1 ГБ (раньше те же 50 МБ, и сам архив в сумму больше не
-входит), до 2000 файлов, до 8 уровней вложенности.
+The 50 MB file-size limit is gone, on both Windows and Android: whatever
+is selected gets converted. The cost is that the file is still read into
+memory in full, and a file too large for the device (a multi-gigabyte
+video on a phone) can crash the app instead of giving a clean "limit
+exceeded" message. Only the archive limits remain, protecting against
+zip bombs: up to 1 GB of total uncompressed size (previously the same
+50 MB, and the archive itself no longer counts toward the total), up to
+2000 files, up to 8 levels of nesting.
 
-Версия `core/` догнала приложение: 0.4.0 → 0.7.0.
+`core`'s version caught up with the app's: 0.4.0 → 0.7.0.
 
-## 0.6 — Этап 6: изображения и аудио
+## 0.6 — Stage 6: images and audio
 
-Изображения больше не «не поддерживается»: PNG, JPEG, GIF, BMP, WebP, а
-теперь и распознаваемые TIFF и HEIC (фото с iPhone) превращаются в список
-метаданных — формат, размер, камера и объектив, дата съёмки, выдержка и
-диафрагма, геометка, ориентация, подписи и автор, включая подписи, которые
-Windows пишет в «Свойствах» файла. Разбор EXIF свой, а не пакет `exif`: тот
-зацикливается на файле, где IFD указывает сам на себя. Если в результате
-есть геометка, об этом отдельное предупреждение — координаты уйдут в чат
-вместе с текстом.
+Images are no longer "unsupported": PNG, JPEG, GIF, BMP, WebP, and now
+also recognized TIFF and HEIC (iPhone photos) turn into a list of
+metadata — format, size, camera and lens, capture date, exposure and
+aperture, geolocation, orientation, captions and author, including
+captions Windows writes into the file's "Properties." EXIF parsing is
+homegrown rather than the `exif` package: that package loops forever on a
+file where an IFD points at itself. If the result contains a geolocation,
+a separate warning notes it — coordinates would travel into the chat
+along with the text.
 
-Появился OCR — Tesseract 5.5.1, русский и английский, на устройстве, на
-Windows и на Android одинаково. Фото документа и скриншот (JPEG, PNG, BMP)
-получают раздел с распознанным текстом, снимок «боком» поворачивается по
-EXIF; у PDF без текстового слоя распознаются страницы-сканы (до 20 за раз).
-В предупреждениях — движок и версия, а при низкой уверенности — просьба
-проверить текст. План звал ML Kit на телефоне, но он не знает кириллицы.
-Tesseract для Windows собирается из исходников (`tesseract/build.sh`), потому
-что готовые сборки тянут libcurl; Android берёт библиотеки из
-Tesseract4Android. APK вырос на ≈11 МБ (модели и библиотеки OCR). На Windows
-PDF со сканами теперь идёт в Dart-ядро с OCR, а не в сайдкар — иначе скан
-до 50 страниц уходил бы в pdfminer и возвращался пустым.
+OCR arrived — Tesseract 5.5.1, Russian and English, on-device, the same
+on Windows and Android. A photo of a document or a screenshot (JPEG, PNG,
+BMP) gets a section with the recognized text, a sideways shot is rotated
+per its EXIF data; a PDF with no text layer gets its scanned pages
+recognized (up to 20 at a time). Warnings note the engine and version,
+and when confidence is low, ask the user to double-check the text. The
+plan originally called for ML Kit on the phone, but it has no Cyrillic
+support. Tesseract for Windows is built from source
+(`tesseract/build.sh`), because prebuilt versions pull in libcurl;
+Android uses the libraries from Tesseract4Android. The APK grew by
+≈11 MB (OCR models and libraries). On Windows, a scanned PDF now goes to
+the Dart core with OCR rather than to the sidecar — otherwise a scan of
+up to 50 pages would be sent to pdfminer and come back empty.
 
-Аудио тоже больше не «не поддерживается»: MP3, FLAC, Ogg (Vorbis и Opus —
-голосовые из мессенджеров), WAV, M4A и MP4/MOV/3GP дают длительность,
-параметры звука, теги и текст песни; видео — ещё и размер кадра. Теги в
-«Latin-1», которые на деле Windows-1251 (старые русские MP3), читаются
-по-русски. Речь не распознаётся: офлайн-транскрипция с моделью от 40 МБ до
-полутора гигабайт отложена.
+Audio is also no longer "unsupported": MP3, FLAC, Ogg (Vorbis and
+Opus — voice messages from messaging apps), WAV, M4A, and MP4/MOV/3GP now
+yield duration, audio parameters, tags, and lyrics; video also gets frame
+size. Tags marked "Latin-1" that are actually Windows-1251 (old Russian
+MP3s) are now read correctly in Russian. Speech isn't transcribed yet:
+offline transcription, with a model ranging from 40 MB to a gigabyte and
+a half, is deferred.
 
-## 0.5 — Этап 5: Windows
+## 0.5 — Stage 5: Windows
 
-Приложение собирается под Windows — в CI, на `windows-latest`: на Mac
-Flutter Windows не собирает. Джоб `windows` гоняет те же проверки, что
-`make verify`, собирает `flutter build windows --release` и отдаёт каталог
-`Release/` zip-артефактом — это и есть пока упаковка («zip сейчас, решить
-позже», окончательно — Этап 7). `pdfium.dll` кладётся рядом с `.exe`;
-`.gitattributes` держит LF и на Windows-чекауте. Раннер — `windows-2022`:
-`windows-latest` теперь с Visual Studio 2026, которую закреплённый Flutter не
-знает.
+The app now builds for Windows — in CI, on `windows-latest`: Flutter
+doesn't build for Windows on a Mac. The `windows` job runs the same
+checks as `make verify`, builds via
+`flutter build windows --release`, and ships the `Release/` folder as a
+zip artifact — that's the packaging for now ("ship as a zip now, decide
+later," finalized at Stage 7). `pdfium.dll` is placed next to the `.exe`;
+`.gitattributes` keeps LF line endings even on a Windows checkout. The
+runner is `windows-2022`: `windows-latest` now ships Visual Studio 2026,
+which the pinned Flutter version doesn't know about.
 
-Python-сайдкар собран под Windows (джоб `windows-sidecar`, lock-файл
-сгенерирован на раннере и закоммичен после чтения): 308 МБ, лежит в
-`sidecar\` рядом с `.exe`. Интеграционные тесты на Windows зелёные, а сверка
-с Dart-ядром дала побайтно тот же результат, что на macOS, — новых
-расхождений платформа не принесла.
+The Python sidecar is built for Windows too (the `windows-sidecar` job,
+with its lock file generated on the runner and committed after review):
+308 MB, placed in `sidecar\` next to the `.exe`. Integration tests pass on
+Windows, and the comparison against the Dart core produced byte-for-byte
+the same result as on macOS — the platform introduced no new
+discrepancies.
 
-Решение автора о порядке конвертеров: в приложении сайдкар идёт первым
-только на `pdf` (до 50 страниц) и на `xls`/`msg`; `docx`/`xlsx`/`pptx`
-сразу уходят в Dart-ядро — оно не хуже, а быстрее в десятки раз. PDF длиннее
-50 страниц обрабатывает Dart с предупреждением, что таблицы извлечены как
-текст. Для сверки (`make compare-sidecar`) сайдкар по-прежнему видит все
-форматы.
+Author's decision on converter order: in the app, the sidecar only goes
+first for `pdf` (up to 50 pages) and for `xls`/`msg`; `docx`/`xlsx`/`pptx`
+go straight to the Dart core — it's no worse, and dozens of times faster.
+A PDF longer than 50 pages is handled by Dart, with a warning that tables
+were extracted as plain text. For comparison purposes
+(`make compare-sidecar`), the sidecar still handles every format.
 
-Первый релиз на GitHub: тег `v*` запускает `release.yml`, который прогоняет
-весь CI, собирает APK для arm64 (с проверкой, что в собранном файле нет
-`android.permission.INTERNET`) и публикует zip для Windows с сайдкаром и
-APK. Подписи пока временные: APK — debug-ключом, Windows — без подписи.
+First GitHub release: a `v*` tag triggers `release.yml`, which runs the
+whole CI suite, builds the arm64 APK (checking that the built file
+doesn't contain `android.permission.INTERNET`), and publishes a Windows
+zip with the sidecar plus the APK. Signing is still provisional: the APK
+uses a debug key, and the Windows build is unsigned.
 
-## 0.4 — Этап 4: Python-сайдкар
+## 0.4 — Stage 4: the Python sidecar
 
-Настоящий markitdown подключается подпроцессом, только на десктопе.
-`sidecar/build.sh` собирает перемещаемый CPython (python-build-standalone) с
-`markitdown 0.1.8` и закреплёнными версиями зависимостей (`sidecar/locks/`);
-на macOS x86_64 бандл весит 242 МБ, холодный старт — около секунды.
-`SidecarConverter` (приоритет −1.0, таймаут 120 с, временный файл удаляется в
-`finally`) идёт первым на `pdf`/`docx`/`xlsx`/`pptx` и закрывает `.xls` и
-`.msg`, которых в Dart-ядре нет и не будет. Любой провал сайдкара — таймаут,
-мусор в stdout, нет каталога — не отнимает результат: срабатывает
-Dart-конвертер, а в `warnings` пишется, что сайдкар не справился. Где сработал
-сайдкар, видно по `converterId: sidecar`. На мобильных его нет и не
-регистрируется.
+Real markitdown is wired in as a subprocess, desktop only.
+`sidecar/build.sh` builds a relocatable CPython (python-build-standalone)
+with `markitdown 0.1.8` and pinned dependency versions (`sidecar/locks/`);
+on macOS x86_64 the bundle weighs 242 MB, with a cold start around one
+second. `SidecarConverter` (priority −1.0, 120s timeout, temp file
+deleted in `finally`) goes first for `pdf`/`docx`/`xlsx`/`pptx` and covers
+`.xls` and `.msg`, which the Dart core doesn't and won't handle. Any
+sidecar failure — timeout, garbage on stdout, a missing directory —
+doesn't cost the result: the Dart converter kicks in, and `warnings`
+notes that the sidecar failed. Where the sidecar succeeded is visible via
+`converterId: sidecar`. It's absent from mobile and never registered
+there.
 
-Распознавание типа научилось читать каталог Compound File: `xls`, `msg`,
-`doc`, `ppt` делят одну сигнатуру и различаются по именам записей
-(`Workbook`, `__properties_version1.0`…).
+Type detection learned to read the Compound File directory: `xls`, `msg`,
+`doc`, and `ppt` share one signature and are told apart by their stream
+names (`Workbook`, `__properties_version1.0`…).
 
-Сверка двух реализаций (`make compare-sidecar`) нашла и исправила четыре бага
-Dart-ядра: `xlsx` от openpyxl с абсолютными `Target` в `.rels` читался
-пустым; даты в `xlsx` выводились числом; плотные списки `docx`; отступ
-вложенного пункта под нумерованным. Остальные расхождения (таблицы в PDF —
-единственное осознанное отставание ядра — и разница в стиле) записаны
-в `docs/format-coverage.md`. Новые
-фикстуры, в том числе `xls`/`msg`, порождает `sidecar/samples/make_samples.py`;
-прежний рукописный `pptx` переименован в злую фикстуру `no_sppr.pptx`.
+Cross-checking the two implementations (`make compare-sidecar`) found and
+fixed four bugs in the Dart core: an `xlsx` from openpyxl with absolute
+`Target` values in `.rels` was read as empty; `xlsx` dates were output as
+raw numbers; tightly packed `docx` lists; and nested list-item indentation
+under a numbered list. The remaining discrepancies (PDF tables — the
+core's one deliberate gap — and some style differences) are recorded in
+`docs/format-coverage.md`. New fixtures, including `xls`/`msg`, are now
+generated by `sidecar/samples/make_samples.py`; the old hand-written
+`pptx` was renamed into the evil fixture `no_sppr.pptx`.
 
-Подпись для macOS: `sidecar/sign.sh`, `sidecar.entitlements` (только
-`disable-library-validation`), `make sign-sidecar`. Проверено ad-hoc подписью
-с Hardened Runtime; Developer ID, нотаризация и встраивание сайдкара в
-Xcode-сборку не проверены (нет сертификата и Xcode) — см.
-`docs/future-development.md`. В CI новый шаг: в `Release.entitlements` и
-сайдкаре нет `network.*`, песочница включена.
+Signing for macOS: `sidecar/sign.sh`, `sidecar.entitlements` (just
+`disable-library-validation`), `make sign-sidecar`. Verified with an
+ad-hoc signature under Hardened Runtime; Developer ID, notarization, and
+embedding the sidecar into an Xcode build are not verified (no
+certificate or Xcode) — see `docs/future-development.md`. A new CI step:
+checks that `Release.entitlements` and the sidecar contain no
+`network.*` entitlements, and that the sandbox is enabled.
 
-Android не потолстел: в APK ничего из сайдкара нет, нет и
-`android.permission.INTERNET` — замер в
-`docs/format-coverage.md#android-не-потолстел-этап-4`. Открыт вопрос про
-скорость сайдкара на больших файлах (PDF на 300 страниц — 112 с против 1,2 с у
-Dart).
+Android didn't get heavier: nothing from the sidecar is in the APK, and
+there's no `android.permission.INTERNET` either — measurement in
+`docs/format-coverage.md#android-didnt-get-heavier-stage-4`. There's an
+open question about sidecar speed on large files (a 300-page PDF: 112s
+versus 1.2s for Dart).
 
-## 0.3 — Этап 3: PDF
+## 0.3 — Stage 3: PDF
 
-Извлечение текста через PDFium (свои FFI-биндинги, не плагин — работает
-внутри `Isolate.run`): порядок чтения как в исходнике, заголовки по размеру
-шрифта относительно типового для документа, соседние перенесённые по ширине
-строки склеиваются в абзацы. Таблицы в PDF не делаем — решение принято
-заранее. Страницы без текстового слоя — не ошибка: предупреждение «страницы
-N–M выглядят как изображения» в `warnings`, остальной текст отдаётся как
-есть.
+Text extraction via PDFium (custom FFI bindings, not a plugin — works
+inside `Isolate.run`): reading order matches the source, headings are
+detected by font size relative to the document's typical size, and
+adjacent lines wrapped across the page width are stitched back into
+paragraphs. Tables in PDFs are deliberately not supported — that decision
+was made upfront. Pages with no text layer aren't an error: a warning
+("pages N–M look like images") goes into `warnings`, and the rest of the
+text is returned as-is.
 
-Движок выбран между `syncfusion_flutter_pdf`, PDFium и сайдкаром — решило
-архитектурное ограничение (`core/` не импортирует `flutter/`), подробности и
-замер размера бандла — в `docs/format-coverage.md#решения-этапа-3`.
-Нативная `libpdfium` не коммитится, качается `pdfium/fetch.sh` — тот же
-порядок, что у `python-build-standalone` в сайдкаре.
+The engine was chosen among `syncfusion_flutter_pdf`, PDFium, and the
+sidecar — the architectural constraint decided it (`core/` can't import
+`flutter/`); details and a bundle-size measurement are in
+`docs/format-coverage.md#stage-3-decisions`. The native `libpdfium`
+isn't committed, it's downloaded by `pdfium/fetch.sh` — the same approach
+as `python-build-standalone` in the sidecar.
 
-Фикстуры: обычный текст с заголовками, страницы-сканы вперемешку с текстовыми,
-PDF без единого символа текста; плюс тест на нечитаемые байты за `%PDF-`
-(`CorruptedFileFailure`).
+Fixtures: plain text with headings, scanned pages mixed with text pages,
+a PDF with not a single text character; plus a test for unreadable bytes
+following `%PDF-` (`CorruptedFileFailure`).
 
-## 0.2 — Этап 2: Office
+## 0.2 — Stage 2: Office
 
-Общий слой OOXML (`archive` + `xml`) и шесть форматов на нём: `docx`
-(абзацы, стили заголовков, списки с вложенностью через `numbering.xml`,
-таблицы, bold/italic, ссылки, сноски, картинки-заглушки), `xlsx`
-(`sharedStrings` + листы, формулы отдаются кэшированным значением,
-объединённые ячейки уходят HTML-блоком с `warnings`), `pptx` (слайды по
-порядку, заголовок → `##`, заметки докладчика отдельным блоком), `epub`
-(главы по `spine` через `HtmlConverter` Этапа 1 — `request.recurse`, а не
-прямой вызов), `zip` (рекурсия по архиву с общим на всё дерево бюджетом
-лимитов в `ConverterRegistry`, а не на одном уровне), `ipynb`.
+A shared OOXML layer (`archive` + `xml`) and six formats built on it:
+`docx` (paragraphs, heading styles, nested lists via `numbering.xml`,
+tables, bold/italic, links, footnotes, image placeholders), `xlsx`
+(`sharedStrings` + sheets, formulas returned as their cached value,
+merged cells turned into an HTML block with `warnings`), `pptx` (slides
+in order, title → `##`, speaker notes in a separate block), `epub`
+(chapters by `spine` via Stage 1's `HtmlConverter` — through
+`request.recurse`, not a direct call), `zip` (recursion through the
+archive with a shared limits budget across the whole tree in
+`ConverterRegistry`, rather than per level), `ipynb`.
 
-Фикстуры — включая злые: вложенные списки, таблица в таблице, объединённые
-ячейки, zip в zip, превышенные лимиты файлов/объёма и глубины рекурсии.
+Fixtures — including evil ones: nested lists, a table inside a table,
+merged cells, a zip inside a zip, exceeded file-count/size and
+recursion-depth limits.
 
-## 0.1 — Этап 1: конвейер и текстовые форматы
+## 0.1 — Stage 1: the pipeline and text formats
 
-`DocumentConverter`/реестр с приоритетами/`ConversionLimits`/
-`ConversionResult`, `markdown_writer` (экранирование, таблицы, заголовки) —
-единый модуль на все конвертеры. Пять текстовых конвертеров: `plain text`
-(с определением кодировки), `csv`/`tsv`, `json`, `xml`, `html` (`html2md`).
+`DocumentConverter`/a registry with priorities/`ConversionLimits`/
+`ConversionResult`, `markdown_writer` (escaping, tables, headings) — one
+shared module for every converter. Five text converters: `plain text`
+(with encoding detection), `csv`/`tsv`, `json`, `xml`, `html` (`html2md`).
 
-В `app/`: автоконвертация в `Isolate.run`, экраны предпросмотра и ошибки,
-буфер обмена через `super_clipboard` (`text/plain` + `text/markdown`),
-«Сохранить как `.md`», локализация `en`/`ru`.
+In `app/`: auto-conversion in `Isolate.run`, preview and error screens,
+the clipboard via `super_clipboard` (`text/plain` + `text/markdown`),
+"Save as `.md`," `en`/`ru` localization.
 
-## 0.0 — Этап 0: каркас
+## 0.0 — Stage 0: scaffolding
 
-`flutter create` под macOS/Android в `app/`, отдельный Dart-пакет `core/`
-без зависимости от `flutter`. CI на GitHub Actions (`make verify` + проверка
-«нет сети»). Приём файла (`file_picker`, `desktop_drop`,
-`receive_sharing_intent`) через одну точку `accept()`. Распознавание типа по
-магическим байтам + уточнение внутри zip-семьи + расширение как подсказка,
-с тестами на «злых» файлах.
+`flutter create` for macOS/Android in `app/`, a separate Dart package
+`core/` with no dependency on `flutter`. CI on GitHub Actions
+(`make verify` + a "no network" check). File intake (`file_picker`,
+`desktop_drop`, `receive_sharing_intent`) through a single `accept()`
+entry point. Type detection by magic bytes + refinement within the zip
+family + extension as a hint, with tests against "evil" files.

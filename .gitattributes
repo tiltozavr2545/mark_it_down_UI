@@ -1,12 +1,12 @@
-# Переводы строк — LF везде, включая чекаут на Windows (CI на
-# windows-latest, Этап 5). Без этого git на Windows по умолчанию
-# (core.autocrlf=true) превращает \n в \r\n, и `dart format
-# --set-exit-if-changed` и побайтные сравнения ломаются по причине, к коду не
-# относящейся.
+# Line endings — LF everywhere, including checkout on Windows (CI on
+# windows-latest, Stage 5). Without this, git on Windows by default
+# (core.autocrlf=true) turns \n into \r\n, and both `dart format
+# --set-exit-if-changed` and byte-for-byte comparisons break for a reason
+# that has nothing to do with the code.
 * text=auto eol=lf
 
-# Фикстуры сравниваются побайтно — и исходники, и expected.md. Никаких
-# преобразований ни в какую сторону: злая фикстура с CRLF или в
-# Windows-1251 (без NUL-байтов git сочтёт её текстом) должна остаться ровно
-# такой, какой её положили.
+# Fixtures are compared byte-for-byte — both the sources and expected.md.
+# No conversion in either direction: a nasty fixture with CRLF or in
+# Windows-1251 (git would consider it text in the absence of NUL bytes)
+# must stay exactly as it was put there.
 core/test/fixtures/** -text

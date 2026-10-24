@@ -10,17 +10,19 @@ import '../document_converter.dart';
 import '../ocr/tesseract_ocr.dart';
 import '../pdf/pdf_text_extraction.dart';
 
-/// Извлечение текста через PDFium (FFI, не плагин — см.
-/// `docs/format-coverage.md#решения-этапа-3` про выбор движка).
-/// Таблицы не делаем — честнее отдать текст, чем сломанную сетку (см. там
-/// же). Заголовки — по размеру шрифта относительно типового размера текста
-/// в документе; если в PDF нет ни одного символа текста, это не ошибка:
-/// страницы без текстового слоя уходят в `warnings`, остальной текст
-/// отдаётся как есть (частичный результат полезнее отказа).
+/// Text extraction via PDFium (FFI, not a plugin — see
+/// `docs/format-coverage.md#решения-этапа-3` for the engine choice).
+/// We don't do tables — it's more honest to return text than a broken
+/// grid (see the same section). Headings are detected by font size
+/// relative to the document's typical text size; if a PDF has not a
+/// single character of text, that's not an error: pages with no text
+/// layer go into `warnings`, and the rest of the text is returned as-is
+/// (a partial result is more useful than a failure).
 ///
-/// С [ocr] страницы-сканы рендерятся и распознаются Tesseract (Этап 6) —
-/// не больше [OcrSettings.maxPdfPages] штук; распознанный текст встаёт на
-/// место страницы, а в `warnings` пишется, какие страницы и каким движком.
+/// With [ocr], scanned pages are rendered and recognized by Tesseract
+/// (Stage 6) — no more than [OcrSettings.maxPdfPages] of them; the
+/// recognized text takes the page's place, and `warnings` records which
+/// pages and which engine.
 class PdfConverter implements DocumentConverter {
   const PdfConverter({this.ocr});
 
@@ -39,8 +41,9 @@ class PdfConverter implements DocumentConverter {
   @override
   Future<ConversionResult> convert(ConversionRequest request) async {
     final settings = ocr;
-    // Движок открывается при первой странице-скане, а не заранее: загрузка
-    // моделей — полсекунды, и PDF с текстовым слоем платить её не должен.
+    // The engine opens on the first scanned page, not ahead of time:
+    // loading the models takes half a second, and a PDF with a text layer
+    // shouldn't have to pay for it.
     TesseractOcr? engine;
     var engineUnavailable = false;
     final confidences = <int>[];
@@ -120,11 +123,11 @@ class PdfConverter implements DocumentConverter {
   }
 }
 
-/// Типовой размер шрифта текста документа — самый частый размер среди
-/// непустых строк, взвешенный длиной текста (иначе короткий заголовок с
-/// крупным шрифтом мог бы перевесить абзацы). `null`, если в документе нет
-/// текста вовсе — тогда заголовки не выделяются, весь текст идёт плоским
-/// текстом, как и описано в плане.
+/// The document's typical body font size — the most frequent size among
+/// non-blank lines, weighted by text length (otherwise a short heading in
+/// a large font could outweigh the paragraphs). `null` if the document has
+/// no text at all — then headings aren't highlighted, and all the text
+/// goes out as plain text, as described in the plan.
 double? _bodyFontSize(List<PdfPage> pages) {
   final weightBySize = <double, double>{};
   for (final page in pages) {
@@ -138,11 +141,12 @@ double? _bodyFontSize(List<PdfPage> pages) {
   return weightBySize.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
 }
 
-/// Заголовок — строка заметно крупнее типового текста и короче «предложения
-/// длиной в абзац». Обычный текст склеивается в абзацы: соседние строки без
-/// разрыва по вертикали — это перенос по ширине внутри одного абзаца, а не
-/// новый абзац, и склейка здесь — то же правило «текст не переносится по
-/// ширине», что в `markdown_writer`, только на входе, а не на выходе.
+/// A heading is a line noticeably larger than the typical text and shorter
+/// than a "sentence the length of a paragraph". Ordinary text is glued into
+/// paragraphs: adjacent lines with no vertical gap are a width-based wrap
+/// within one paragraph, not a new paragraph — the same "text doesn't wrap
+/// by width" rule as in `markdown_writer`, just applied on input rather
+/// than on output.
 String _render(List<PdfPage> pages, double? bodySize) {
   final buffer = StringBuffer();
   var wroteAnything = false;
@@ -195,12 +199,12 @@ String _render(List<PdfPage> pages, double? bodySize) {
         continue;
       }
 
-      // `top` — верх bbox первого символа строки, не базовая линия: у
-      // строки, начинающейся с буквы без выносного элемента («c», «e»),
-      // верх ниже, чем у «T» или «l», на 1–2pt при одном и том же реальном
-      // межстрочном интервале. Порог 2.0 — с запасом над этим шумом и
-      // далеко от разрыва абзаца (на фикстурах шум ≈1.5pt, разрыв ≈3×
-      // кегль).
+      // `top` is the top of the bbox of the line's first character, not the
+      // baseline: a line starting with a letter that has no ascender
+      // (`c`, `e`) has its top 1-2pt lower than one starting with `T` or
+      // `l`, even at the same real line spacing. Threshold 2.0 — with
+      // margin over this noise and well clear of a paragraph break (on the
+      // fixtures, noise is ~1.5pt, a break is ~3x the font size).
       final isContinuation =
           !pendingParagraphBreak &&
           prevTop != null &&
@@ -218,7 +222,7 @@ String _render(List<PdfPage> pages, double? bodySize) {
       prevTop = line.top;
       prevFontSize = line.fontSize;
     }
-    pendingParagraphBreak = true; // граница страницы — всегда новый абзац
+    pendingParagraphBreak = true; // a page boundary is always a new paragraph
   }
   return buffer.toString();
 }
@@ -238,7 +242,9 @@ String _scanWarning(List<int> pages) {
       '${word == 'страница' ? 'ней' : 'них'} нет';
 }
 
-/// `[2, 3, 5]` → (`страницы`, `2–3, 5`); одна страница — `страница`.
+/// `[2, 3, 5]` → (`страницы`, `2–3, 5`); a single page is `страница` (the
+/// actual Russian word returned, matched to the output phrase's grammatical
+/// number).
 (String, String) _pagesPhrase(List<int> pages) {
   final ranges = <String>[];
   var start = pages.first;

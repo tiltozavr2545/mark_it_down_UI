@@ -1,15 +1,15 @@
 /*
- * Звук → float 16 кГц моно для Whisper.
+ * Audio → float 16 kHz mono for Whisper.
  *
- * WAV, MP3, FLAC, Ogg Vorbis — miniaudio (dr_wav/dr_mp3/dr_flac и
- * stb_vorbis), переносимый C без зависимостей: одинаковый результат на
- * Windows, Android и хосте тестов. Ogg Opus (голосовые из мессенджеров) —
- * свой разбор страниц Ogg и libopus. AAC — декодер платформы, см.
- * mdw_platform_*.
+ * WAV, MP3, FLAC, Ogg Vorbis — miniaudio (dr_wav/dr_mp3/dr_flac and
+ * stb_vorbis), portable C with no dependencies: the same result on
+ * Windows, Android, and the test host. Ogg Opus (voice messages from
+ * messaging apps) — our own Ogg page parsing plus libopus. AAC — the
+ * platform decoder, see mdw_platform_*.
  *
- * Данным в файле не верим, как и заголовку zip: каждая длина проверяется
- * по размеру буфера, битый хвост даёт то, что успели декодировать, а не
- * падение.
+ * We don't trust the data in the file, same as with a zip header: every
+ * length is checked against the buffer size, and a corrupt tail yields
+ * whatever was decoded so far, not a crash.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -24,8 +24,9 @@
 #define MA_NO_ENGINE
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
-/* stb_vorbis: сначала объявления, чтобы miniaudio включил Vorbis, после
- * реализации miniaudio — реализация stb_vorbis (так велит его README). */
+/* stb_vorbis: declarations first, so miniaudio enables Vorbis; after
+ * miniaudio's implementation comes stb_vorbis's implementation (that's
+ * what its README calls for). */
 #define STB_VORBIS_HEADER_ONLY
 #include "extras/stb_vorbis.c"
 #define MINIAUDIO_IMPLEMENTATION
@@ -36,14 +37,15 @@
 #include <opus.h>
 #include <opus_multistream.h>
 
-/* ---------------------------------------------------------------- приёмник */
+/* ------------------------------------------------------------------- sink */
 
-/* Кусок на распознавание — 10 минут: память на него (отсчёты, копия после
- * VAD, мел-спектрограмма) ≈100 МБ при любой длине записи, а границ, где
- * может пострадать фраза, — шесть на час. */
+/* A chunk to transcribe — 10 minutes: memory for it (samples, the copy
+ * after VAD, the mel-spectrogram) is ≈100 MB regardless of recording
+ * length, and the number of boundaries where a phrase might get hurt is
+ * six per hour. */
 #define MDW_CHUNK_SAMPLES ((int64_t)MDW_SAMPLE_RATE * 60 * 10)
-/* Где искать тишину для границы — в последних 15 секундах куска, окнами по
- * 0,1 с с шагом в полокна. */
+/* Where to look for silence for the boundary — in the last 15 seconds of
+ * the chunk, in 0.1 s windows with half-window steps. */
 #define MDW_CUT_LOOKBACK ((int64_t)MDW_SAMPLE_RATE * 15)
 #define MDW_CUT_WINDOW ((int64_t)MDW_SAMPLE_RATE / 10)
 
@@ -52,11 +54,11 @@ struct mdw_sink {
   int64_t count;
   int64_t capacity;
   int64_t max;
-  int64_t total; /* принято всего, с отданными кусками */
+  int64_t total; /* total received, including handed-off chunks */
   uint32_t rate;
   int has_resampler;
   ma_resampler resampler;
-  float *mono; /* рабочий буфер сведения каналов */
+  float *mono; /* working buffer for mixing channels down */
   uint64_t mono_capacity;
   mdw_chunk_fn on_chunk;
   void *user;
@@ -95,9 +97,9 @@ int mdw_sink_set_rate(mdw_sink *sink, uint32_t rate) {
   if (rate == MDW_SAMPLE_RATE) return MDW_OK;
   ma_resampler_config config = ma_resampler_config_init(
       ma_format_f32, 1, rate, MDW_SAMPLE_RATE, ma_resample_algorithm_linear);
-  /* Линейная интерполяция с фильтром нижних частот максимального порядка:
-   * без фильтра 44,1 кГц → 16 кГц даёт наложение спектра, которое Whisper
-   * слышит как шум. */
+  /* Linear interpolation with a maximum-order low-pass filter: without the
+   * filter, 44.1 kHz → 16 kHz produces spectral aliasing that Whisper
+   * hears as noise. */
   config.linear.lpfOrder = MA_MAX_FILTER_ORDER;
   if (ma_resampler_init(&config, NULL, &sink->resampler) != MA_SUCCESS) {
     return MDW_ERR_NOMEM;
@@ -128,8 +130,8 @@ static int mdw_sink_reserve(mdw_sink *sink, int64_t extra) {
   return MDW_OK;
 }
 
-/* Середина самого тихого окна в последних MDW_CUT_LOOKBACK отсчётах: там
- * граница куска не разрежет слово. */
+/* The middle of the quietest window in the last MDW_CUT_LOOKBACK samples:
+ * a chunk boundary there won't cut a word in half. */
 static int64_t mdw_quiet_point(const float *data, int64_t count) {
   int64_t from = count > MDW_CUT_LOOKBACK ? count - MDW_CUT_LOOKBACK : 0;
   int64_t best = count, best_at = count;
@@ -148,7 +150,8 @@ static int64_t mdw_quiet_point(const float *data, int64_t count) {
   return best > 0 ? best : count;
 }
 
-/* Отдать накопленное до тихой точки, остаток сдвинуть в начало. */
+/* Hand off what's accumulated up to the quiet point, shift the remainder
+ * to the start. */
 static int mdw_sink_cut(mdw_sink *sink) {
   int64_t cut = mdw_quiet_point(sink->data, sink->count);
   int status = sink->on_chunk(sink->user, sink->data, cut);
@@ -165,7 +168,8 @@ int mdw_sink_flush(mdw_sink *sink) {
   return sink->status;
 }
 
-/* 16 кГц моно — в буфер: до предела или, в режиме кусков, без него. */
+/* 16 kHz mono into the buffer: up to the limit, or without one in chunked
+ * mode. */
 static int mdw_sink_store(mdw_sink *sink, const float *mono, int64_t n) {
   while (n > 0 && sink->status == MDW_OK) {
     if (sink->cancel != NULL && *sink->cancel != 0) {
@@ -174,7 +178,7 @@ static int mdw_sink_store(mdw_sink *sink, const float *mono, int64_t n) {
     }
     int64_t room = sink->max - sink->count;
     if (room <= 0) {
-      if (sink->on_chunk == NULL) break; /* предел: остальное отбрасываем */
+      if (sink->on_chunk == NULL) break; /* limit: discard the rest */
       sink->status = mdw_sink_cut(sink);
       continue;
     }
@@ -192,7 +196,7 @@ static int mdw_sink_store(mdw_sink *sink, const float *mono, int64_t n) {
   return sink->status;
 }
 
-/* Моно-кадры частоты sink->rate → 16 кГц в конец буфера. */
+/* Mono frames at sink->rate → 16 kHz, appended to the end of the buffer. */
 static int mdw_sink_append_mono(mdw_sink *sink, const float *mono,
                                 uint64_t count) {
   if (!sink->has_resampler) {
@@ -208,7 +212,7 @@ static int mdw_sink_append_mono(mdw_sink *sink, const float *mono,
     }
     int status = mdw_sink_store(sink, out, (int64_t)out_frames);
     if (status != MDW_OK) return status;
-    if (in_frames == 0 && out_frames == 0) break; /* ресемплер стоит */
+    if (in_frames == 0 && out_frames == 0) break; /* resampler is stalled */
     mono += in_frames;
     count -= in_frames;
   }
@@ -282,7 +286,7 @@ static uint32_t mdw_le32(const uint8_t *p) {
          ((uint32_t)p[3] << 24);
 }
 
-/* Первая страница Ogg, и её первый пакет — OpusHead. */
+/* The first Ogg page, and its first packet is OpusHead. */
 static int mdw_is_ogg_opus(const uint8_t *data, int64_t size) {
   if (size < 27 || memcmp(data, "OggS", 4) != 0) return 0;
   int64_t body = 27 + data[26];
@@ -290,22 +294,22 @@ static int mdw_is_ogg_opus(const uint8_t *data, int64_t size) {
 }
 
 typedef struct mdw_opus {
-  OpusDecoder *decoder;           /* семейство 0: моно/стерео */
-  OpusMSDecoder *multistream;     /* остальные: до 255 каналов */
-  int channels;                   /* каналов на выходе декодера */
-  int64_t skip;                   /* сколько отсчётов 16 кГц отбросить */
-  int packets;                    /* 0 — ждём OpusHead, 1 — OpusTags */
-  int decoded;                    /* сколько пакетов декодировалось */
-  int failed;                     /* сколько не декодировалось */
-  float *pcm;                     /* 120 мс × каналы */
+  OpusDecoder *decoder;           /* family 0: mono/stereo */
+  OpusMSDecoder *multistream;     /* the rest: up to 255 channels */
+  int channels;                   /* channels on the decoder's output */
+  int64_t skip;                   /* how many 16 kHz samples to drop */
+  int packets;                    /* 0 — waiting for OpusHead, 1 — OpusTags */
+  int decoded;                    /* how many packets decoded */
+  int failed;                     /* how many failed to decode */
+  float *pcm;                     /* 120 ms × channels */
 } mdw_opus;
 
-/* Максимальный кадр Opus — 120 мс: 1920 отсчётов на 16 кГц. */
+/* The maximum Opus frame is 120 ms: 1920 samples at 16 kHz. */
 #define MDW_OPUS_MAX_FRAME 1920
 
 static int mdw_opus_head(mdw_opus *opus, const uint8_t *packet, size_t size) {
   if (size < 19 || memcmp(packet, "OpusHead", 8) != 0) return MDW_ERR_DECODE;
-  if ((packet[8] & 0xF0) != 0) return MDW_ERR_UNSUPPORTED; /* версия 16+ */
+  if ((packet[8] & 0xF0) != 0) return MDW_ERR_UNSUPPORTED; /* version 16+ */
   int channels = packet[9];
   int pre_skip = mdw_le16(packet + 10);
   int16_t gain = (int16_t)mdw_le16(packet + 16);
@@ -314,8 +318,8 @@ static int mdw_opus_head(mdw_opus *opus, const uint8_t *packet, size_t size) {
   int error = OPUS_OK;
   if (family == 0) {
     if (channels > 2) return MDW_ERR_DECODE;
-    /* Декодер на 16 кГц и одном канале: libopus сам сведёт стерео и
-     * передискретизирует — ресемплер не нужен. */
+    /* A decoder at 16 kHz and one channel: libopus mixes stereo down and
+     * resamples on its own — no resampler needed. */
     opus->decoder = opus_decoder_create(MDW_SAMPLE_RATE, 1, &error);
     if (error != OPUS_OK) return MDW_ERR_NOMEM;
     opus->channels = 1;
@@ -334,7 +338,8 @@ static int mdw_opus_head(mdw_opus *opus, const uint8_t *packet, size_t size) {
   opus->pcm = (float *)malloc(sizeof(float) * MDW_OPUS_MAX_FRAME *
                               (size_t)opus->channels);
   if (opus->pcm == NULL) return MDW_ERR_NOMEM;
-  /* pre-skip задан в отсчётах 48 кГц: «разгон» кодера, не звук. */
+  /* pre-skip is given in 48 kHz samples: it's the encoder's "spin-up", not
+   * audio. */
   opus->skip = pre_skip / 3;
   return MDW_OK;
 }
@@ -343,7 +348,7 @@ static int mdw_opus_packet(mdw_opus *opus, mdw_sink *sink,
                            const uint8_t *packet, size_t size) {
   int index = opus->packets++;
   if (index == 0) return mdw_opus_head(opus, packet, size);
-  if (index == 1) return MDW_OK; /* OpusTags — теги уже прочитал Dart */
+  if (index == 1) return MDW_OK; /* OpusTags — the tags were already read by Dart */
   if (size == 0) return MDW_OK;
   int frames = opus->decoder != NULL
                    ? opus_decode_float(opus->decoder, packet, (opus_int32)size,
@@ -353,7 +358,7 @@ static int mdw_opus_packet(mdw_opus *opus, mdw_sink *sink,
                          opus->pcm, MDW_OPUS_MAX_FRAME, 0);
   if (frames < 0) {
     opus->failed++;
-    return MDW_OK; /* битый пакет — пропускаем, как плеер */
+    return MDW_OK; /* corrupt packet — skip it, like a player would */
   }
   opus->decoded++;
   const float *pcm = opus->pcm;
@@ -380,7 +385,7 @@ static int mdw_decode_ogg_opus(const uint8_t *data, int64_t size,
   int64_t pos = 0;
   while (pos + 27 <= size && status == MDW_OK && !mdw_sink_full(sink)) {
     if (memcmp(data + pos, "OggS", 4) != 0 || data[pos + 4] != 0) {
-      pos++; /* мусор между страницами — ищем следующую */
+      pos++; /* garbage between pages — look for the next one */
       continue;
     }
     int header_type = data[pos + 5];
@@ -390,15 +395,15 @@ static int mdw_decode_ogg_opus(const uint8_t *data, int64_t size,
     if (body > size) break;
     int64_t body_size = 0;
     for (int i = 0; i < segments; i++) body_size += data[pos + 27 + i];
-    if (body + body_size > size) break; /* обрезанный хвост файла */
+    if (body + body_size > size) break; /* file tail got cut off */
 
     if (!have_serial) {
-      serial = page_serial; /* первый поток — тот, где OpusHead */
+      serial = page_serial; /* the first stream is the one with OpusHead */
       have_serial = 1;
     }
     if (page_serial == serial) {
-      /* Страница не продолжает пакет, а он не закончен — потеряли
-       * страницу; недособранный пакет выбрасываем. */
+      /* The page doesn't continue a packet, yet one is unfinished — a page
+       * got lost; discard the partially assembled packet. */
       if (!(header_type & 1)) packet_size = 0;
       int64_t offset = body;
       for (int i = 0; i < segments && status == MDW_OK; i++) {
@@ -441,8 +446,8 @@ static int mdw_decode_ogg_opus(const uint8_t *data, int64_t size,
 
 static int mdw_decode_miniaudio(const uint8_t *data, int64_t size,
                                 mdw_sink *sink) {
-  /* Частоту и сведение каналов оставляем sink — так у всех декодеров один
-   * и тот же ресемплер. */
+  /* Leave the rate and channel mixing to the sink — this way every decoder
+   * shares the same resampler. */
   ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
   ma_decoder decoder;
   if (ma_decoder_init_memory(data, (size_t)size, &config, &decoder) !=
@@ -465,7 +470,8 @@ static int mdw_decode_miniaudio(const uint8_t *data, int64_t size,
       decoded += (int64_t)read;
     }
     if (result != MA_SUCCESS || read == 0) {
-      /* MA_AT_END — конец; другое — битый поток: отдаём то, что есть. */
+      /* MA_AT_END means the end; anything else means a corrupt stream:
+       * hand back whatever we have. */
       if (result != MA_AT_END && result != MA_SUCCESS && decoded == 0) {
         status = MDW_ERR_DECODE;
       }
@@ -476,7 +482,7 @@ static int mdw_decode_miniaudio(const uint8_t *data, int64_t size,
   return status;
 }
 
-/* ------------------------------------------------------------------ вход */
+/* ------------------------------------------------------------------ entry */
 
 int mdw_decode_memory_to(const uint8_t *data, int64_t size, mdw_sink *sink) {
   if (data == NULL || size <= 0) return MDW_ERR_DECODE;
@@ -506,7 +512,8 @@ int mdw_decode_file(const char *path, int64_t max_samples, float **out,
   mdw_sink *sink = mdw_sink_new(max_samples);
   if (sink == NULL) return MDW_ERR_NOMEM;
   int status = mdw_platform_decode_file(path, sink);
-  /* Декодер платформы мог упасть на середине — что успели, то отдаём. */
+  /* The platform decoder may have failed partway through — hand back
+   * whatever was decoded. */
   if (status != MDW_OK && mdw_sink_count(sink) == 0) {
     mdw_sink_free(sink);
     return status;
@@ -516,7 +523,7 @@ int mdw_decode_file(const char *path, int64_t max_samples, float **out,
 }
 
 #if !defined(_WIN32) && !defined(__ANDROID__)
-/* macOS и Linux — только хост тестов: AAC там не нужен. */
+/* macOS and Linux are only the test host: AAC isn't needed there. */
 int mdw_platform_decode_file(const char *path, mdw_sink *sink) {
   (void)path;
   (void)sink;

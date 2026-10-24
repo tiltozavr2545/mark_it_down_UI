@@ -5,11 +5,12 @@ import 'package:ffi/ffi.dart';
 
 import 'pdfium_bindings.dart';
 
-/// Одна строка текста, в том виде, в каком PDFium разбивает страницу по
-/// визуальным строкам (`\r\n` между ними в `FPDFText_GetText`). `fontSize` и
-/// `top` — метрики первого непробельного символа строки: достаточно, чтобы
-/// отличить заголовок от обычного текста и склеить перенесённые по ширине
-/// строки одного абзаца, не разбирая форму буквы целиком.
+/// A single line of text, in the shape PDFium splits the page into visual
+/// lines (`\r\n` between them in `FPDFText_GetText`). `fontSize` and `top`
+/// are the metrics of the line's first non-space character: enough to
+/// tell a heading apart from regular text and to join lines of one
+/// paragraph that were wrapped at the page width, without parsing the
+/// letterform itself.
 class PdfLine {
   final String text;
   final double fontSize;
@@ -27,13 +28,13 @@ class PdfLine {
 class PdfPage {
   final List<PdfLine> lines;
 
-  /// Ни одного символа текста, но на странице есть изображение — похоже на
-  /// скан, см. `docs/implementation-plan.md#этап-3-pdf-03`.
+  /// Not a single character of text, but the page has an image — looks
+  /// like a scan, see `docs/implementation-plan.md#этап-3-pdf-03`.
   final bool looksLikeScan;
 
-  /// Текст, распознанный OCR на странице-скане; `null` — OCR не запускался
-  /// (нет движка, страница сверх лимита), пустая строка — запускался, но
-  /// текста не нашёл.
+  /// Text recognized by OCR on a scanned page; `null` — OCR wasn't run
+  /// (no engine, page beyond the limit), an empty string — it ran but
+  /// found no text.
   final String? ocrText;
 
   const PdfPage({
@@ -43,8 +44,9 @@ class PdfPage {
   });
 }
 
-/// Распознаёт отрендеренную страницу: BGRx-пиксели (4 байта на пиксель),
-/// размеры, шаг строки в байтах и разрешение рендера. Возвращает текст.
+/// Recognizes a rendered page: BGRx pixels (4 bytes per pixel),
+/// dimensions, the row stride in bytes, and the render resolution.
+/// Returns the text.
 typedef PdfPageRecognizer =
     String Function(
       Pointer<Uint8> pixels,
@@ -54,12 +56,12 @@ typedef PdfPageRecognizer =
       int dpi,
     );
 
-/// Разрешение рендера страницы для OCR: 300 dpi — то, на что обучен
-/// Tesseract; ниже мелкий шрифт теряется, выше — дольше без прироста.
+/// The page render resolution for OCR: 300 dpi is what Tesseract is
+/// trained on; lower loses small print, higher takes longer with no gain.
 const _ocrDpi = 300;
 
-/// Длинная сторона растра не больше этого: чертёж A0 при 300 dpi — это
-/// 14 000 px и сотни мегабайт памяти.
+/// The bitmap's long side is capped at this: an A0 drawing at 300 dpi is
+/// 14,000 px and hundreds of megabytes of memory.
 const _maxOcrSide = 5000;
 
 class PdfExtractionResult {
@@ -68,7 +70,7 @@ class PdfExtractionResult {
   const PdfExtractionResult(this.pages);
 }
 
-/// PDFium не смог открыть документ — пароль или нечитаемые байты.
+/// PDFium failed to open the document — a password or unreadable bytes.
 class PdfLoadException implements Exception {
   final String reason;
 
@@ -78,12 +80,13 @@ class PdfLoadException implements Exception {
   String toString() => reason;
 }
 
-/// Разбирает PDF целиком в память через PDFium. Синхронная и CPU-тяжёлая —
-/// вызывающий код уже внутри `Isolate.run`, см.
+/// Parses the whole PDF into memory via PDFium. Synchronous and
+/// CPU-heavy — the calling code is already inside `Isolate.run`, see
 /// `docs/client-architecture.md#конвертация-в-изоляте`.
 ///
-/// [recognize] — OCR для страниц-сканов, не больше [maxOcrPages] штук по
-/// порядку; без него страницы-сканы только помечаются [PdfPage.looksLikeScan].
+/// [recognize] — OCR for scanned pages, at most [maxOcrPages] of them in
+/// order; without it, scanned pages are only flagged via
+/// [PdfPage.looksLikeScan].
 PdfExtractionResult extractPdf(
   Uint8List bytes, {
   PdfPageRecognizer? recognize,
@@ -123,10 +126,11 @@ PdfExtractionResult extractPdf(
   }
 }
 
-/// Только число страниц, без разбора текста: PDFium читает дерево страниц,
-/// а не их содержимое, поэтому это дёшево и на большом файле. `null` — если
-/// документ не открылся (пароль, мусор) или сама библиотека не загрузилась:
-/// вызывающий решает сам, а не ловит исключение.
+/// Just the page count, without parsing the text: PDFium reads the page
+/// tree, not its content, so this stays cheap even on a large file.
+/// `null` — if the document failed to open (password, garbage) or the
+/// library itself failed to load: the caller decides what to do, instead
+/// of catching an exception.
 int? countPdfPages(Uint8List bytes) {
   final PdfiumBindings pdfium;
   try {
@@ -152,9 +156,9 @@ int? countPdfPages(Uint8List bytes) {
   }
 }
 
-/// Есть ли в PDF страница без текста, но с картинкой (как
-/// [PdfPage.looksLikeScan]) — без рендера и OCR. `null` — документ не
-/// открылся или PDFium не загрузился, решает вызывающий.
+/// Whether the PDF has a page without text but with an image (same test
+/// as [PdfPage.looksLikeScan]) — without rendering or OCR. `null` — the
+/// document failed to open or PDFium failed to load, the caller decides.
 bool? pdfHasScanPages(Uint8List bytes) {
   final PdfiumBindings pdfium;
   try {
@@ -234,8 +238,9 @@ PdfPage _extractPage(
   }
 }
 
-/// Рендер страницы в BGRx на белом фоне и OCR. Растр принадлежит PDFium и
-/// живёт только на время вызова [recognize].
+/// Renders the page as BGRx on a white background and runs OCR. The
+/// bitmap is owned by PDFium and lives only for the duration of the
+/// [recognize] call.
 String _recognizePage(
   PdfiumBindings pdfium,
   Pointer<Void> page,
@@ -269,9 +274,9 @@ String _recognizePage(
   }
 }
 
-/// Страница без текста, но с хотя бы одной картинкой, — то, что в
-/// `format-coverage.md` называется «похоже на скан». Пустая страница без
-/// единого объекта — просто пустая страница, не предупреждение.
+/// A page with no text but at least one image — what `format-coverage.md`
+/// calls "looks like a scan". An empty page with not a single object is
+/// just an empty page, not a warning.
 bool _hasImageObject(PdfiumBindings pdfium, Pointer<Void> page) {
   final count = pdfium.pageCountObjects(page);
   for (var i = 0; i < count; i++) {
@@ -292,7 +297,7 @@ List<PdfLine> _extractLines(
   final textBuffer = calloc<Uint16>(charCount + 1);
   try {
     final written = pdfium.textGetText(textPage, 0, charCount, textBuffer);
-    final length = written > 0 ? written - 1 : 0; // без замыкающего '\0'
+    final length = written > 0 ? written - 1 : 0; // without the trailing '\0'
     final codeUnits = textBuffer.asTypedList(length);
 
     final lines = <PdfLine>[];

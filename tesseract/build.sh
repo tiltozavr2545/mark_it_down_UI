@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Собирает Tesseract для десктопа-хоста из исходников закреплённых версий
-# (tesseract/versions.sh) в tesseract/native/host/: две shared-библиотеки —
-# Leptonica (libpng, libjpeg-turbo и, на Windows, zlib вшиты статически) и
-# Tesseract поверх неё. Больше ничего: core/ зовёт их C API через FFI.
+# Builds Tesseract for the desktop host from the sources of pinned
+# versions (tesseract/versions.sh) into tesseract/native/host/: two shared
+# libraries — Leptonica (libpng, libjpeg-turbo, and on Windows zlib are
+# statically linked in) and Tesseract on top of it. Nothing else: core/
+# calls their C API via FFI.
 #
-# Почему своя сборка, а не готовая: порт vcpkg и инсталлятор UB Mannheim
-# тянут libcurl (Tesseract умеет качать картинку по URL) — сетевую библиотеку
-# в приложение, которое обещает не ходить в сеть, не кладём. Здесь
-# DISABLE_CURL и DISABLE_ARCHIVE, а в конце — проверка, что ни одна собранная
-# библиотека не ссылается на сетевые. ENABLE_NATIVE выключен: собранное в CI
-# должно запускаться на любом x86-64, а не только на процессоре раннера
-# (векторные ветки Tesseract выбирает в рантайме сам).
+# Why our own build instead of a prebuilt one: the vcpkg port and the UB
+# Mannheim installer pull in libcurl (Tesseract can download an image by
+# URL) — we don't put a networking library into an app that promises not
+# to reach the network. Here we use DISABLE_CURL and DISABLE_ARCHIVE, and
+# at the end there's a check that none of the built libraries reference
+# networking ones. ENABLE_NATIVE is off: what's built in CI must run on
+# any x86-64, not only the runner's own processor (Tesseract picks its
+# vector branches itself at runtime).
 #
-# Хосты: macOS и Linux (cc/c++ + cmake), Windows — Git Bash с Visual Studio
-# 2022 (генератор CMake по умолчанию). Около 10 минут на 4 ядрах; в CI
-# результат кэшируется по хешу этого файла и versions.sh. Не входит в
-# make verify — см. Makefile (`make tesseract`).
+# Hosts: macOS and Linux (cc/c++ + cmake), Windows via Git Bash with Visual
+# Studio 2022 (the default CMake generator). About 10 minutes on 4 cores;
+# in CI the result is cached by the hash of this file and versions.sh. Not
+# part of make verify — see the Makefile (`make tesseract`).
 #
-# FORCE=1 ./tesseract/build.sh — пересобрать, даже если результат есть.
+# FORCE=1 ./tesseract/build.sh — rebuild even if the result already exists.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tesseract/versions.sh
@@ -46,8 +48,8 @@ case "$(uname -s)" in
     ;;
 esac
 
-# CMake на Windows — нативная программа и не понимает путей вида /d/a/...
-# из Git Bash; отдаём ему C:/... .
+# CMake on Windows is a native program and doesn't understand paths like
+# /d/a/... from Git Bash; we hand it C:/... instead.
 native_path() {
   if [[ "${HOST}" == windows ]]; then cygpath -m "$1"; else echo "$1"; fi
 }
@@ -72,8 +74,9 @@ COMMON=(
 )
 case "${HOST}" in
   macos)
-    # Библиотеки ссылаются друг на друга через @rpath и ищут соседей рядом
-    # с собой — каталог можно переносить целиком.
+    # The libraries reference each other via @rpath and look for their
+    # neighbors right next to themselves — the directory can be moved as a
+    # whole.
     COMMON+=(
       -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
       -DCMAKE_INSTALL_NAME_DIR=@rpath
@@ -99,8 +102,8 @@ build() {
     --config Release >/dev/null
 }
 
-# Первый файл в prefix/lib, подходящий под одно из имён: статические
-# библиотеки называются по-разному на разных ОС и версиях.
+# The first file in prefix/lib matching one of the names: static libraries
+# are named differently across OSes and versions.
 static_lib() {
   local candidate
   for candidate in "$@"; do
@@ -114,11 +117,12 @@ static_lib() {
 }
 
 INCLUDE="$(native_path "${PREFIX}/include")"
-# Пустой массив под set -u в bash 3.2 (macOS) — «unbound variable»,
-# поэтому ниже он раскрывается как ${ZLIB_ARGS[@]+…}.
+# An empty array under set -u in bash 3.2 (macOS) is an "unbound
+# variable", so below it's expanded as ${ZLIB_ARGS[@]+…}.
 ZLIB_ARGS=()
 if [[ "${HOST}" == windows ]]; then
-  # На macOS и Linux zlib — системная; на Windows её нет, вшиваем.
+  # On macOS and Linux zlib is a system library; on Windows there isn't
+  # one, so we link it in statically.
   unpack zlib "${ZLIB_URL}" "${ZLIB_SHA256}"
   build zlib -DZLIB_BUILD_EXAMPLES=OFF
   ZLIB_ARGS=(
@@ -131,8 +135,9 @@ unpack libpng "${LIBPNG_URL}" "${LIBPNG_SHA256}"
 build libpng -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF \
   -DPNG_TOOLS=OFF -DPNG_FRAMEWORK=OFF ${ZLIB_ARGS[@]+"${ZLIB_ARGS[@]}"}
 
-# SIMD у libjpeg-turbo требует NASM; без него декодирование медленнее, но
-# на фоне самого OCR (секунды) это доли процента.
+# SIMD in libjpeg-turbo requires NASM; without it decoding is slower, but
+# against the backdrop of OCR itself (seconds) that's a fraction of a
+# percent.
 unpack libjpeg "${LIBJPEG_URL}" "${LIBJPEG_SHA256}"
 build libjpeg -DENABLE_SHARED=OFF -DENABLE_STATIC=ON -DWITH_SIMD=OFF \
   -DWITH_TURBOJPEG=OFF -DWITH_TOOLS=OFF -DWITH_TESTS=OFF
@@ -148,10 +153,11 @@ build leptonica -DBUILD_SHARED_LIBS=ON -DBUILD_PROG=OFF -DSW_BUILD=OFF \
   ${ZLIB_ARGS[@]+"${ZLIB_ARGS[@]}"}
 
 unpack tesseract "${TESSERACT_URL}" "${TESSERACT_SHA256}"
-# На Windows CMake Tesseract линкует Ws2_32 безусловно — ради ScrollView
-# (отладочный просмотрщик по сокету), который GRAPHICS_DISABLED и так
-# выключает. Убираем библиотеку из линковки: если сокеты где-то всё же
-# используются, сборка упадёт на линковке, а не уедет к пользователю.
+# On Windows, Tesseract's CMake links Ws2_32 unconditionally — for
+# ScrollView (a socket-based debug viewer), which GRAPHICS_DISABLED
+# already turns off anyway. We strip the library from the link step: if
+# sockets are still used somewhere, the build fails at link time instead
+# of shipping to the user.
 sed -i.orig 's/set(LIB_Ws2_32 Ws2_32)/set(LIB_Ws2_32 "")/' \
   "${WORK_DIR}/src/tesseract/CMakeLists.txt"
 grep -q 'set(LIB_Ws2_32 "")' "${WORK_DIR}/src/tesseract/CMakeLists.txt" ||
@@ -171,9 +177,9 @@ case "${HOST}" in
   windows) cp "${PREFIX}"/bin/{leptonica,tesseract}*.dll "${OUT_DIR}/" ;;
 esac
 
-# Главное обещание продукта: в собранном нет сетевых библиотек. Имена
-# импортируемых библиотек лежат в бинарнике строками — grep их видит на всех
-# трёх ОС без objdump/otool/dumpbin.
+# The product's core promise: the build contains no networking libraries.
+# Imported library names sit in the binary as plain strings — grep can see
+# them on all three OSes without objdump/otool/dumpbin.
 if grep -l -a -i -E 'libcurl|ws2_32\.dll|winhttp|wininet' "${OUT_DIR}"/*; then
   echo "tesseract: в сборке есть ссылка на сетевую библиотеку (см. выше)" >&2
   exit 1

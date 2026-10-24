@@ -1,7 +1,7 @@
-/// Теги аудиофайла, сведённые из ID3, Vorbis comment, `ilst` MP4 и
-/// `LIST/INFO` WAV к одному набору полей. Заполняется «первый выигрывает»:
-/// ID3v2 читается раньше ID3v1, и обрезанное до 30 символов название из v1
-/// не перетирает полное.
+/// An audio file's tags, consolidated from ID3, Vorbis comment, MP4
+/// `ilst` and WAV `LIST/INFO` into one set of fields. Filled
+/// "first one wins": ID3v2 is read before ID3v1, so a title truncated to
+/// 30 characters from v1 doesn't overwrite the full one.
 class AudioTags {
   String? title;
   String? artist;
@@ -14,8 +14,9 @@ class AudioTags {
   String? comment;
   String? lyrics;
 
-  /// Ключ — нормализованное имя поля (`title`, `artist`…), как его называет
-  /// Vorbis comment; остальные форматы переводят свои имена в эти.
+  /// The key is a normalized field name (`title`, `artist`…), the way
+  /// Vorbis comment calls it; other formats translate their own names
+  /// into these.
   void set(String field, String? value) {
     final trimmed = value?.trim();
     if (trimmed == null || trimmed.isEmpty) return;
@@ -44,8 +45,8 @@ class AudioTags {
   }
 }
 
-/// Что известно о звуке и контейнере. Всё необязательно: битый или
-/// обрезанный файл даёт то, что удалось прочитать.
+/// What's known about the audio and its container. Everything's
+/// optional: a corrupt or truncated file yields whatever could be read.
 class AudioInfo {
   final tags = AudioTags();
   Duration? duration;
@@ -54,21 +55,23 @@ class AudioInfo {
   int? channels;
   int? bitrateKbps;
 
-  /// Битрейт средний (VBR), а не постоянный — пишется с `~`.
+  /// The bitrate is an average (VBR) rather than constant — written
+  /// with a `~`.
   bool variableBitrate = false;
 
-  /// Размер видеодорожки, если это видео (MP4/MOV/3GP).
+  /// The video track's size, if this is video (MP4/MOV/3GP).
   int? videoWidth;
   int? videoHeight;
   bool hasVideo = false;
   bool hasAudio = false;
 
-  /// Структура где-то указывала за пределы файла или была неправдоподобной.
+  /// The structure pointed outside the file somewhere, or was
+  /// implausible.
   bool damaged = false;
 }
 
-/// Названия жанров ID3v1 по номеру (0–79, стандартная часть таблицы).
-/// В ID3v2 жанр тоже часто пишется номером: `(17)` или `17`.
+/// ID3v1 genre names by number (0–79, the standard part of the table).
+/// In ID3v2 the genre is also often written as a number: `(17)` or `17`.
 const id3Genres = [
   'Blues', 'Classic Rock', 'Country', 'Dance', 'Disco', 'Funk', 'Grunge', //
   'Hip-Hop', 'Jazz', 'Metal', 'New Age', 'Oldies', 'Other', 'Pop', 'R&B', //
@@ -86,7 +89,7 @@ const id3Genres = [
   'Hard Rock', //
 ];
 
-/// `17`, `(17)`, `(17)Rock`, `Rock` → человеческое название жанра.
+/// `17`, `(17)`, `(17)Rock`, `Rock` → a human-readable genre name.
 String? normalizeGenre(String? raw) {
   if (raw == null) return null;
   final value = raw.trim();

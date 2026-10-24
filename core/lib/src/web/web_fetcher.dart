@@ -3,22 +3,26 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-/// Единственное место в приложении, которое ходит в сеть, — см.
-/// `docs/offline-and-privacy.md`. Сеть нужна только режиму «ссылка»: по
-/// адресу, который человек сам вставил или которым поделился, скачать
-/// страницу или файл (и, для YouTube, субтитры этого видео). Файлы
-/// пользователя отсюда никуда не отправляются: запросы — только `GET` по
-/// этому адресу и `POST` к YouTube с номером видео. CI проверяет, что
-/// `HttpClient`/сокеты не встречаются вне `core/lib/src/web/`.
+/// The only place in the app that talks to the network — see
+/// `docs/offline-and-privacy.md`. The network is needed only by "link"
+/// mode: downloading a page or file at an address the person pasted
+/// themselves or shared (and, for YouTube, that video's captions). The
+/// user's own files are never sent out from here: the only requests are
+/// a `GET` to that address and a `POST` to YouTube with the video id. CI
+/// checks that `HttpClient`/sockets don't show up outside
+/// `core/lib/src/web/`.
 ///
-/// `dart:io`, а не пакет `http`: зависимостей не прибавляется, и проверка
-/// «нет сетевых пакетов в `pub deps`» остаётся в силе для всего остального.
+/// `dart:io`, not the `http` package: no added dependencies, and the
+/// "no networking packages in `pub deps`" check stays valid for
+/// everything else.
 class WebFetcher {
-  /// Сколько ждать соединения и каждого следующего куска ответа.
+  /// How long to wait for the connection and for each next chunk of the
+  /// response.
   final Duration timeout;
 
-  /// Больше этого не качается: поток без конца (радио, бесконечная лента)
-  /// иначе съел бы память. Тот же порядок, что у распакованного архива.
+  /// Nothing larger than this gets downloaded: an endless stream (radio,
+  /// an infinite feed) would otherwise eat up memory. The same order of
+  /// magnitude as an unpacked archive.
   final int maxBytes;
 
   const WebFetcher({
@@ -26,10 +30,10 @@ class WebFetcher {
     this.maxBytes = 1024 * 1024 * 1024,
   });
 
-  /// Честный `User-Agent`, а не браузерный: поддельный «Chrome» без
-  /// остальных заголовков браузера защита от ботов (w3.org) отсекает с
-  /// 403, а Wikipedia по своим правилам просит описательный UA. YouTube
-  /// отдаёт страницу видео и так.
+  /// An honest `User-Agent`, not a browser-like one: bot protection
+  /// (w3.org) rejects a fake "Chrome" with none of a real browser's other
+  /// headers with a 403, and Wikipedia's own rules ask for a descriptive
+  /// UA. YouTube serves the video page either way.
   static const userAgent =
       'MarkItDownUI (+https://github.com/tiltozavr2545/mark_it_down_UI)';
 
@@ -113,7 +117,8 @@ class WebFetcher {
 }
 
 class WebResponse {
-  /// Адрес после перенаправлений — от него разрешаются ссылки страницы.
+  /// The address after redirects — the page's links are resolved against
+  /// it.
   final Uri url;
   final int statusCode;
   final String? contentType;
@@ -131,7 +136,8 @@ class WebResponse {
   bool get ok => statusCode >= 200 && statusCode < 300;
 }
 
-/// Сетевой сбой; [reason] — уже для человека, без текста исключения.
+/// A network failure; [reason] is already human-readable, not an
+/// exception's raw text.
 class WebFetchException implements Exception {
   final String reason;
 

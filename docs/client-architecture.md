@@ -1,170 +1,191 @@
-# Устройство клиента
+# Client architecture
 
-Решения и поведение Flutter-приложения: чем оно собрано, что делает сам
-клиент и почему именно он. Отдельно от
-[conversion-pipeline.md](conversion-pipeline.md), потому что там — чистый Dart
-без единого импорта `flutter/`, а здесь всё, что вокруг: окно, изоляты,
-буфер обмена, точки входа файла.
+Decisions and behavior of the Flutter app: what it's built from, what the
+client itself does, and why. Kept separate from
+[conversion-pipeline.md](conversion-pipeline.md), because that one is pure
+Dart without a single `flutter/` import, while this one covers everything
+around it: the window, isolates, the clipboard, file entry points.
 
-Список технических решений ниже — **живой**: это то, чем проект собран сейчас,
-а не то, чем собирались собрать. Отклонения фиксировать здесь же, иначе
-документ начинает врать молча.
+The list of technical decisions below is **living**: it's what the project
+is built from right now, not what we planned to build it from. Deviations
+get recorded here, otherwise the document starts lying silently.
 
 ---
 
-## Технические решения по умолчанию
+## Default technical decisions
 
 - **State management:** Riverpod
-- **Навигация:** пока без роутера. На Этапе 1 весь поток (пусто → принят файл
-  → конвертация → превью/ошибка) укладывается в одно окно `HomeScreen`,
-  переключающее виджеты по состоянию `FileIntakePhase` — ровно та оговорка
-  «если избыточно — Navigator, и записать здесь», которая стояла тут с самого
-  начала. `go_router` понадобится, когда появятся настоящие глубокие ссылки
-  («открыть с помощью» на Windows и macOS, экран настроек) — тогда и подключится.
-- **Разбор zip:** `archive` · **XML:** `xml` · **CSV:** `csv` ·
+- **Navigation:** no router for now. In Stage 1 the entire flow (empty →
+  file accepted → conversion → preview/error) fits into a single
+  `HomeScreen` window that switches widgets based on the `FileIntakePhase`
+  state — exactly the caveat "if this gets excessive, switch to Navigator,
+  and note it here" that has stood here from the start. `go_router` will be
+  needed once real deep links show up ("open with" on Windows and macOS, a
+  settings screen) — it'll be wired in then.
+- **Zip parsing:** `archive` · **XML:** `xml` · **CSV:** `csv` ·
   **HTML → Markdown:** `html` + `html2md`
-- **Буфер обмена:** `super_clipboard` (нужны несколько представлений сразу;
-  `Clipboard.setData` умеет только `text/plain`)
-- **Приём файла:** `file_picker` (диалог), `desktop_drop` (drag & drop),
-  `receive_sharing_intent` (системное «Поделиться» на Android/iOS)
-- **Линтинг/форматирование:** `flutter_lints` + `dart format`, в CI с первого
-  коммита
-- **Локализация:** `flutter_localizations` + ARB (`en`/`ru`), генерация
-  `flutter gen-l10n`, сгенерированные файлы коммитятся — тот же порядок, что в
+- **Clipboard:** `super_clipboard` (several representations are needed at
+  once; `Clipboard.setData` only supports `text/plain`)
+- **File intake:** `file_picker` (dialog), `desktop_drop` (drag & drop),
+  `receive_sharing_intent` (the system "Share" on Android/iOS)
+- **Linting/formatting:** `flutter_lints` + `dart format`, in CI from the
+  first commit
+- **Localization:** `flutter_localizations` + ARB (`en`/`ru`), generated via
+  `flutter gen-l10n`, generated files are committed — same approach as in
   Amicus
-- **Структура репозитория:** `app/` — Flutter-проект, `core/` — конвейер
-  конвертации как отдельный пакет, `sidecar/` — сборка Python-бандла,
-  `docs/` — документация; дерево целиком — в [../README.md](../README.md)
-- **Версия Flutter:** закреплена — см. «Ограничения среды» в
+- **Repository structure:** `app/` — the Flutter project, `core/` — the
+  conversion pipeline as a separate package, `sidecar/` — the Python bundle
+  build, `docs/` — documentation; the full tree is in
+  [../README.md](../README.md)
+- **Flutter version:** pinned — see "Environment constraints" in
   [../AGENTS.md](../AGENTS.md)
 
-### Почему конвейер — отдельный пакет
+### Why the pipeline is a separate package
 
-`core/` не импортирует `flutter/` ни в одном файле, и это проверяется в CI. Три
-причины, и все практические:
+`core/` doesn't import `flutter/` in a single file, and that's checked in
+CI. Three reasons, all practical:
 
-- его тесты гоняются как `dart test`, без эмулятора и без
-  `flutter_test` — это секунды вместо минут, а тестов здесь будет больше всего;
-- код, уходящий в изолят, не должен тянуть за собой биндинги платформы;
-- если когда-нибудь понадобится CLI (пакетная конвертация из терминала), он
-  собирается из `core/` без единой правки.
+- its tests run as `dart test`, without an emulator and without
+  `flutter_test` — that's seconds instead of minutes, and this is where
+  most of the tests will live;
+- code that moves to an isolate shouldn't have to drag platform bindings
+  along with it;
+- if a CLI (batch conversion from a terminal) is ever needed, it can be
+  built from `core/` without a single change.
 
-## Конвертация в изоляте
+## Conversion in an isolate
 
-Вся конвертация идёт через `Isolate.run`. Это не оптимизация, а требование:
-разбор крупного `xlsx` или PDF — секунды сплошного CPU, и на главном изоляте
-он замораживает окно вместе с индикатором прогресса, который как раз и должен
-показывать, что всё идёт.
+All conversion runs through `Isolate.run`. This isn't an optimization, it's
+a requirement: parsing a large `xlsx` or PDF is seconds of solid CPU work,
+and on the main isolate that freezes the window along with the progress
+indicator that's supposed to be showing that something's happening.
 
-Из этого вытекают три следствия, о которых легко забыть:
+Three consequences follow from this, and they're easy to forget:
 
-- **В изолят уезжают только байты и `StreamInfo`.** Ни провайдеров Riverpod,
-  ни `BuildContext`, ни объектов с платформенными хэндлами внутри.
-- **Плагины платформы из изолята не работают.** Поэтому всё нативное в
-  конвейере — через FFI, а не плагинами: PDFium (Этап 3) и Tesseract для
-  OCR (Этап 6) открываются прямо в изоляте (`DynamicLibrary.open`). Из
-  платформенного у OCR остаётся одно — найти модели (ассеты; на Android их
-  ещё нужно скопировать из APK на диск), и это делает главный изолят
-  (`app/lib/src/conversion/ocr_data.dart`), а в изолят уходит строка пути
-  (`OcrSettings`). Изначально план звал ML Kit с главного изолята; ML Kit
-  отпал — он не знает кириллицы, см.
-  [format-coverage.md](format-coverage.md#решения-этапа-6). Распознавание
-  речи (0.8) устроено так же: whisper.cpp — FFI в изоляте, модели готовит
-  главный (`speech_data.dart`, только когда пришёл аудиофайл), в изолят
-  уходит `TranscriptionSettings`.
-- **Отмена.** Пользователь, бросивший в окно гигабайтный архив, должен иметь
-  возможность нажать «Отмена». `Isolate.run` отменять нельзя — значит для
-  долгих форматов нужен долгоживущий изолят с портом и проверкой флага между
-  файлами внутри архива. Делать это не на первом этапе, но закладывать
-  `ConversionLimits` так, чтобы отмена потом вписалась. **Первый случай —
-  распознавание речи (0.8)**, и там обошлись без порта: изолят минутами
-  занят в нативном `whisper_full` и сообщений всё равно не читает. Флаг
-  отмены и прогресс лежат в нативной памяти (`TranscriptionControl`, два
-  `int32`): главный изолят пишет флаг и раз в полсекунды читает процент,
-  whisper.cpp проверяет флаг сам — перед каждым 30-секундным окном.
-  Освобождается память только после конца изолята. Новый файл, принятый
-  во время конвертации (drop, «Поделиться»), останавливает распознавание
-  старого, а результат старого отбрасывается — по номеру приёма в
-  `FileIntakeController`. Для архивов этот приём
-  годится, только если проверять флаг будет Dart-код между файлами.
+- **Only bytes and `StreamInfo` travel into the isolate.** No Riverpod
+  providers, no `BuildContext`, no objects holding platform handles inside.
+- **Platform plugins don't work from an isolate.** So everything native in
+  the pipeline goes through FFI rather than plugins: PDFium (Stage 3) and
+  Tesseract for OCR (Stage 6) are opened directly in the isolate
+  (`DynamicLibrary.open`). The one platform-dependent part of OCR that
+  remains is locating the models (assets; on Android they also need to be
+  copied from the APK to disk), and the main isolate does that
+  (`app/lib/src/conversion/ocr_data.dart`), while a path string
+  (`OcrSettings`) goes into the isolate. The original plan called for ML Kit
+  from the main isolate; ML Kit fell through because it doesn't know
+  Cyrillic, see
+  [format-coverage.md](format-coverage.md#stage-6-decisions). Speech
+  recognition (0.8) is built the same way: whisper.cpp is FFI inside the
+  isolate, the main isolate prepares the models (`speech_data.dart`, only
+  when an audio file arrives), and `TranscriptionSettings` goes into the
+  isolate.
+- **Cancellation.** A user who drops a gigabyte-sized archive into the
+  window needs to be able to press "Cancel." `Isolate.run` can't be
+  cancelled — which means long-running formats need a long-lived isolate
+  with a port and a flag check between files inside the archive. This isn't
+  done at the first stage, but `ConversionLimits` is laid out so that
+  cancellation can fit in later. **The first case was speech recognition
+  (0.8)**, and there a port turned out not to be needed: the isolate is busy
+  for minutes inside native `whisper_full` and doesn't read messages anyway.
+  The cancellation flag and progress live in native memory
+  (`TranscriptionControl`, two `int32`s): the main isolate writes the flag
+  and reads the percentage every half second, and whisper.cpp checks the
+  flag itself — before every 30-second window. The memory is only freed
+  after the isolate ends. A new file accepted during conversion (drop,
+  "Share") stops recognition of the old one, and the old result is
+  discarded — tracked by intake number in `FileIntakeController`. For
+  archives this approach only works if the flag check happens in Dart code
+  between files.
 
-## Приём файла: четыре входа, одна точка
+## File intake: four inputs, one entry point
 
-Четыре способа передать файл (диалог, drag & drop, «Поделиться», буфер
-обмена) сводятся к **одному** вызову `ConversionController.accept(source)`.
-Источники различаются только тем, как добыть байты и имя; дальше ветвление
-запрещено — иначе четыре пути начинают по-разному обрабатывать ошибки, и
-расхождение обнаруживается на четвёртом.
+The four ways of handing over a file (dialog, drag & drop, "Share",
+clipboard) all collapse into a **single** call to
+`ConversionController.accept(source)`. The sources only differ in how the
+bytes and name are obtained; branching beyond that point is forbidden —
+otherwise the four paths start handling errors differently, and the
+divergence gets discovered on the fourth one.
 
-Ссылка (0.9, «Вставить ссылку» и «Поделиться» ссылкой на Android) — не
-пятый путь, а предварительный шаг: `FileIntakeController.acceptUrl`
-скачивает то, на что она указывает (`downloadUrl` из ядра), и отдаёт байты
-в тот же `accept` — с адресом в `PickedFile.url`. Отказ скачивания —
-`NetworkFailure`, четвёртый вид отказа рядом с тремя файловыми.
+A link (0.9, "Paste link" and sharing a link on Android) is not a fifth
+path but a preliminary step: `FileIntakeController.acceptUrl` downloads
+whatever it points to (`downloadUrl` from the core), and hands the bytes to
+that same `accept` — with the address in `PickedFile.url`. A download
+failure is a `NetworkFailure`, a fourth kind of failure alongside the three
+file-based ones.
 
-Платформенные детали, которые придётся настроить руками в нативных проектах:
+Platform-specific details that have to be set up by hand in the native
+projects:
 
-- **Android:** `intent-filter` с `ACTION_SEND` и `ACTION_VIEW` на нужные MIME —
-  это то, что добавляет приложение в системное «Поделиться». Без `android:mimeType="*/*"`
-  в списке файл без расширения туда не попадёт.
-- **iOS:** `CFBundleDocumentTypes` + Share Extension. Share Extension — **это
-  отдельный процесс**, со своим лимитом памяти (сильно меньше, чем у
-  приложения); конвертировать в нём нельзя, он только передаёт файл в
-  основное приложение.
-- **Windows:** диалог, drag & drop и вставка из буфера работают без нативной
-  настройки (системного «Поделиться» на Windows нет); «Открыть с помощью» и ассоциация расширений — задача
-  установщика или MSIX; при нынешней zip-упаковке (Этап 5, п. 6) их нет,
-  решение об упаковке — Этап 7. В `accept()` пришёл бы тот же путь. Пути с
-  кириллицей и пробелами — обязательный пункт ручной проверки.
-- **macOS:** `CFBundleDocumentTypes` для «Открыть с помощью», плюс
-  `NSPasteboardTypeFileURL` для вставки файла из Finder.
+- **Android:** an `intent-filter` with `ACTION_SEND` and `ACTION_VIEW` for
+  the relevant MIME types — this is what adds the app to the system
+  "Share" sheet. Without `android:mimeType="*/*"` in the list, a file
+  without an extension won't get through.
+- **iOS:** `CFBundleDocumentTypes` + Share Extension. The Share Extension
+  is **a separate process**, with its own memory limit (much lower than
+  the app's); conversion can't happen inside it, it only hands the file off
+  to the main app.
+- **Windows:** the dialog, drag & drop, and clipboard paste all work
+  without native setup (there's no system "Share" on Windows); "Open with"
+  and file-extension association are a job for the installer or MSIX; with
+  the current zip packaging (Stage 5, item 6) they don't exist — the
+  packaging decision is Stage 7. The same path would arrive into
+  `accept()`. Paths with Cyrillic characters and spaces are a mandatory
+  item for manual testing.
+- **macOS:** `CFBundleDocumentTypes` for "Open with," plus
+  `NSPasteboardTypeFileURL` for pasting a file from Finder.
 
-## Буфер обмена
+## Clipboard
 
-Кладутся два представления сразу: `text/plain` и `text/markdown`. Редактор,
-который понимает второе, получает разметку; остальные — тот же текст, то есть
-никому не хуже.
+Two representations are placed at once: `text/plain` and `text/markdown`.
+An editor that understands the latter gets the markup; the rest get the
+same text, so nobody's worse off.
 
-Поведение, о котором стоит решить заранее, а не когда напишут в отзывах:
-**приложение ничего не копирует само**. Автокопирование по завершении
-конвертации выглядит удобным ровно до первого раза, когда оно затирает то, что
-человек нёс в буфере. Копирование — только по нажатию (кнопка, `Cmd/Ctrl+C`,
-`Enter` на экране предпросмотра).
+A behavior worth deciding up front rather than when it shows up in
+reviews: **the app never copies anything on its own**. Auto-copying when
+conversion finishes looks convenient right up until the first time it wipes
+out something the person was carrying in the clipboard. Copying happens
+only on an explicit action (button, `Cmd/Ctrl+C`, `Enter` on the preview
+screen).
 
-## Большие файлы
+## Large files
 
-Лимиты — не защита от атаки, а защита от того, что приложение молча съест
-память и будет убито системой. На мобильных это особенно близко.
+The limits aren't protection against an attack, they're protection against
+the app silently eating memory and getting killed by the system. This is
+especially close to home on mobile.
 
-- Предела на размер самого файла нет — решение автора: что человек сам
-  выбрал, то и конвертируется. Цена — файл читается в память целиком, и
-  слишком большой для устройства файл может уронить приложение; лечится
-  чтением по частям там, где формат это позволяет (см. «Большие аудио и
-  видео» в `future-development.md`), а не возвратом порога.
-- Архивы: ограничение на глубину вложенности (8), на число файлов (2000) и
-  на суммарный распакованный размер (1 ГБ, сам архив в сумму не входит). Последнее — единственная защита от zip-бомбы, и
-  проверять надо **распакованный** размер по ходу, а не заявленный в
-  заголовке: заголовку верить нельзя.
-- Результат, который не влезает на экран предпросмотра, не рендерится целиком:
-  текстовое поле получает срез, в буфер уходит полный текст. Иначе
-  `SelectableText` на десятимегабайтном Markdown кладёт кадр намертво.
+- There's no limit on the file's own size — the author's decision: whatever
+  a person chooses to pick, gets converted. The cost is that the file is
+  read into memory in full, and a file too large for the device can crash
+  the app; this is addressed by reading in chunks wherever the format
+  allows it (see "Large audio and video" in `future-development.md`), not by
+  reinstating a threshold.
+- Archives: a limit on nesting depth (8), on the number of files (2000), and
+  on the total unpacked size (1 GB, the archive itself doesn't count toward
+  the total). The latter is the only defense against a zip bomb, and the
+  **unpacked** size has to be checked as it goes, not the size claimed in
+  the header: the header can't be trusted.
+- A result that doesn't fit on the preview screen isn't rendered in full:
+  the text field gets a slice, while the full text goes into the clipboard.
+  Otherwise `SelectableText` on a ten-megabyte Markdown document locks up
+  the frame solid.
 
-## Состояние и приватность
+## State and privacy
 
-Приложение **не хранит содержимое конвертаций**. Это не лень, а свойство
-продукта: смысл в том, что документ никуда не уходит, и локальная база с
-копиями всех обработанных файлов — та же утечка, только медленнее. История
-«последние файлы», если появится, хранит пути и имена, не содержимое, и её
-можно будет выключить.
+The app **does not store conversion content**. This isn't laziness, it's a
+property of the product: the whole point is that the document never leaves,
+and a local database holding copies of every file ever processed is the
+same leak, just slower. A "recent files" history, if it ever gets added,
+stores paths and names, not content, and it will be possible to turn off.
 
-Временные файлы (для сайдкара, для вставки из буфера) живут в системной
-временной папке и удаляются сразу после конвертации, включая путь по ошибке —
-`try/finally`, а не «удалим в конце».
+Temporary files (for the sidecar, for clipboard pasting) live in the
+system's temp folder and are deleted right after conversion, including on
+the error path — `try/finally`, not "we'll delete it at the end."
 
-## Тема и локализация
+## Theme and localization
 
-Светлая/тёмная по системной, с возможностью зафиксировать явно — ровно так же,
-как сделано в Amicus, и по той же причине: это бесплатно и это первое, что
-замечают. Локали `en` (по умолчанию) и `ru`, ARB-файлы править **текстом**:
-переписывание через `json.dump`/автоформаттер съедает пустые строки, которыми
-файл разбит на смысловые группы.
+Light/dark follows the system, with the option to pin it explicitly — the
+same way it's done in Amicus, and for the same reason: it's free and it's
+the first thing people notice. Locales are `en` (default) and `ru`; ARB
+files are edited **as text**: rewriting them through `json.dump`/an
+autoformatter eats the blank lines that divide the file into semantic
+groups.

@@ -8,10 +8,10 @@ import '../../type_detection/zip_family.dart';
 
 import '../document_converter.dart';
 
-/// Тонкая обёртка над `archive` для частей OOXML-пакета (`docx`/`xlsx`/
-/// `pptx` — все три одно и то же zip+xml устройство, см.
-/// `docs/implementation-plan.md#этап-2-office-02`). `epub` этот слой не
-/// использует — у него свой `mimetype`/`container.xml`/`content.opf`.
+/// A thin wrapper over `archive` for parts of an OOXML package
+/// (`docx`/`xlsx`/`pptx` — all three are the same zip+xml setup, see
+/// `docs/implementation-plan.md#этап-2-office-02`). `epub` doesn't use
+/// this layer — it has its own `mimetype`/`container.xml`/`content.opf`.
 class OoxmlPackage {
   final Archive _archive;
 
@@ -33,9 +33,9 @@ class OoxmlPackage {
     return _archive.findFile(path)?.content;
   }
 
-  /// `null`, если части нет или она не разбирается как XML — отсутствие
-  /// необязательной части (например, `numbering.xml`) не повреждённость
-  /// файла, конвертер должен просто обойтись без неё.
+  /// `null` if the part is missing or doesn't parse as XML — a missing
+  /// optional part (e.g. `numbering.xml`) isn't file corruption, the
+  /// converter should simply do without it.
   XmlDocument? partXml(String path) {
     final bytes = partBytes(path);
     if (bytes == null) return null;
@@ -46,11 +46,11 @@ class OoxmlPackage {
     }
   }
 
-  /// `r:id` → путь, резолвленный относительно директории [partPath], через
-  /// `<директория>/_rels/<имя файла>.rels`. Внешние связи
-  /// (`TargetMode="External"` — типично гиперссылки на `http(s)://`)
-  /// возвращаются как есть, без попытки трактовать их как путь внутри
-  /// пакета.
+  /// `r:id` → a path resolved relative to [partPath]'s directory, via
+  /// `<directory>/_rels/<file name>.rels`. External relationships
+  /// (`TargetMode="External"` — typically hyperlinks to `http(s)://`)
+  /// are returned as-is, with no attempt to treat them as a path inside
+  /// the package.
   Map<String, String> relationshipsFor(String partPath) {
     final (dir, doc) = _relationshipsDoc(partPath);
     if (doc == null) return const {};
@@ -68,10 +68,11 @@ class OoxmlPackage {
     return result;
   }
 
-  /// Путь первой связи части [partPath], чей `Type` заканчивается на
-  /// [typeSuffix] (например, `notesSlide`) — для случаев, когда нужная
-  /// связь ищется по типу, а не по `r:id` из самой части (заметки
-  /// докладчика в `pptx` не ссылаются на свою `notesSlide` изнутри XML).
+  /// The path of the first relationship of part [partPath] whose `Type`
+  /// ends with [typeSuffix] (e.g. `notesSlide`) — for cases where the
+  /// needed relationship is looked up by type rather than by an `r:id`
+  /// from the part itself (speaker notes in `pptx` don't reference their
+  /// own `notesSlide` from inside the XML).
   String? relationshipTargetForType(String partPath, String typeSuffix) {
     final (dir, doc) = _relationshipsDoc(partPath);
     if (doc == null) return null;
@@ -93,7 +94,7 @@ class OoxmlPackage {
     return (dir, partXml(relsPath));
   }
 
-  /// `docProps/core.xml` → `<dc:title>`, общее для всех трёх форматов.
+  /// `docProps/core.xml` → `<dc:title>`, common to all three formats.
   String? coreTitle() {
     final doc = partXml('docProps/core.xml');
     if (doc == null) return null;
@@ -106,12 +107,13 @@ class OoxmlPackage {
   }
 }
 
-/// `target` относительно `baseDir`, с разрешением `..`/`.` — Target в
-/// `.rels` пишется относительно директории той части, к которой относится
-/// файл связей, а не относительно корня пакета. Исключение — `Target` с
-/// ведущим `/`: он абсолютный, от корня пакета (так пишет openpyxl:
-/// `/xl/worksheets/sheet1.xml`), и базовая директория к нему не
-/// приставляется.
+/// `target` relative to `baseDir`, resolving `..`/`.` — a Target in
+/// `.rels` is written relative to the directory of the part the
+/// relationships file belongs to, not relative to the package root. The
+/// exception is a `Target` with a leading `/`: it's absolute, from the
+/// package root (that's how openpyxl writes it:
+/// `/xl/worksheets/sheet1.xml`), and the base directory isn't prepended
+/// to it.
 String _resolveRelativePath(String baseDir, String target) {
   final combined = baseDir.isEmpty || target.startsWith('/')
       ? target

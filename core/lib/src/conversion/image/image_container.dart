@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import '../../type_detection/detected_type.dart';
 
-/// Сегмент JPEG между маркерами: [start] и [length] — полезная нагрузка, без
-/// маркера и двух байт длины.
+/// A JPEG segment between markers: [start] and [length] are the payload,
+/// without the marker and the two length bytes.
 class JpegSegment {
   final int marker;
   final int start;
@@ -12,20 +12,21 @@ class JpegSegment {
   const JpegSegment(this.marker, this.start, this.length);
 }
 
-/// Сегменты JPEG до начала сжатых данных (`SOS`) — там живут и `APP1` с
-/// EXIF, и `SOFn` с размером. Обрезанный или нестандартный поток просто
-/// заканчивает перебор: дальше маркеров нет, и ошибкой это не считается.
+/// JPEG segments up to the start of the compressed data (`SOS`) — that's
+/// where both the `APP1` with EXIF and the `SOFn` with the size live. A
+/// truncated or non-standard stream simply ends the iteration: there are
+/// no more markers past that point, and it isn't treated as an error.
 Iterable<JpegSegment> jpegSegments(Uint8List bytes) sync* {
-  var offset = 2; // за SOI
+  var offset = 2; // past SOI
   while (offset + 4 <= bytes.length) {
     if (bytes[offset] != 0xFF) return;
     final marker = bytes[offset + 1];
-    // Заполняющие 0xFF перед маркером допустимы стандартом.
+    // Fill bytes of 0xFF before a marker are allowed by the standard.
     if (marker == 0xFF) {
       offset++;
       continue;
     }
-    // Маркеры без длины: TEM и RSTn.
+    // Markers without a length: TEM and RSTn.
     if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
       offset += 2;
       continue;
@@ -39,10 +40,10 @@ Iterable<JpegSegment> jpegSegments(Uint8List bytes) sync* {
   }
 }
 
-/// Блок EXIF — то есть TIFF-структура с `II*\0`/`MM\0*` в начале — внутри
-/// контейнера картинки. `null`, если в файле его нет (скриншоты, картинки из
-/// мессенджеров, где метаданные вычищены) или формат его не носит
-/// (`GIF`, `BMP`).
+/// The EXIF block — i.e. a TIFF structure with `II*\0`/`MM\0*` at the
+/// start — inside the image container. `null` if the file has none
+/// (screenshots, images from messengers that strip metadata) or the
+/// format doesn't carry it (`GIF`, `BMP`).
 Uint8List? findExifBlock(Uint8List bytes, FileKind kind) => switch (kind) {
   FileKind.jpeg => _jpegExif(bytes),
   FileKind.png => _pngExif(bytes),
@@ -69,8 +70,8 @@ bool _isTiffHeaderAt(Uint8List bytes, int offset) =>
 Uint8List _view(Uint8List bytes, int start, int length) =>
     Uint8List.sublistView(bytes, start, start + length);
 
-/// `APP1`, начинающийся с `Exif\0\0`. Тот же маркер носит и XMP
-/// (`http://ns.adobe.com/xap/1.0/`) — его пропускаем.
+/// `APP1` starting with `Exif\0\0`. The same marker also carries XMP
+/// (`http://ns.adobe.com/xap/1.0/`) — we skip that one.
 Uint8List? _jpegExif(Uint8List bytes) {
   for (final segment in jpegSegments(bytes)) {
     if (segment.marker == 0xE1 &&
@@ -86,10 +87,11 @@ Uint8List? _jpegExif(Uint8List bytes) {
   return null;
 }
 
-/// Чанк `eXIf` (PNG 1.5+). Обычно стоит до `IDAT`, но стандарт разрешает и
-/// после — поэтому идём по всем чанкам, а не до первого `IDAT`.
+/// The `eXIf` chunk (PNG 1.5+). It's usually before `IDAT`, but the
+/// standard also allows after — so we go through all chunks, not just
+/// up to the first `IDAT`.
 Uint8List? _pngExif(Uint8List bytes) {
-  var offset = 8; // за сигнатурой
+  var offset = 8; // past the signature
   while (offset + 8 <= bytes.length) {
     final length = ByteData.sublistView(bytes).getUint32(offset);
     final type = String.fromCharCodes(bytes, offset + 4, offset + 8);
@@ -102,10 +104,10 @@ Uint8List? _pngExif(Uint8List bytes) {
   return null;
 }
 
-/// Чанк `EXIF` в RIFF-контейнере WebP. Часть писателей кладёт перед TIFF
-/// ещё и `Exif\0\0`, как в JPEG, — оба варианта встречаются.
+/// The `EXIF` chunk in a WebP RIFF container. Some writers also put
+/// `Exif\0\0` before the TIFF, like in JPEG — both variants occur.
 Uint8List? _webpExif(Uint8List bytes) {
-  var offset = 12; // за RIFF....WEBP
+  var offset = 12; // past RIFF....WEBP
   while (offset + 8 <= bytes.length) {
     final type = String.fromCharCodes(bytes, offset, offset + 4);
     final length = ByteData.sublistView(
@@ -121,16 +123,17 @@ Uint8List? _webpExif(Uint8List bytes) {
           : 0;
       return _view(bytes, dataStart + skip, length - skip);
     }
-    offset = dataStart + length + (length & 1); // чанки выровнены на 2
+    offset = dataStart + length + (length & 1); // chunks are 2-byte aligned
   }
   return null;
 }
 
-/// HEIC хранит EXIF отдельным элементом, найти который по-честному — это
-/// разобрать `meta` → `iinf` + `iloc`. Вместо этого ищем сам элемент по
-/// содержимому: он начинается с `Exif\0\0` и сразу за ним — заголовок TIFF.
-/// Десять байт подряд такой формы в сжатых данных случайно не возникают, а
-/// разбор коробок ради одного указателя дороже и хрупче.
+/// HEIC stores EXIF as a separate item, and finding it properly means
+/// parsing `meta` → `iinf` + `iloc`. Instead, we search for the item by
+/// its content: it starts with `Exif\0\0` and right after it is the TIFF
+/// header. Ten consecutive bytes of that exact shape don't occur by
+/// chance in compressed data, and parsing boxes just for one pointer is
+/// more expensive and fragile.
 Uint8List? _scanForExif(Uint8List bytes) {
   for (var i = 0; i + 10 <= bytes.length; i++) {
     if (bytes[i] == 0x45 &&

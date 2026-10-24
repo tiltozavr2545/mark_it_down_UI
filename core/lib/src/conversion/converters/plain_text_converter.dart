@@ -7,9 +7,9 @@ import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
 
-/// Общий формат и настоящий catch-all — приоритет `10.0`, спрашивается
-/// последним. Markdown для простого текста — это сам текст: без
-/// экранирования и без переноса по ширине, см.
+/// The generic format and true catch-all — priority `10.0`, asked last.
+/// Markdown for plain text is the text itself: no escaping and no width
+/// wrapping, see
 /// `docs/conversion-pipeline.md#как-markdown-собирается`.
 class PlainTextConverter implements DocumentConverter {
   const PlainTextConverter();

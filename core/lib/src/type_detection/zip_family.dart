@@ -5,13 +5,14 @@ import 'package:archive/archive.dart';
 
 import 'detected_type.dart';
 
-/// `PK\x03\x04` сам по себе не говорит ничего: `docx`, `xlsx`, `pptx`,
-/// `epub`, `apk` и обычный zip — всё это zip. Различаются по содержимому:
-/// `[Content_Types].xml` (OOXML, дальше по имени части), `mimetype` первым
-/// файлом (EPUB), `AndroidManifest.xml` (APK), иначе — обычный архив.
+/// `PK\x03\x04` by itself says nothing: `docx`, `xlsx`, `pptx`, `epub`,
+/// `apk` and a plain zip are all zip. They are distinguished by content:
+/// `[Content_Types].xml` (OOXML, then by the part's name), `mimetype` as
+/// the first file (EPUB), `AndroidManifest.xml` (APK), otherwise a plain
+/// archive.
 ///
-/// Только имена записей читаются заранее (центральная директория); архив не
-/// распаковывается целиком — это и держит проверку дешёвой.
+/// Only the entry names are read upfront (the central directory); the
+/// archive is not unpacked in full — that is what keeps the check cheap.
 DetectedType refineZipFamily(Uint8List bytes) {
   final archive = decodeZip(bytes);
   if (archive == null) {
@@ -59,10 +60,10 @@ String? _tryReadAsString(ArchiveFile file) {
   }
 }
 
-/// Каталог zip или `null`, если файл как zip не читается. `archive` 4 на
-/// битом файле не бросает, а отдаёт пустой архив, — пустым он может быть
-/// честно только у файла, который и начинается с конца каталога
-/// (`PK\x05\x06`, архив без записей).
+/// The zip's catalog, or `null` if the file does not read as a zip. On a
+/// broken file `archive` doesn't throw but returns an empty archive — it
+/// can genuinely be empty only for a file that itself starts with the end
+/// of the catalog (`PK\x05\x06`, an archive with no entries).
 Archive? decodeZip(Uint8List bytes) {
   final Archive archive;
   try {

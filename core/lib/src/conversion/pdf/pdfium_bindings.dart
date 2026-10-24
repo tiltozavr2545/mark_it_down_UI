@@ -1,36 +1,41 @@
-/// Свои минимальные FFI-биндинги на PDFium — только то, что нужно для
-/// извлечения текста (не полный API). Решение в пользу PDFium через FFI, а
-/// не `syncfusion_flutter_pdf`, зафиксировано в
-/// `docs/format-coverage.md#решения-этапа-3`: `core/` не имеет права
-/// импортировать `flutter/`, а FFI, в отличие от плагина платформы, работает
-/// и внутри `Isolate.run` — см. `docs/client-architecture.md#конвертация-в-изоляте`.
+/// Our own minimal FFI bindings onto PDFium — only what's needed for text
+/// extraction (not the full API). The decision to use PDFium via FFI
+/// instead of `syncfusion_flutter_pdf` is recorded in
+/// `docs/format-coverage.md#решения-этапа-3`: `core/` isn't allowed to
+/// import `flutter/`, and FFI, unlike a platform plugin, also works
+/// inside `Isolate.run` — see
+/// `docs/client-architecture.md#конвертация-в-изоляте`.
 ///
-/// Нативную библиотеку в это дерево не коммитим — её качает `pdfium/fetch.sh`
-/// (как `python-build-standalone` для сайдкара, см. `docs/python-sidecar.md`).
+/// The native library isn't committed to this tree — `pdfium/fetch.sh`
+/// downloads it (like `python-build-standalone` for the sidecar, see
+/// `docs/python-sidecar.md`).
 ///
-/// Имена типов ниже повторяют `fpdfview.h`/`fpdf_text.h`/`fpdf_edit.h`
-/// буквально — это упрощает сверку с сигнатурами PDFium, а не ошибка стиля.
+/// The type names below repeat `fpdfview.h`/`fpdf_text.h`/`fpdf_edit.h`
+/// verbatim — this makes checking them against PDFium's signatures
+/// easier, it isn't a style mistake.
 // ignore_for_file: camel_case_types
 library;
 
 import 'dart:ffi';
 import 'dart:io';
 
-/// Находит и открывает `libpdfium`. Порядок источников:
+/// Finds and opens `libpdfium`. Order of sources:
 ///
-/// 1. `MARKITDOWN_PDFIUM_PATH` — явный путь, нужен для `dart test` и для
-///    любой машины, где библиотека лежит не в стандартном месте платформы.
-/// 2. Голое имя библиотеки — рабочий случай для Android: `.so` лежит в
-///    `jniLibs/<abi>/` и попадает на путь поиска процесса сам, без нашего
-///    участия. И для Windows: `pdfium.dll` кладётся рядом с `.exe` правилом
-///    `install(...)` в `app/windows/CMakeLists.txt`, а каталог исполняемого
-///    файла `LoadLibrary` смотрит первым.
+/// 1. `MARKITDOWN_PDFIUM_PATH` — an explicit path, needed for `dart test`
+///    and for any machine where the library isn't in the platform's
+///    standard location.
+/// 2. The bare library name — the working case for Android: the `.so`
+///    lives in `jniLibs/<abi>/` and lands on the process's search path on
+///    its own, with no action needed from us. And for Windows:
+///    `pdfium.dll` is placed next to the `.exe` by the `install(...)`
+///    rule in `app/windows/CMakeLists.txt`, and `LoadLibrary` checks the
+///    executable's own directory first.
 ///
-/// macOS-приложение (бандл из `flutter build macos`) сюда пока не попадает —
-/// см. «Ограничения среды» в `../../../../../AGENTS.md`: пока нет Xcode,
-/// запускать и проверять эту ветку негде. Когда он появится, здесь
-/// добавится путь вида `Frameworks/libpdfium.dylib` относительно
-/// `Platform.resolvedExecutable`.
+/// A macOS app (the bundle from `flutter build macos`) isn't covered here
+/// yet — see "Environment limitations" in `../../../../../AGENTS.md`:
+/// there's no Xcode yet, so there's nowhere to run and test this branch.
+/// Once there is, a path like `Frameworks/libpdfium.dylib` relative to
+/// `Platform.resolvedExecutable` will be added here.
 DynamicLibrary loadPdfiumLibrary() {
   final override = Platform.environment['MARKITDOWN_PDFIUM_PATH'];
   if (override != null && override.isNotEmpty) {
@@ -209,25 +214,25 @@ typedef _FPDFBitmap_GetStrideDart = int Function(Pointer<Void> bitmap);
 typedef _FPDFBitmap_DestroyNative = Void Function(Pointer<Void> bitmap);
 typedef _FPDFBitmap_DestroyDart = void Function(Pointer<Void> bitmap);
 
-/// `FPDFBitmap_BGRx` из `fpdfview.h`: 4 байта на пиксель, альфы нет.
-/// Не путать с `FPDFBitmap_BGR` = 2 (3 байта): Tesseract, которому сказано
-/// «4 байта на пиксель», читал бы такой растр за его концом.
+/// `FPDFBitmap_BGRx` from `fpdfview.h`: 4 bytes per pixel, no alpha. Not
+/// to be confused with `FPDFBitmap_BGR` = 2 (3 bytes): Tesseract, told
+/// "4 bytes per pixel", would read such a bitmap past its end.
 const fpdfBitmapBgrx = 3;
 
-/// `FPDF_ANNOT`: рисовать и аннотации — штампы и подписи на скане бывают
-/// именно ими.
+/// `FPDF_ANNOT`: also render annotations — stamps and signatures on a
+/// scan are often exactly that.
 const fpdfRenderAnnot = 0x01;
 
-/// `FPDF_PAGEOBJ_IMAGE` из `fpdf_edit.h` — значение части публичного ABI,
-/// не меняется между релизами PDFium.
+/// `FPDF_PAGEOBJ_IMAGE` from `fpdf_edit.h` — a value that's part of the
+/// public ABI, doesn't change between PDFium releases.
 const fpdfPageObjImage = 3;
 
-/// Тонкая обёртка над нужным подмножеством `fpdfview.h`/`fpdf_text.h`/
-/// `fpdf_edit.h`. Один процесс — одна инициализация библиотеки: PDFium не
-/// поддерживает повторный `FPDF_InitLibrary`/`FPDF_DestroyLibrary` на лету
-/// без риска гонки между изолятами, поэтому инициализируем один раз и не
-/// деинициализируем вовсе — процесс конвертации всё равно короткоживущий
-/// (`Isolate.run`).
+/// A thin wrapper over the needed subset of `fpdfview.h`/`fpdf_text.h`/
+/// `fpdf_edit.h`. One process — one library initialization: PDFium
+/// doesn't support calling `FPDF_InitLibrary`/`FPDF_DestroyLibrary`
+/// repeatedly on the fly without risking a race between isolates, so we
+/// initialize once and never deinitialize at all — the conversion
+/// process is short-lived anyway (`Isolate.run`).
 class PdfiumBindings {
   PdfiumBindings._(DynamicLibrary lib)
     : _getLastError = lib
@@ -334,7 +339,7 @@ class PdfiumBindings {
 
   static PdfiumBindings? _instance;
 
-  /// Один экземпляр на процесс/изолят — см. комментарий у класса.
+  /// One instance per process/isolate — see the comment on the class.
   factory PdfiumBindings.instance() =>
       _instance ??= PdfiumBindings._(loadPdfiumLibrary());
 
@@ -408,12 +413,12 @@ class PdfiumBindings {
 
   int pageObjGetType(Pointer<Void> pageObject) => _pageObjGetType(pageObject);
 
-  /// Размер страницы в пунктах (1/72 дюйма).
+  /// Page size in points (1/72 inch).
   double getPageWidth(Pointer<Void> page) => _getPageWidth(page);
 
   double getPageHeight(Pointer<Void> page) => _getPageHeight(page);
 
-  /// Новый BGRx-растр, принадлежащий PDFium (`firstScan` = NULL).
+  /// A new BGRx bitmap owned by PDFium (`firstScan` = NULL).
   Pointer<Void> bitmapCreate(int width, int height) =>
       _bitmapCreateEx(width, height, fpdfBitmapBgrx, nullptr, 0);
 

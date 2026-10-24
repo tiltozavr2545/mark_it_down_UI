@@ -13,21 +13,21 @@ enum FileIntakePhase { idle, converting, ready, failed }
 class FileIntakeState {
   final FileIntakePhase phase;
 
-  /// `null`, пока ссылка скачивается ([link]) или если она не скачалась.
+  /// `null` while the link is downloading ([link]) or if it failed to download.
   final StreamInfo? info;
 
-  /// Ссылка, которая сейчас скачивается (режим «ссылка»).
+  /// The link currently downloading ("link" mode).
   final String? link;
   final ConversionResult? result;
   final ConversionFailure? failure;
 
-  /// Идёт распознавание речи: показывать [speechProgress] и «Остановить».
+  /// Speech recognition is in progress: show [speechProgress] and "Stop".
   final bool transcribing;
 
-  /// 0–100; 0 — звук ещё декодируется или модель загружается.
+  /// 0-100; 0 means the audio is still decoding or the model is loading.
   final int speechProgress;
 
-  /// «Остановить» нажата — ждём конца текущего 30-секундного окна.
+  /// "Stop" was pressed — waiting for the end of the current 30-second window.
   final bool stopping;
 
   const FileIntakeState._(
@@ -66,14 +66,15 @@ class FileIntakeState {
     : this._(FileIntakePhase.failed, info: info, failure: failure);
 }
 
-/// Единая точка приёма файла — см. [PickedFile]. Конвертация запускается
-/// автоматически сразу после приёма, без отдельной кнопки — см. план Этапа 1.
+/// The single entry point for receiving a file — see [PickedFile]. Conversion
+/// starts automatically right after intake, with no separate button — see
+/// the Stage 1 plan.
 class FileIntakeController extends Notifier<FileIntakeState> {
   TranscriptionControl? _control;
 
-  /// Номер последнего принятого файла. Пока идёт конвертация, приём не
-  /// закрыт (drop, «Поделиться»), и новый файл заменяет текущий: результат
-  /// и `finally` старого вызова не должны трогать состояние нового.
+  /// Number of the last accepted file. While conversion is running, intake
+  /// stays open (drop, "Share"), and a new file replaces the current one:
+  /// the result and `finally` of the old call must not touch the new state.
   int _generation = 0;
 
   @override
@@ -94,22 +95,23 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     TranscriptionSettings? speech;
     TranscriptionControl? control;
     Timer? poll;
-    // Речь распознаёт AudioConverter, и это минуты, а не секунды, — поэтому
-    // у его файлов прогресс и кнопка «Остановить».
+    // AudioConverter does the speech recognition, and it takes minutes, not
+    // seconds — that's why its files get the progress bar and "Stop" button.
     if (AudioConverter.handles(info.detectedType.kind)) {
       speech = await transcriptionSettings();
-      if (!current()) return; // пока ждали модель, пришёл другой файл
+      if (!current()) return; // another file arrived while we waited for the model
       if (speech != null) {
         control = _control = TranscriptionControl();
         speech = speech.withControl(control);
         state = FileIntakeState.converting(info, transcribing: true);
-        // Прогресс пишет нативный код в общую память — опрашиваем, а не
-        // ждём сообщений: изолят занят в whisper_full и не ответит.
+        // Progress is written by native code into shared memory — we poll
+        // instead of waiting for messages: the isolate is busy in
+        // whisper_full and won't respond.
         poll = Timer.periodic(const Duration(milliseconds: 500), (_) {
           final progress = control!.progress;
           final stopping = control.cancelled;
-          // Процент двигается шагами по 5 — без сравнения карточка
-          // перестраивалась бы дважды в секунду впустую.
+          // The percentage moves in steps of 5 — without the comparison the
+          // card would rebuild twice a second for nothing.
           if (!current() ||
               progress == state.speechProgress && stopping == state.stopping) {
             return;
@@ -134,8 +136,8 @@ class FileIntakeController extends Notifier<FileIntakeState> {
       );
     } finally {
       poll?.cancel();
-      // Освобождать только после конца изолята: нативный код пишет в
-      // control до последнего окна.
+      // Release only after the isolate finishes: native code writes to
+      // control up to the last window.
       if (identical(_control, control)) _control = null;
       control?.dispose();
     }
@@ -149,9 +151,9 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     }
   }
 
-  /// Режим «ссылка»: скачать страницу или файл по [text] (ссылка или текст
-  /// со ссылкой из «Поделиться») и дальше — как файл через [accept]: та же
-  /// конвертация, тот же прогресс распознавания речи у аудио по ссылке.
+  /// "Link" mode: download the page or file at [text] (a link, or text with
+  /// a link from "Share") and then proceed as a file via [accept]: the same
+  /// conversion, the same speech-recognition progress for audio by link.
   Future<void> acceptUrl(String text) async {
     final generation = _supersede();
     state = FileIntakeState.downloading(parseUserUrl(text)?.toString() ?? text);
@@ -164,7 +166,7 @@ class FileIntakeController extends Notifier<FileIntakeState> {
       }
       return;
     }
-    // Пока качалось, человек мог выбрать файл или другую ссылку.
+    // While it was downloading, the person could have picked a file or another link.
     if (generation != _generation) return;
     await accept(
       PickedFile(
@@ -176,8 +178,8 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     );
   }
 
-  /// Остановить распознавание речи: уже распознанное придёт результатом с
-  /// предупреждением, что расшифровка неполная.
+  /// Stop speech recognition: what's already been recognized arrives as a
+  /// result with a warning that the transcript is incomplete.
   void stopTranscription() {
     final control = _control;
     final info = state.info;
@@ -200,8 +202,9 @@ class FileIntakeController extends Notifier<FileIntakeState> {
     state = const FileIntakeState.idle();
   }
 
-  /// Текущая конвертация больше не нужна: её распознавание останавливается
-  /// (иначе минуты занимало бы процессор впустую), результат отбрасывается.
+  /// The current conversion is no longer needed: its speech recognition is
+  /// stopped (otherwise it would burn CPU for minutes for nothing), and the
+  /// result is discarded.
   int _supersede() {
     _control?.cancel();
     _control = null;

@@ -5,16 +5,18 @@ import 'package:markitdown_core/markitdown_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// OCR на настоящем Tesseract (Этап 6). Эталон — не побайтный Markdown, а
-/// ключевые фразы: вывод OCR зависит от версии движка и сборки (на CI Linux
-/// — пакет дистрибутива, на Windows и Mac — `tesseract/build.sh`), а
-/// проверяется здесь путь «картинка/скан → текст», а не цифры конкретной
-/// версии. Фикстуры — `sidecar/samples/make_samples.py --only ocr`.
+/// OCR with real Tesseract (Stage 6). The expected result isn't
+/// byte-exact Markdown but key phrases: OCR output depends on the engine
+/// version and build (on CI Linux it's the distro package, on Windows and
+/// Mac it's `tesseract/build.sh`), and what's checked here is the
+/// "image/scan → text" path, not the exact digits of a specific version.
+/// Fixtures come from `sidecar/samples/make_samples.py --only ocr`.
 ///
-/// Нужны библиотеки (`MARKITDOWN_TESSERACT_DIR` или системные на Linux) и
-/// модели `tesseract/tessdata/` (`tesseract/fetch.sh`). Без них тесты
-/// пропускаются — как `sidecar_integration_test.dart` без сайдкара; `make
-/// test` выставляет переменные сам, если `make tesseract` уже собран.
+/// Needs the libraries (`MARKITDOWN_TESSERACT_DIR` or system ones on
+/// Linux) and the `tesseract/tessdata/` models (`tesseract/fetch.sh`).
+/// Without them the tests are skipped — like `sidecar_integration_test.dart`
+/// without the sidecar; `make test` sets the variables itself if `make
+/// tesseract` has already been built.
 void main() {
   final root = Directory.current.parent.path;
   final tessdata = p.join(root, 'tesseract', 'tessdata');
@@ -44,7 +46,7 @@ void main() {
     expect(markdown, contains('Invoice total: 12 500 RUB'));
   }
 
-  test('картинка с текстом — раздел с распознанным текстом', () async {
+  test('image with text — section with recognized text', () async {
     final result = await convert('ocr/invoice.png');
     expect(result.markdown, contains('## Текст на изображении'));
     expectInvoiceText(result.markdown);
@@ -54,23 +56,24 @@ void main() {
     );
   }, skip: skip);
 
-  test('снимок «боком» поворачивается по EXIF Orientation', () async {
+  test('a "sideways" shot is rotated per EXIF Orientation', () async {
     final result = await convert('ocr/invoice_rotated.jpg');
     expectInvoiceText(result.markdown);
   }, skip: skip);
 
-  // Leptonica наших сборок этих форматов не читает: кадр декодирует Dart.
-  // GIF и WebP — с прозрачным фоном, как стикер: без подложки текст
-  // пропал бы на «чёрной» прозрачности.
+  // The Leptonica in our builds doesn't read these formats: Dart decodes
+  // the frame. GIF and WebP have a transparent background, like a
+  // sticker: without a backing fill the text would vanish into "black"
+  // transparency.
   for (final name in ['invoice.gif', 'invoice.webp', 'invoice.tiff']) {
-    test('$name — текст через декодер Dart', () async {
+    test('$name — text via the Dart decoder', () async {
       final result = await convert('ocr/$name');
       expect(result.markdown, contains('## Текст на изображении'));
       expectInvoiceText(result.markdown);
     }, skip: skip);
   }
 
-  test('PDF без текстового слоя — текст страницы из OCR', () async {
+  test('PDF with no text layer — page text from OCR', () async {
     final result = await convert('ocr/invoice_scan.pdf');
     expectInvoiceText(result.markdown);
     expect(
@@ -79,7 +82,7 @@ void main() {
     );
   }, skip: skip);
 
-  test('картинка без текста — честное «текст не найден»', () async {
+  test('image with no text — an honest "text not found"', () async {
     final result = await convert('image/screenshot.png');
     expect(result.markdown, isNot(contains('## Текст на изображении')));
     expect(
@@ -88,7 +91,7 @@ void main() {
     );
   }, skip: skip);
 
-  test('PDF-скан сверх лимита страниц — предупреждение о лимите', () async {
+  test('scanned PDF over the page limit — a limit warning', () async {
     final limited = ConverterRegistry.defaultRegistry(
       ocr: OcrSettings(tessdataDir: tessdata, maxPdfPages: 1),
     );
@@ -106,7 +109,7 @@ void main() {
   }, skip: skip);
 
   test(
-    'нет моделей — метаданные и понятное предупреждение, не отказ',
+    'no models — metadata and a clear warning, not a failure',
     () async {
       final noModels = ConverterRegistry.defaultRegistry(
         ocr: const OcrSettings(tessdataDir: '/нет/такого/каталога'),

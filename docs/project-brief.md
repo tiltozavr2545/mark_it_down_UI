@@ -1,185 +1,201 @@
-# Бриф проекта: MarkItDown UI
+# Project brief: MarkItDown UI
 
-> **Исторический документ.** Целевые платформы здесь — macOS и Android; после
-> Этапа 4 приоритет автора сместился на **Windows и Android**, macOS стала
-> вторичной. Нумерация этапов внизу тоже устарела (добавлен Этап 5 — Windows).
-> Актуальное — в [implementation-plan.md](implementation-plan.md).
+> **Historical document.** The target platforms here are macOS and Android;
+> after Stage 4 the author's priority shifted to **Windows and Android**,
+> macOS became secondary. The stage numbering below is also outdated (Stage
+> 5 — Windows — was added). The current version is in
+> [implementation-plan.md](implementation-plan.md).
 
-> Приложение, которое превращает любой файл в Markdown полностью на
-> устройстве, без интернета, и сразу отдаёт результат в буфер обмена.
+> An app that turns any file into Markdown entirely on the device, with no
+> internet, and hands the result straight to the clipboard.
 
-**Рабочее название — MarkItDown UI** (по имени библиотеки, вокруг которой всё
-строится: [microsoft/markitdown](https://github.com/microsoft/markitdown)).
-Собственное имя — открытый вопрос, см. [future-development.md](future-development.md):
-«MarkItDown» — имя проекта Microsoft, и для публикации в сторах его лучше не
-носить.
+**Working title — MarkItDown UI** (named after the library everything is
+built around: [microsoft/markitdown](https://github.com/microsoft/markitdown)).
+An own name is an open question, see
+[future-development.md](future-development.md): "MarkItDown" is the name
+of Microsoft's project, and it's better not to carry it into store
+publication.
 
-**Документ описывает замысел**, а не то, что получилось: он пишется до первой
-строки кода и дальше правиться не будет. Что устроено как — в
-[conversion-pipeline.md](conversion-pipeline.md) и
-[client-architecture.md](client-architecture.md), что по какому формату
-закрыто — в [format-coverage.md](format-coverage.md), как шла работа — в
-[implementation-plan.md](implementation-plan.md) и [../CHANGELOG.md](../CHANGELOG.md).
+**This document describes the intent**, not what came out of it: it was
+written before the first line of code and won't be edited further. How
+things are actually built is in
+[conversion-pipeline.md](conversion-pipeline.md) and
+[client-architecture.md](client-architecture.md); what's settled for each
+format is in [format-coverage.md](format-coverage.md); how the work went is
+in [implementation-plan.md](implementation-plan.md) and
+[../CHANGELOG.md](../CHANGELOG.md).
 
 ---
 
-## 1. Зачем это нужно
+## 1. Why this is needed
 
-Markdown стал форматом, в котором текст подают машине: промпт для LLM, тикет,
-заметка в Obsidian, README. Поэтому «дай мне этот PDF/DOCX/XLSX в Markdown» —
-операция, которую люди делают по многу раз в день, и делают её через сайты
-вида «convert docx to markdown online»: загрузил документ на чужой сервер,
-получил файл обратно, скачал, открыл, скопировал.
+Markdown has become the format text is handed to machines in: an LLM
+prompt, a ticket, an Obsidian note, a README. So "give me this
+PDF/DOCX/XLSX as Markdown" is an operation people do many times a day, and
+they do it through sites like "convert docx to markdown online": upload
+the document to someone else's server, get a file back, download it, open
+it, copy it.
 
-Два изъяна у этого способа, и оба устраняются одним и тем же решением:
+This approach has two flaws, and both are fixed by the same solution:
 
-- **Приватность.** Файл, который конвертируют, — обычно рабочий: договор,
-  выгрузка, внутренний документ. Отправлять его на неизвестный сервер нельзя,
-  а часто и прямо запрещено.
-- **Лишние шаги.** Нужен не файл `.md` в папке «Загрузки», а текст в буфере
-  обмена — чтобы вставить его в чат с моделью или в редактор.
+- **Privacy.** The file being converted is usually work-related: a
+  contract, an export, an internal document. Sending it to an unknown
+  server isn't allowed, and often it's outright forbidden.
+- **Extra steps.** What's needed isn't an `.md` file in the Downloads
+  folder, but text in the clipboard — to paste into a chat with a model or
+  into an editor.
 
-Отсюда два требования, которые и составляют продукт: **конвертация целиком на
-устройстве** и **результат сразу в буфере обмена**. Всё остальное — детали
-реализации.
+From this come two requirements that make up the product: **conversion
+entirely on the device** and **the result straight into the clipboard**.
+Everything else is implementation detail.
 
-«Без интернета» здесь не «работает в самолёте», а **проверяемое свойство
-сборки**: в приложении нет сетевого кода и у него нет сетевого разрешения —
-см. [offline-and-privacy.md](offline-and-privacy.md). Это то, что можно
-показать, а не пообещать.
+"No internet" here doesn't mean "works on a plane" — it's a **verifiable
+property of the build**: the app has no networking code and no network
+permission — see [offline-and-privacy.md](offline-and-privacy.md). That's
+something that can be shown, not just promised.
 
-## 2. Механика продукта
+## 2. Product mechanics
 
-**Файл попадает в приложение** одним из четырёх способов, и все четыре
-равноправны:
+**A file reaches the app** in one of four ways, and all four are on equal
+footing:
 
-- выбор через системный диалог (кнопка «Открыть файл»);
-- drag & drop в окно — основной жест на десктопе;
-- системное «Поделиться» / «Открыть с помощью» — основной путь на телефоне;
-- вставка из буфера обмена (скопированный файл или HTML-фрагмент).
+- picking it through the system dialog (an "Open file" button);
+- drag & drop into the window — the primary gesture on desktop;
+- the system "Share" / "Open with" — the primary path on phones;
+- pasting from the clipboard (a copied file or an HTML fragment).
 
-**Приложение определяет тип** — по расширению, а если оно врёт или
-отсутствует, по магическим байтам содержимого. Это не формальность: файл,
-прилетевший из мессенджера, регулярно называется `document` без расширения.
+**The app determines the type** — by extension, and if that's wrong or
+missing, by the content's magic bytes. This isn't a formality: a file that
+arrived from a messenger app is routinely named `document` with no
+extension.
 
-**Выбранный конвертер превращает байты в Markdown.** Конвертер — не функция, а
-запись в реестре, которая умеет сказать «этот поток мой» и обработать его;
-устройство реестра и контракт результата — в
+**The chosen converter turns the bytes into Markdown.** A converter isn't a
+function but an entry in a registry that can say "this stream is mine" and
+process it; how the registry is built and the result's contract are in
 [conversion-pipeline.md](conversion-pipeline.md).
 
-**Результат показывается на экране предпросмотра** — сырым Markdown с
-подсветкой, а не отрендеренным. Пользователь копирует не картинку, а текст,
-и видеть он должен именно то, что скопирует.
+**The result is shown on a preview screen** — as raw Markdown with syntax
+highlighting, not rendered. The user is copying text, not a picture, and
+what they see should be exactly what they'll copy.
 
-**Копирование — одно действие.** Большая кнопка «Скопировать» и горячая
-клавиша. В буфер кладётся и `text/plain`, и `text/markdown` — редакторы,
-которые умеют второе, получают второе. Рядом — «Сохранить как `.md`», для тех
-случаев, когда нужен всё-таки файл.
+**Copying is a single action.** A big "Copy" button and a keyboard
+shortcut. Both `text/plain` and `text/markdown` are placed in the
+clipboard — editors that understand the latter get the latter. Next to it
+is "Save as `.md`," for the cases where an actual file is still needed.
 
-**Чего в продукте нет сознательно:** редактирования результата (это не
-редактор), истории конвертаций с хранением содержимого (это утечка там, где
-весь смысл в её отсутствии), облачной синхронизации, аккаунтов.
+**What the product deliberately doesn't have:** editing the result (this
+isn't an editor), a conversion history that stores content (that's a leak
+in exactly the place where the whole point is not having one), cloud sync,
+accounts.
 
-## 3. Чем конвертируем
+## 3. What we convert with
 
-Основа — [microsoft/markitdown](https://github.com/microsoft/markitdown): она
-покрывает PDF, Office, HTML, EPUB, изображения, аудио, архивы, и, что важнее,
-**в ней уже принято множество решений о том, как именно документ ложится в
-Markdown** — как таблица, как заголовок, что делать со сносками. Это и есть
-ценность библиотеки: не парсинг, а выбор представления.
+The foundation is
+[microsoft/markitdown](https://github.com/microsoft/markitdown): it covers
+PDF, Office, HTML, EPUB, images, audio, archives, and, more importantly,
+**it already embodies a large number of decisions about exactly how a
+document maps onto Markdown** — how a table looks, how a heading looks,
+what to do with footnotes. That's the library's real value: not the
+parsing, but the choice of representation.
 
-Проблема в том, что markitdown — **библиотека на Python** (3.10–3.14), с
-зависимостями, часть которых — нативные (`lxml`, `pdfminer.six`,
-`pdfplumber`, `pandas`, `magika` с ONNX-моделью). На Android и iOS это не
-собирается, и обойти это аккуратно нельзя.
+The problem is that markitdown is a **Python library** (3.10–3.14), with
+dependencies, some of which are native (`lxml`, `pdfminer.six`,
+`pdfplumber`, `pandas`, `magika` with an ONNX model). This doesn't build on
+Android or iOS, and there's no clean way around it.
 
-Поэтому решение двухслойное, и оно сознательно несимметричное:
+So the solution is two-layered, and deliberately asymmetric:
 
-- **Ядро конвертации пишется на Dart** и работает на всех платформах
-  одинаково. markitdown для него — **спецификация, а не зависимость**: мы
-  повторяем её интерфейс (`StreamInfo`, `accepts()`, приоритеты конвертеров) и
-  её решения о представлении, но код свой. Так ведёт себя приложение на
-  телефоне и так же — на десктопе по умолчанию.
-- **На десктопе рядом лежит настоящий markitdown** — упакованный Python
-  вместе с интерпретатором, который приложение дёргает подпроцессом. Он
-  подключается там, где Dart-конвертер слабее или его нет вовсе (`.xls`,
-  `.msg`, сложные PDF) — см. [python-sidecar.md](python-sidecar.md).
+- **The conversion core is written in Dart** and works identically on every
+  platform. markitdown is a **specification for it, not a dependency**: we
+  reproduce its interface (`StreamInfo`, `accepts()`, converter priorities)
+  and its representation decisions, but the code is our own. This is how
+  the app behaves on a phone and, by default, on desktop too.
+- **On desktop, a real markitdown sits alongside it** — a bundled Python
+  install together with its interpreter, which the app invokes as a
+  subprocess. It kicks in where the Dart converter is weaker or missing
+  entirely (`.xls`, `.msg`, complex PDFs) — see
+  [python-sidecar.md](python-sidecar.md).
 
-Цена решения названа прямо: **две реализации, которые могут разойтись в
-выводе**. Чем это удерживается — общим набором тестовых файлов с эталонным
-Markdown, одинаковым для обоих слоёв; см. «Конвенции работы» в
-[../AGENTS.md](../AGENTS.md).
+The cost of this decision is stated plainly: **two implementations that can
+diverge in their output**. What keeps that in check is a shared set of test
+files with reference Markdown, the same for both layers; see "Working
+conventions" in [../AGENTS.md](../AGENTS.md).
 
-Отдельно: **«всё, что умеет markitdown» и «всё офлайн» — разные множества.**
-Конвертеры YouTube, Bing SERP, Wikipedia и RSS по своей природе работают с
-URL, подписи к картинкам идут через OpenAI, Azure Document Intelligence — это
-облако, а штатная транскрипция аудио в markitdown (`SpeechRecognition`) по
-умолчанию ходит в веб-API Google. Всё это в продукт не входит — не «пока не
-настроено», а не входит. Что чем заменяется — в
+Separately: **"everything markitdown can do" and "everything offline" are
+different sets.** The YouTube, Bing SERP, Wikipedia, and RSS converters are
+inherently URL-based, image captioning goes through OpenAI, Azure Document
+Intelligence is a cloud service, and markitdown's built-in audio
+transcription (`SpeechRecognition`) defaults to Google's web API. None of
+this is part of the product — not "not configured yet," but genuinely not
+included. What replaces what is in
 [format-coverage.md](format-coverage.md).
 
-## 4. Что делать в первой версии (0.1)
+## 4. What to do in the first version (0.1)
 
-Автор уже написал одно Flutter-приложение (Amicus — Android/iOS, Supabase), то
-есть Dart, Riverpod и сборка под мобильные знакомы. Нового здесь два: **десктоп
-как платформа** и **разбор бинарных форматов**. Соответственно, 0.1 — это
-сквозной путь целиком, но на узком наборе форматов:
+The author has already written one Flutter app (Amicus — Android/iOS,
+Supabase), meaning Dart, Riverpod, and building for mobile are familiar.
+Two things are new here: **desktop as a platform** and **parsing binary
+formats**. Accordingly, 0.1 is the full end-to-end path, but on a narrow
+set of formats:
 
-- Одно окно: зона приёма файла → предпросмотр Markdown → кнопка «Скопировать».
-- Приём файла через диалог и drag & drop (десктоп), через «Поделиться»
-  (Android).
-- Определение типа по расширению + магическим байтам.
-- Конвертеры: `txt`/`md`, `csv`/`tsv`, `json`, `xml`, `html`, `docx`.
-  `docx` — потому что без него продукт не отвечает на главный запрос, а zip+xml
-  даёт заодно каркас для `xlsx`/`pptx`/`epub`.
-- Копирование в буфер (`text/plain` + `text/markdown`), сохранение в `.md`.
-- Сборка под macOS и Android, без сетевых разрешений.
+- One window: file-intake zone → Markdown preview → "Copy" button.
+- File intake via dialog and drag & drop (desktop), via "Share" (Android).
+- Type detection by extension + magic bytes.
+- Converters: `txt`/`md`, `csv`/`tsv`, `json`, `xml`, `html`, `docx`.
+  `docx` because without it the product doesn't answer the main request,
+  and zip+xml also gives a framework for `xlsx`/`pptx`/`epub` along the way.
+- Copying to the clipboard (`text/plain` + `text/markdown`), saving as
+  `.md`.
+- Builds for macOS and Android, with no network permissions.
 
-Полный набор форматов — цель проекта, а не первой версии; как он набирается по
-этапам — в [implementation-plan.md](implementation-plan.md), что по каждому
-формату решено — в [format-coverage.md](format-coverage.md).
+The full set of formats is the project's goal, not the first version's;
+how it's assembled stage by stage is in
+[implementation-plan.md](implementation-plan.md), and what's decided for
+each format is in [format-coverage.md](format-coverage.md).
 
-## 5. Стек
+## 5. Stack
 
-| | что | почему |
+| | what | why |
 |---|---|---|
-| UI | Flutter / Dart | один код на десктоп и мобильные; автор уже на нём пишет |
-| Состояние | Riverpod | то же, что в Amicus — переносится опыт, а не изучается заново |
-| Разбор zip/xml | `archive`, `xml` | `docx`/`xlsx`/`pptx`/`epub` — это zip с XML внутри |
-| HTML → Markdown | `html` + `html2md` | аналог `beautifulsoup4` + `markdownify` из markitdown |
-| Буфер обмена | `super_clipboard` | умеет положить несколько представлений сразу, в отличие от `Clipboard.setData` |
-| Приём файла | `file_picker`, `desktop_drop`, `receive_sharing_intent` | диалог, drag & drop, системное «Поделиться» |
-| Тяжёлые форматы на десктопе | настоящий markitdown подпроцессом | не переписывать `pdfminer` на Dart |
+| UI | Flutter / Dart | one codebase for desktop and mobile; the author already writes in it |
+| State | Riverpod | the same as in Amicus — experience carries over instead of being relearned |
+| Zip/XML parsing | `archive`, `xml` | `docx`/`xlsx`/`pptx`/`epub` are zip files with XML inside |
+| HTML → Markdown | `html` + `html2md` | the equivalent of markitdown's `beautifulsoup4` + `markdownify` |
+| Clipboard | `super_clipboard` | can place several representations at once, unlike `Clipboard.setData` |
+| File intake | `file_picker`, `desktop_drop`, `receive_sharing_intent` | dialog, drag & drop, the system "Share" |
+| Heavy formats on desktop | real markitdown as a subprocess | no need to rewrite `pdfminer` in Dart |
 
-Конкретные решения и их ревизии — в
-[client-architecture.md](client-architecture.md): этот бриф историю не ведёт.
+Specific decisions and their revisions are tracked in
+[client-architecture.md](client-architecture.md): this brief doesn't keep a
+history.
 
-**Чего в стеке нет:** любого сетевого клиента, аналитики, крэш-репортинга.
-Крэш-репортинг — тоже сеть, и он отправляет наружу имена файлов; если он
-когда-нибудь понадобится, это отдельное продуктовое решение, а не техническая
-деталь.
+**What's not in the stack:** any network client, analytics, crash
+reporting. Crash reporting is also networking, and it sends file names
+outward; if it's ever needed, that's a separate product decision, not a
+technical detail.
 
-## 6. Дорожная карта
+## 6. Roadmap
 
-**Этап 0 — Каркас.** Flutter-проект под macOS и Android, CI с
-`dart format`/`analyze`/`test`, пустое окно, которое принимает файл и
-показывает его имя.
+**Stage 0 — Scaffolding.** A Flutter project for macOS and Android, CI with
+`dart format`/`analyze`/`test`, an empty window that accepts a file and
+shows its name.
 
-**Этап 1 — Конвейер и текстовые форматы.** Реестр конвертеров, определение
-типа, `ConversionResult`, экран предпросмотра, копирование. Форматы:
+**Stage 1 — Pipeline and text formats.** The converter registry, type
+detection, `ConversionResult`, the preview screen, copying. Formats:
 `txt`/`md`/`csv`/`tsv`/`json`/`xml`/`html`.
 
-**Этап 2 — Office.** `docx`, затем `xlsx` и `pptx` на общем zip+xml каркасе.
-Здесь же появляется набор эталонных тестовых файлов.
+**Stage 2 — Office.** `docx`, then `xlsx` and `pptx` on a shared zip+xml
+framework. This is also where the set of reference test files appears.
 
-**Этап 3 — PDF.** Отдельный этап: извлечение текста — самая тяжёлая часть и
-единственная, где придётся выбирать между лицензией и объёмом работы.
+**Stage 3 — PDF.** A separate stage: text extraction is the heaviest part,
+and the only one where a choice between license and amount of work has to
+be made.
 
-**Этап 4 — Python-сайдкар на десктопе.** Упаковка настоящего markitdown,
-подписание, форматы, которых нет в Dart-ядре.
+**Stage 4 — Python sidecar on desktop.** Packaging real markitdown, signing,
+formats that aren't in the Dart core.
 
-**Этап 5 — Изображения и аудио.** Офлайн-OCR и офлайн-транскрипция. Самый
-дальний этап и единственный, который тянет за собой ML-модели в бандл.
+**Stage 5 — Images and audio.** Offline OCR and offline transcription. The
+furthest-out stage, and the only one that drags ML models into the bundle.
 
-**Этап 6 — Полировка и выкладка.** Горячие клавиши, пакетная конвертация,
-DMG/нотаризация, выкладка.
+**Stage 6 — Polish and release.** Keyboard shortcuts, batch conversion,
+DMG/notarization, release.

@@ -1,9 +1,10 @@
 import 'conversion_failure.dart';
 
-/// Короткое человекочитаемое описание отказа — для `warnings` на вложенном
-/// файле внутри `zip`/`epub`, где сам отказ не фатален для всего архива.
-/// Используется вместо того, чтобы каждый конвертер-контейнер придумывал
-/// свой текст по случаям из `docs/conversion-pipeline.md#ошибки`.
+/// A short human-readable description of a failure — for `warnings` on a
+/// nested file inside a `zip`/`epub`, where the failure itself isn't
+/// fatal for the whole archive. Used instead of having every
+/// container-converter invent its own text for the cases from
+/// `docs/conversion-pipeline.md#ошибки`.
 String describeFailure(ConversionFailure failure) => switch (failure) {
   UnsupportedFormatFailure(detectedTypeLabel: final label) =>
     'формат не поддерживается ($label)',

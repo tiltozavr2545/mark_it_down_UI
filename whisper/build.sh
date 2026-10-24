@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Собирает распознавание речи из исходников закреплённых версий
-# (whisper/versions.sh): whisper.cpp + ggml + libopus + miniaudio и нашу
-# прослойку whisper/shim/ (mdw.h) — одним CMake-проектом.
+# Builds speech recognition from the sources of pinned versions
+# (whisper/versions.sh): whisper.cpp + ggml + libopus + miniaudio, plus our
+# own layer whisper/shim/ (mdw.h) — as a single CMake project.
 #
-#   ./whisper/build.sh            хост: Windows (Git Bash + VS 2022), macOS,
+#   ./whisper/build.sh            host: Windows (Git Bash + VS 2022), macOS,
 #                                 Linux → whisper/native/host/
-#   ./whisper/build.sh --android  arm64-v8a через NDK →
+#   ./whisper/build.sh --android  arm64-v8a via the NDK →
 #                                 app/android/app/src/main/jniLibs/arm64-v8a/
 #
-# Готовых сборок не берём по той же причине, что у Tesseract: решаем сами,
-# что внутри, — без WHISPER_CURL (скачивание модели по URL) и без GGML_RPC
-# (бэкенд по сети), а в конце grep по собранному на сетевые библиотеки.
+# We don't take prebuilt binaries, for the same reason as Tesseract: we
+# decide for ourselves what's inside — without WHISPER_CURL (downloading
+# the model by URL) and without GGML_RPC (a networked backend), and at the
+# end grep the build for networking libraries.
 #
-# Несколько минут на 4 ядрах (вариантов CPU-бэкенда десяток); в CI
-# результат кэшируется по хешу этого файла, versions.sh и whisper/shim/. Не
-# входит в make verify — см. Makefile (`make whisper`).
+# A few minutes on 4 cores (there's about a dozen CPU backend variants); in
+# CI the result is cached by the hash of this file, versions.sh, and
+# whisper/shim/. Not part of make verify — see the Makefile (`make
+# whisper`).
 #
-# FORCE=1 ./whisper/build.sh — пересобрать, даже если результат есть.
+# FORCE=1 ./whisper/build.sh — rebuild even if the result already exists.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=whisper/versions.sh
@@ -44,7 +46,8 @@ if [[ "${TARGET}" == android ]]; then
 else
   OUT_DIR="${ROOT_DIR}/whisper/native/host"
 fi
-# Хеш рецепта в штампе: правка shim/ или версии — пересборка, без FORCE.
+# Recipe hash in the stamp: editing shim/ or bumping a version triggers a
+# rebuild, without needing FORCE.
 RECIPE_HASH="$(cat "${ROOT_DIR}/whisper/versions.sh" "${ROOT_DIR}/whisper/build.sh" \
   "${ROOT_DIR}"/whisper/shim/* |
   { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; } |
@@ -56,8 +59,8 @@ if [[ -f "${STAMP}" && "${FORCE:-}" != "1" ]]; then
   exit 0
 fi
 
-# CMake на Windows — нативная программа и не понимает путей вида /d/a/...
-# из Git Bash; отдаём ему C:/... .
+# CMake on Windows is a native program and doesn't understand paths like
+# /d/a/... from Git Bash; we hand it C:/... instead.
 native_path() {
   if [[ "${HOST}" == windows ]]; then cygpath -m "$1"; else echo "$1"; fi
 }
@@ -107,7 +110,7 @@ if [[ "${TARGET}" == android ]]; then
     "-DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake"
     "-DANDROID_ABI=${ANDROID_ABI}"
     "-DANDROID_PLATFORM=${ANDROID_PLATFORM}"
-    # Страницы 16 КБ: Android 15+ на новых телефонах и требование Play.
+    # 16 KB pages: Android 15+ on new phones, and a Play requirement.
     -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
   )
 else
@@ -126,15 +129,15 @@ cmake --build "$(native_path "${WORK_DIR}/cmake")" --config Release \
   { grep -E -i -B2 -A8 'error' "${WORK_DIR}/build.log" | tail -80; exit 1; }
 
 BUILT="${WORK_DIR}/cmake/bin"
-# Многоконфигурационный генератор Visual Studio кладёт в bin/Release/.
+# The Visual Studio multi-config generator puts things in bin/Release/.
 [[ -d "${BUILT}/Release" ]] && BUILT="${BUILT}/Release"
 
-# Каталог назначения на Android общий с PDFium и Tesseract — удаляем только
-# своё, а не всё подряд.
+# The destination directory on Android is shared with PDFium and
+# Tesseract — we remove only our own files, not everything in sight.
 mkdir -p "${OUT_DIR}"
 rm -f "${OUT_DIR}"/.whisper-built-* "${OUT_DIR}"/*markitdown_whisper* \
   "${OUT_DIR}"/*whisper.* "${OUT_DIR}"/*whisper.so* "${OUT_DIR}"/*ggml*
-# Варианты CPU-бэкенда — MODULE-библиотеки: на macOS тоже .so.
+# CPU backend variants are MODULE libraries: .so even on macOS.
 case "${TARGET}-${HOST}" in
   android-*) cp "${BUILT}"/lib{markitdown_whisper,whisper,ggml,ggml-base}.so \
     "${BUILT}"/libggml-cpu-*.so "${OUT_DIR}/" ;;
@@ -146,9 +149,9 @@ case "${TARGET}-${HOST}" in
     "${BUILT}"/libggml-cpu-*.so "${OUT_DIR}/" ;;
 esac
 
-# Главное обещание продукта: в собранном нет сетевых библиотек. Имена
-# импортируемых библиотек лежат в бинарнике строками — grep их видит на всех
-# ОС без objdump/otool/dumpbin.
+# The product's core promise: the build contains no networking libraries.
+# Imported library names sit in the binary as plain strings — grep can see
+# them on every OS without objdump/otool/dumpbin.
 if grep -l -a -i -E 'libcurl|ws2_32\.dll|winhttp|wininet' \
   "${OUT_DIR}"/*markitdown_whisper* "${OUT_DIR}"/*whisper* "${OUT_DIR}"/*ggml*; then
   echo "whisper: в сборке есть ссылка на сетевую библиотеку (см. выше)" >&2

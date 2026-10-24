@@ -1,15 +1,17 @@
 name: Release
 
-# Тег vX.Y.Z → GitHub Release с готовыми сборками для Windows и Android
-# (docs/operations.md#релиз). Тег ставится на коммит в main, версия в
-# app/pubspec.yaml должна совпадать с тегом — проверяется ниже.
+# Tag vX.Y.Z → a GitHub Release with ready-made builds for Windows and
+# Android (docs/operations.md#release). The tag is placed on a commit in
+# main, and the version in app/pubspec.yaml must match the tag — checked
+# below.
 #
 #   git tag v0.5.0 && git push origin v0.5.0
 on:
   push:
     tags: ['v*']
-  # Пробный прогон без публикации — когда меняется сам рецепт релиза:
-  # иначе о сломанной сборке APK узнали бы уже после тега.
+  # A dry run without publishing — for when the release recipe itself
+  # changes: otherwise a broken APK build would only be discovered after
+  # tagging.
   pull_request:
     paths: ['.github/workflows/release.yml']
 
@@ -17,13 +19,14 @@ env:
   FLUTTER_VERSION: 3.32.8
 
 jobs:
-  # Те же проверки и та же Windows-сборка (с сайдкаром), что на каждом push:
-  # релиз собирается ровно тем, что проверяет CI, а не отдельным рецептом.
+  # The same checks and the same Windows build (with the sidecar) as on
+  # every push: the release is built with exactly what CI checks, not a
+  # separate recipe.
   ci:
     uses: ./.github/workflows/ci.yml
 
   android:
-    runs-on: ubuntu-24.04  # не ubuntu-latest — см. verify в ci.yml
+    runs-on: ubuntu-24.04  # not ubuntu-latest — see verify in ci.yml
     steps:
       - uses: actions/checkout@v7
 
@@ -47,20 +50,21 @@ jobs:
             exit 1
           fi
 
-      # libpdfium.so в jniLibs/arm64-v8a — без неё APK собирается, но PDF
-      # падает в рантайме (docs/operations.md#android).
+      # libpdfium.so in jniLibs/arm64-v8a — without it the APK builds, but
+      # PDF fails at runtime (docs/operations.md#android).
       - name: PDFium
         run: ./pdfium/fetch.sh
 
-      # Tesseract для OCR: libtesseract/libleptonica/libjpeg/libpngx.so в
-      # jniLibs/arm64-v8a и модели rus/eng в assets/tessdata. Без них APK
-      # собирается, но OCR в нём молча недоступен — проверяется ниже.
+      # Tesseract for OCR: libtesseract/libleptonica/libjpeg/libpngx.so in
+      # jniLibs/arm64-v8a and the rus/eng models in assets/tessdata. Without
+      # them the APK builds, but OCR is silently unavailable in it — checked
+      # below.
       - name: Tesseract (модели и .so)
         run: ./tesseract/fetch.sh
 
-      # Распознавание речи (0.8): .so собираются из исходников NDK той же
-      # версии, что у приложения (whisper/versions.sh), — готовых нет, в
-      # отличие от Tesseract4Android. Кэш — по хешу рецепта.
+      # Speech recognition (0.8): the .so is built from source with the same
+      # NDK version as the app (whisper/versions.sh) — there's no prebuilt
+      # one, unlike Tesseract4Android. Cache is by recipe hash.
       - uses: actions/cache@v6
         with:
           path: |
@@ -78,22 +82,24 @@ jobs:
       - name: whisper (NDK, сборка .so и модели)
         run: |
           ndk="$(sed -n 's/^ANDROID_NDK_VERSION="\(.*\)"/\1/p' whisper/versions.sh)"
-          # (yes || true): под pipefail yes, получив SIGPIPE, роняет шаг с 141.
+          # (yes || true): under pipefail, yes getting SIGPIPE would fail the step with 141.
           (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
           ./whisper/build.sh --android
           ./whisper/fetch.sh
 
-      # Только arm64: PDFium в APK лежит лишь под arm64-v8a, а других
-      # телефонов практически не осталось. Подпись — debug-ключ (так
-      # настроен android/app/build.gradle.kts, своего ключа пока нет).
+      # arm64 only: PDFium in the APK only exists for arm64-v8a, and there
+      # are practically no other phones left. Signing uses the debug key
+      # (that's how android/app/build.gradle.kts is configured — there's no
+      # dedicated key yet).
       - name: flutter build apk
         working-directory: app
         run: flutter build apk --release --target-platform android-arm64
 
-      # Разрешения — на собранном APK, а не только в манифесте исходников:
-      # они приезжают и из манифестов зависимостей. С 0.9 INTERNET есть
-      # (режим «ссылка», docs/offline-and-privacy.md); из сетевых больше
-      # ничего — ни состояния сети, ни Wi-Fi: приложению они не нужны.
+      # Permissions are checked on the built APK, not just in the source
+      # manifest: they also arrive from dependencies' manifests. As of 0.9
+      # INTERNET is present ("link" mode, docs/offline-and-privacy.md); no
+      # other networking permission — no network state, no Wi-Fi: the app
+      # doesn't need them.
       - name: разрешения APK
         run: |
           aapt="$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -n 1)"
@@ -126,7 +132,7 @@ jobs:
   publish:
     needs: [ci, android]
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-24.04  # не ubuntu-latest — см. verify в ci.yml
+    runs-on: ubuntu-24.04  # not ubuntu-latest — see verify in ci.yml
     permissions:
       contents: write
     steps:
@@ -142,9 +148,9 @@ jobs:
           name: markitdown_ui-android-arm64
           path: dist/android
 
-      # Релиз без сайдкара на Windows — не тот продукт (таблицы PDF пропадут
-      # молча, xls/msg уйдут запасному разбору), поэтому падаем, а не
-      # публикуем урезанную сборку.
+      # A Windows release without the sidecar isn't the right product (PDF
+      # tables would silently disappear, xls/msg would fall back to the
+      # degraded parser), so we fail rather than publish a crippled build.
       - name: файлы релиза
         run: |
           v="${GITHUB_REF_NAME#v}"
@@ -156,7 +162,7 @@ jobs:
           test -f dist/windows/data/flutter_assets/assets/whisper/models.json
           test -f dist/windows/sidecar/manifest.json || {
             echo "::error::В Windows-сборке нет сайдкара"; exit 1; }
-          # Внутри архива — одна папка, а не россыпь файлов в «Загрузках».
+          # Inside the archive — a single folder, not a scattering of files in "Downloads".
           mv dist/windows "dist/markitdown_ui-$v-windows-x64"
           (cd dist && zip -qr "markitdown_ui-$v-windows-x64.zip" "markitdown_ui-$v-windows-x64")
           mv dist/android/app-release.apk "dist/markitdown_ui-$v-android-arm64.apk"

@@ -1,171 +1,183 @@
-# Офлайн и приватность
+# Offline and privacy
 
-Что в этом проекте означает «файлы не уходят с устройства», как это
-проверить и чего в приложении нет по этой причине.
+What "files don't leave the device" means in this project, how to verify
+it, and what's missing from the app for that reason.
 
-Документ короткий намеренно: здесь не декларация, а список проверяемых
-свойств сборки. Какие конвертеры из-за этого не вошли — в
-[format-coverage.md](format-coverage.md).
+This document is deliberately short: it's not a declaration, it's a list
+of verifiable build properties. Which converters didn't make it in because
+of this is in [format-coverage.md](format-coverage.md).
 
 ---
 
-## Формулировка
+## Statement
 
-**Файл конвертируется на устройстве, и его содержимое никуда не
-отправляется. В сеть приложение ходит только в режиме «ссылка» — за тем,
-на что указывает ссылка, которую человек сам вставил или которой
-поделился.**
+**The file is converted on the device, and its content is never sent
+anywhere. The app only reaches out to the network in "link" mode — to
+fetch what a link that the person pasted or shared themselves points to.**
 
-До 0.9 формулировка была строже: «сетевого кода нет, разрешения на сеть
-нет». С 0.9 (решение автора от 15.10.2026: «всё, что умеет обычный
-markitdown, можно с подключением к интернету») у приложения есть режим
-«ссылка» — страница, статья Wikipedia, видео YouTube (описание и
-субтитры), файл по прямой ссылке. Ему сеть нужна по определению, а
-разрешение на сеть у Android одно на всё приложение. Поэтому гарантия
-переехала с уровня ОС на уровень кода — и проверяется в CI так же
-автоматически:
+Before 0.9 the statement was stricter: "no networking code, no network
+permission." As of 0.9 (the author's decision from 2026-10-15: "anything
+plain markitdown can do with an internet connection is in scope"), the app
+has a "link" mode — a web page, a Wikipedia article, a YouTube video
+(description and captions), a file at a direct link. That needs network
+access by definition, and Android has a single network permission that
+covers the whole app. So the guarantee moved from the OS level to the code
+level — and it's checked in CI just as automatically:
 
-- **Весь сетевой код — в одном модуле, `core/lib/src/web/`.**
-  `WebFetcher` — единственное место с `HttpClient`; запросы — `GET` по
-  ссылке пользователя и, для YouTube, `POST` с номером видео за списком
-  субтитров. Ни путь к файлу, ни его байты в эти запросы не попадают:
-  конвертеры файлов `WebFetcher` не получают вовсе (он передаётся в реестр
-  только для страниц, скачанных по ссылке, — `isolated_convert.dart`).
-- **CI падает, если сокеты или HTTP-клиент появились вне этого модуля**
-  (шаг «сеть только в core/lib/src/web/» в `ci.yml`), и если в зависимостях
-  появился сетевой пакет (`http`, `dio`, `firebase_*`, `sentry_*`…) —
-  такой пакет означал бы сеть мимо модуля.
-- **Распознавание текста (OCR) и речи — по-прежнему только на устройстве**,
-  модели в приложении, нативные библиотеки собраны без сетевого кода
-  (ниже). Ссылка на аудио скачивается, а распознаётся так же локально.
+- **All networking code lives in a single module, `core/lib/src/web/`.**
+  `WebFetcher` is the only place with an `HttpClient`; its requests are a
+  `GET` for the user's link and, for YouTube, a `POST` with the video ID to
+  fetch the caption list. Neither the file path nor its bytes ever go into
+  these requests: file converters never get a `WebFetcher` at all — it's
+  only passed into the registry for pages downloaded via a link
+  (`isolated_convert.dart`).
+- **CI fails if sockets or an HTTP client show up outside this module**
+  (the "network only in core/lib/src/web/" step in `ci.yml`), and if a
+  networking package shows up in the dependencies (`http`, `dio`,
+  `firebase_*`, `sentry_*`...) — such a package would mean network access
+  bypassing the module.
+- **Text recognition (OCR) and speech recognition are still on-device
+  only**, with the models bundled in the app and the native libraries built
+  without networking code (below). A link to audio gets downloaded, but
+  recognition still happens locally the same way.
 
-## Как это прибито к сборке
+## How this is nailed down in the build
 
-Целевые платформы — Windows и Android; macOS вторична.
+The target platforms are Windows and Android; macOS is secondary.
 
-| платформа | чем | как проверить |
+| platform | by what | how to verify |
 |---|---|---|
-| Android | `android.permission.INTERNET` есть с 0.9 (режим «ссылка»); других сетевых разрешений (`ACCESS_NETWORK_STATE`, Wi-Fi) нет. `usesCleartextTraffic` — чтобы открывались и ссылки `http://` | `aapt dump permissions app-release.apk` — шаг «разрешения APK» в `release.yml`; на телефоне: «Сведения о приложении» → «Разрешения» |
-| macOS | в `Release.entitlements` — `network.client` (исходящие, с 0.9), **без** `network.server`; песочница включена | `codesign -d --entitlements - MarkItDown.app`; в CI — grep по `Release.entitlements` |
-| iOS | платформа отложена | — |
-| Windows | гарантии уровня ОС нет и не было: zip-сборка разрешений на сеть не знает. Держится на коде: сеть только в `core/lib/src/web/`, нет сетевых пакетов в `pub deps`, нет сетевых библиотек в `app/windows/` | в CI: grep по коду, `dart pub deps`, grep `app/windows/` по `ws2_32`/`winhttp`/`wininet`/`internetClient` |
-| Linux | платформа отложена | — |
+| Android | `android.permission.INTERNET` is present as of 0.9 ("link" mode); no other network permissions (`ACCESS_NETWORK_STATE`, Wi-Fi) exist. `usesCleartextTraffic` is set so `http://` links also open | `aapt dump permissions app-release.apk` — the "APK permissions" step in `release.yml`; on the phone: "App info" → "Permissions" |
+| macOS | `Release.entitlements` has `network.client` (outbound, as of 0.9), **not** `network.server`; sandbox is enabled | `codesign -d --entitlements - MarkItDown.app`; in CI — a grep against `Release.entitlements` |
+| iOS | platform deferred | — |
+| Windows | there's no OS-level guarantee and never was: the zip build doesn't have network permissions as a concept. It rests on the code: network only in `core/lib/src/web/`, no networking packages in `pub deps`, no networking libraries in `app/windows/` | in CI: grep against the code, `dart pub deps`, grep `app/windows/` for `ws2_32`/`winhttp`/`wininet`/`internetClient` |
+| Linux | platform deferred | — |
 
-Что потеряно по сравнению с 0.8 — честно: на Android раньше отсутствие
-`INTERNET` означало, что **ни одна зависимость** физически не могла открыть
-соединение. Теперь это означает проверка кода и списка зависимостей, а не
-ОС: зависимость с нативным сетевым кодом (не Dart-пакет) grep по Dart её
-не поймает. Нативные библиотеки проекта — PDFium, Tesseract, whisper.cpp —
-проверяются отдельно (сборка падает при ссылке на `libcurl`/`ws2_32`/
-`winhttp`/`wininet`, см. ниже).
+Being honest about what's been lost compared to 0.8: on Android, the
+absence of `INTERNET` used to mean that **not a single dependency** could
+physically open a connection. Now it means a check of the code and the
+dependency list, not the OS: a dependency with native networking code (not
+a Dart package) won't be caught by grepping Dart. The project's own native
+libraries — PDFium, Tesseract, whisper.cpp — are checked separately (the
+build fails on a reference to `libcurl`/`ws2_32`/`winhttp`/`wininet`, see
+below).
 
-Про `DebugProfile.entitlements`: там есть `com.apple.security.network.server` —
-он нужен инструментам Flutter (hot reload, VM service), и в релизную сборку не
-попадает. Поэтому проверка — по `Release.entitlements`, а не по всем
-`*.entitlements` подряд.
+About `DebugProfile.entitlements`: it has
+`com.apple.security.network.server` — Flutter tooling needs it (hot
+reload, VM service), and it doesn't make it into the release build. That's
+why the check is against `Release.entitlements`, not against every
+`*.entitlements` file indiscriminately.
 
-Python-сайдкар на десктопе ту же линию держит: `requests` в зависимостях
-markitdown остаётся (он в core-группе, его не выкинуть), но Azure-,
-YouTube- и LLM-конвертеры не устанавливаются вообще — см.
-[python-sidecar.md](python-sidecar.md).
+The Python sidecar on desktop holds the same line: `requests` stays among
+markitdown's dependencies (it's in the core group and can't be dropped),
+but the Azure, YouTube, and LLM converters are never installed at all —
+see [python-sidecar.md](python-sidecar.md).
 
-OCR (Этап 6) — Tesseract с моделями в бандле, распознаёт на устройстве.
-Десктопная сборка собирается из исходников именно ради этого обещания:
-готовые (vcpkg, инсталлятор UB Mannheim) линкуют **libcurl** — Tesseract
-умеет сам качать картинку по URL. `tesseract/build.sh` собирает без curl,
-libarchive и `Ws2_32` и падает, если в собранных библиотеках есть ссылка на
-`libcurl`/`ws2_32`/`winhttp`/`wininet`. Android-сборка (Tesseract4Android)
-сетевых библиотек не тянет (`NEEDED` — только libc/libm/liblog/libz и свои
-libjpeg/libpng). Модели не скачиваются —
-они уже в приложении.
+OCR (Stage 6) — Tesseract with the models in the bundle, recognizing on
+the device. The desktop build is built from source specifically for this
+promise: the prebuilt options (vcpkg, the UB Mannheim installer) link
+**libcurl** — Tesseract can download an image by URL itself.
+`tesseract/build.sh` builds without curl, libarchive, and `Ws2_32`, and
+fails if the built libraries reference `libcurl`/`ws2_32`/`winhttp`/`wininet`.
+The Android build (Tesseract4Android) doesn't pull in any networking
+libraries (`NEEDED` is only libc/libm/liblog/libz and its own
+libjpeg/libpng). The models aren't downloaded — they're already in the
+app.
 
-Распознавание речи (0.8) — whisper.cpp с моделью в бандле (Whisper small,
-264 МБ, и Silero VAD), на устройстве, на Windows и Android одинаково.
-Модель не скачивается — подкачать её нечем, поэтому она в приложении
-целиком. `whisper/build.sh` собирает whisper.cpp без `WHISPER_CURL`
-(скачивание модели по URL) и без `GGML_RPC` (бэкенд по сети) и падает,
-если в собранном есть ссылка на `libcurl`/`ws2_32`/`winhttp`/`wininet`.
-AAC декодирует ОС (Media Foundation, MediaCodec) — локально, из файла;
-временный файл для этого удаляется в `finally`.
+Speech recognition (0.8) — whisper.cpp with the model in the bundle
+(Whisper small, 264 MB, plus Silero VAD), on-device, the same on Windows
+and Android. The model isn't downloaded — there's nothing to fetch it
+with, so it's bundled in full. `whisper/build.sh` builds whisper.cpp
+without `WHISPER_CURL` (downloading the model by URL) and without
+`GGML_RPC` (a networked backend), and fails if the build references
+`libcurl`/`ws2_32`/`winhttp`/`wininet`. AAC is decoded by the OS (Media
+Foundation, MediaCodec) — locally, from the file; the temporary file used
+for this is deleted in a `finally`.
 
-На Windows сайдкар — обычный дочерний процесс `python.exe` с правами самого
-приложения: изоляции песочницы у него нет, и «нет сети» держится на том, что
-сетевые конвертеры markitdown не установлены (см. выше), а не на ОС. Это ещё
-одна причина, почему вопрос про MSIX и AppContainer при выборе упаковки
-(Этап 7) — не формальность.
+On Windows the sidecar is an ordinary child process, `python.exe`, with
+the same privileges as the app itself: it has no sandbox isolation, and
+"no network" rests on the fact that markitdown's networking converters
+aren't installed (see above), not on the OS. This is one more reason the
+MSIX and AppContainer question, when packaging is chosen (Stage 7), isn't
+a formality.
 
-На macOS (вторичная платформа) сайдкар — подпроцесс приложения и **наследует App Sandbox
-родителя** — с 0.9 вместе с `network.client`. Как и на Windows, без сети
-его держит то, что сетевые конвертеры markitdown не установлены, а не
-песочница. Собственные entitlements интерпретатора
-(`sidecar/sidecar.entitlements`) содержат только
-`cs.disable-library-validation` — про загрузку библиотек, не про сеть, — и
-сетевых ключей в них нет. Это проверяет CI: шаг падает, если в
-`sidecar/*.entitlements` появился `network.*`, в `Release.entitlements` —
-`network.server`, или там выключена песочница. Оговорка: поведение сайдкара под
-песочницей живого `.app` ещё не проверено (нет Xcode) — см.
+On macOS (a secondary platform) the sidecar is a subprocess of the app and
+**inherits the parent's App Sandbox** — together with `network.client` as
+of 0.9. As on Windows, what keeps it off the network is that markitdown's
+networking converters aren't installed, not the sandbox. The
+interpreter's own entitlements (`sidecar/sidecar.entitlements`) contain
+only `cs.disable-library-validation` — about loading libraries, not about
+networking — and have no network keys. CI checks this: the step fails if
+`network.*` shows up in `sidecar/*.entitlements`, if `network.server` shows
+up in `Release.entitlements`, or if the sandbox is disabled there. Caveat:
+how the sidecar behaves under the sandbox of a live `.app` hasn't been
+verified yet (no Xcode) — see
 [future-development.md](future-development.md).
 
-## Чего в приложении нет
+## What's not in the app
 
-И не появится без отдельного продуктового решения: каждый пункт — это сеть
-не по ссылке пользователя, а сама по себе, или отправка содержимого
-документа наружу:
+And won't appear without a separate product decision: each item below is
+networking that isn't driven by a user's link but happens on its own, or
+sends document content outward:
 
-- **Аналитики.** Никакой, даже «анонимной».
-- **Крэш-репортинга.** Соблазнительно, но крэш-репорт содержит стек, а
-  стек — имена файлов. Приложение, которое при падении отправляет наружу
-  `договор-аренды-итог.docx`, нарушает ровно то обещание, ради которого
-  существует.
-- **Проверки обновлений.** Обновляется вручную: новая версия скачивается с
-  GitHub Releases (магазинов нет — решение автора).
-- **Подписей к изображениям через LLM и Azure Document Intelligence** — это
-  основной способ markitdown работать со сканами, и он облачный.
-- **Транскрипции аудио через веб-API** (штатный путь markitdown). Своя —
-  есть, на устройстве (см. выше).
-- **Конвертера Bing** (страница результатов поиска) — хрупкий разбор чужой
-  выдачи вопреки условиям Bing. YouTube и Wikipedia — есть, в режиме
-  «ссылка» (0.9): туда уходит только сама ссылка.
+- **Analytics.** None at all, not even "anonymous."
+- **Crash reporting.** Tempting, but a crash report contains a stack trace,
+  and a stack trace contains file names. An app that sends
+  `lease-agreement-final.docx` outward on a crash violates exactly the
+  promise it exists to keep.
+- **Update checking.** Updates are manual: a new version is downloaded from
+  GitHub Releases (no app stores — the author's decision).
+- **Image captioning via LLM and Azure Document Intelligence** — this is
+  markitdown's main way of handling scans, and it's cloud-based.
+- **Audio transcription via a web API** (markitdown's built-in path). Our
+  own exists, on-device (see above).
+- **The Bing converter** (a search-results page) — a fragile parse of
+  someone else's output, against Bing's terms. YouTube and Wikipedia do
+  exist, in "link" mode (0.9): only the link itself goes out.
 
-## Режим «ссылка»: что уходит в сеть
+## "Link" mode: what goes out over the network
 
-- **`GET` по ссылке** — та страница или тот файл, которые человек выбрал;
-  с перенаправлениями, как в браузере. `User-Agent` — честное имя
-  приложения со ссылкой на репозиторий, без cookie (кроме cookie согласия
-  YouTube: «отказ от необязательных»), без истории, без идентификаторов.
-- **Для YouTube — ещё два запроса**: `POST` к InnerTube (`/youtubei/v1/player`)
-  с номером видео — за списком субтитров, и `GET` самой дорожки субтитров.
-  Это не официальный API: YouTube меняет его, и тогда в результате будет
-  описание без субтитров и предупреждение.
-- **Ничего больше.** Скачанное конвертируется на устройстве тем же
-  конвейером, что и файл (ссылка на PDF — PDFium, на аудио — whisper.cpp).
-  Предел на скачивание — 1 ГБ, как у распакованного архива: бесконечный
-  поток иначе съел бы память.
+- **A `GET` for the link** — the page or file the person chose; with
+  redirects, same as in a browser. The `User-Agent` is an honest app name
+  with a link to the repository, no cookies (except the YouTube consent
+  cookie: "reject non-essential"), no history, no identifiers.
+- **For YouTube, two more requests**: a `POST` to InnerTube
+  (`/youtubei/v1/player`) with the video ID, to get the caption list, and a
+  `GET` for the caption track itself. This isn't an official API: YouTube
+  changes it, and when that happens the result is a description with no
+  captions and a warning.
+- **Nothing else.** What gets downloaded is converted on the device by the
+  same pipeline as a file (a PDF link goes through PDFium, an audio link
+  through whisper.cpp). The download limit is 1 GB, same as for an
+  unpacked archive: otherwise an endless stream would eat up memory.
 
-## Что хранится на устройстве
+## What's stored on the device
 
-- **Содержимое конвертаций — нигде.** Результат живёт в памяти, пока открыт
-  экран предпросмотра, и в буфере обмена — потому что его туда попросили
-  положить.
-- **Временные файлы** (для сайдкара, для вставки из буфера) — в системной
-  временной папке, удаляются в `finally` после конвертации.
-- **Настройки** (тема, язык) — `shared_preferences`.
-- **История «последние файлы»**, если появится, — только пути и имена, с
-  возможностью выключить и очистить. Содержимое — никогда.
+- **Conversion content — nowhere.** The result lives in memory while the
+  preview screen is open, and in the clipboard — because that's where it
+  was asked to be placed.
+- **Temporary files** (for the sidecar, for clipboard pasting) — in the
+  system's temp folder, deleted in a `finally` after conversion.
+- **Settings** (theme, language) — `shared_preferences`.
+- **"Recent files" history**, if it's ever added — only paths and names,
+  with the option to turn it off and clear it. Content — never.
 
-Буфер обмена — осознанная дыра в этой картине, и закрыть её нельзя: на
-macOS/iOS в буфер смотрит Universal Clipboard, на Windows — история буфера
-(Win+V) и, если включена, облачная синхронизация, на Android — любое
-приложение с фокусом. Это цена того, что продукт вообще делает, и об этом стоит сказать в
-README и описании релиза прямо, а не умалчивать.
+The clipboard is a deliberate hole in this picture, and it can't be
+closed: on macOS/iOS, Universal Clipboard can see into it; on Windows,
+clipboard history (Win+V) and, if enabled, cloud sync can; on Android, any
+app with focus can. This is the price of what the product does in the
+first place, and it's worth saying so plainly in the README and the
+release notes, not glossing over it.
 
-## Что это стоит
+## What this costs
 
-Половина возможностей markitdown — сканы, аудио, картинки — построена на
-облаке, и без него они либо отсутствуют, либо требуют своей офлайн-подсистемы
-с моделями в бандле (см. «Открытые места» в
-[format-coverage.md](format-coverage.md)). Это главный компромисс проекта, и он
-выбран сознательно: приложение, которое умеет меньше, но не отправляет
-документы наружу, отвечает на запрос, а умеющее всё через чужой сервер — нет,
-потому что таких уже полный интернет. Режим «ссылка» (0.9) этот компромисс
-не отменяет: в сеть уходит адрес, который и так публичный, а не документ.
+Half of markitdown's capabilities — scans, audio, images — are built on
+the cloud, and without it they either don't exist or need their own
+offline subsystem with models in the bundle (see "Open items" in
+[format-coverage.md](format-coverage.md)). This is the project's main
+trade-off, and it's a deliberate one: an app that can do less but doesn't
+send documents outward answers the actual request, while one that can do
+everything through someone else's server doesn't — because the internet
+is already full of those. "Link" mode (0.9) doesn't cancel this
+trade-off: what goes out over the network is an address that's already
+public, not the document.

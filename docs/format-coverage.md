@@ -1,785 +1,869 @@
-# Покрытие форматов
+# Format coverage
 
-Что умеет markitdown, чем это закрыто у нас, на какой платформе работает и в
-каком состоянии. Таблица — живая: это справка по текущему состоянию, а не
-план. План — в [implementation-plan.md](implementation-plan.md), устройство
-конвейера — в [conversion-pipeline.md](conversion-pipeline.md).
+What markitdown can do, how we cover it, on which platform it works, and in
+what state. The table is alive: it's a reference for the current state, not
+a plan. The plan is in [implementation-plan.md](implementation-plan.md), the
+pipeline's design is in [conversion-pipeline.md](conversion-pipeline.md).
 
-**Статусы:** ✅ сделано · 🚧 в работе · 📋 запланировано · ⏸️ отложено ·
-❌ не входит в продукт.
+**Statuses:** ✅ done · 🚧 in progress · 📋 planned · ⏸️ deferred ·
+❌ not part of the product.
 
 ---
 
-## Сводка
+## Summary
 
-Таблица — живая: пять строк помечены ✅ по итогам Этапа 1, ещё шесть — по
-итогам Этапа 2, `pdf` — по итогам Этапа 3, `xls`/`msg` — по итогам Этапа 4,
-изображения (EXIF и OCR), PDF-сканы и метаданные аудио — по итогам Этапа 6,
-Dart-разбор `xls`/`msg`, ленты RSS/Atom и OCR GIF/WebP/TIFF — в 0.9,
-остальное пока целевое состояние.
+The table is alive: five rows are marked ✅ as of Stage 1, six more as of
+Stage 2, `pdf` as of Stage 3, `xls`/`msg` as of Stage 4, images (EXIF and
+OCR), scanned PDFs and audio metadata as of Stage 6, Dart parsing of
+`xls`/`msg`, RSS/Atom feeds and OCR for GIF/WebP/TIFF in 0.9, the rest is
+still the target state.
 
-| формат | чем в markitdown | чем у нас (Dart-ядро) | сайдкар | платформы | статус |
+| format | how markitdown does it | how we do it (Dart core) | sidecar | platforms | status |
 |---|---|---|---|---|---|
-| `txt`, `md`, `log` | `_plain_text_converter` | `dart:convert` + определение кодировки | — | все | ✅ этап 1 |
-| `csv`, `tsv` | `_csv_converter` | `csv` + `markdown_writer.table` | — | все | ✅ этап 1 |
-| `json` | `_plain_text_converter` | `dart:convert`, фенс-блок ```json | — | все | ✅ этап 1 |
-| `xml` | `defusedxml` | `xml`, фенс-блок ```xml | — | все | ✅ этап 1 |
-| `html`, `htm` | `beautifulsoup4` + `markdownify` | `html` + `html2md` | — | все | ✅ этап 1 |
-| `docx` | `mammoth` + `lxml` | `archive` + `xml` (свой разбор `word/document.xml`) | лучше на сложной вёрстке | все | ✅ этап 2 |
-| `xlsx` | `pandas` + `openpyxl` | `archive` + `xml` (`sharedStrings` + листы) | — | все | ✅ этап 2 |
-| `pptx` | `python-pptx` | `archive` + `xml` (слайды + заметки) | — | все | ✅ этап 2 |
-| `epub` | zip + html-конвертер | `archive` + `HtmlConverter` Этапа 1 через `recurse` | — | все | ✅ этап 2 |
-| `ipynb` | `_ipynb_converter` | `dart:convert` + свой рендер ячеек | — | все | ✅ этап 2 |
-| `pdf` | `pdfminer.six`, `pdfplumber` | PDFium через свои FFI-биндинги, см. ниже | лучше на таблицах (их мы не делаем), см. [сверку](#сверка-с-эталоном-этап-4) | все | ✅ этап 3 |
-| `xls` (BIFF8, BIFF5) | `xlrd` | свой разбор CFB и BIFF ([решения 0.9](#решения-09-xls-msg-rss)), рендер листа общий с `xlsx` | на десктопе идёт первым | все | ✅ этап 4 (сайдкар), 0.9 (Dart) |
-| `doc` (OLE2) | — (нет и в markitdown) | распознаётся как `.doc`, конвертера нет | — | — | ❌ честное «не поддерживается» |
-| `msg` (Outlook) | `olefile` | свой разбор CFB, вывод символ в символ как у markitdown | на десктопе идёт первым | все | ✅ этап 4 (сайдкар), 0.9 (Dart); фикстуры — синтетика |
-| `zip` | `_zip_converter` | `archive` + рекурсия через реестр | — | все | ✅ этап 2 |
-| изображения: EXIF | `_exiftool` (внешний бинарник) | свой разбор TIFF/EXIF, размер по заголовку; PNG, JPEG, GIF, BMP, WebP, TIFF, HEIC | — (exiftool в сайдкар не ставится) | все | ✅ этап 6 |
-| изображения и PDF-сканы: OCR | через внешний OCR / LLM | Tesseract 5.5.1 через FFI, `rus+eng` (JPEG, PNG, BMP; GIF, WebP, TIFF — первый кадр через `package:image`; страницы-сканы PDF — рендер PDFium) | — | все | ✅ этап 6, 0.9 |
-| изображения: подпись LLM | `_llm_caption` → OpenAI | — | — | — | ❌ сеть |
-| аудио и видео: метаданные | `_audio_converter` (exiftool) | свой разбор: ID3v1/v2 + кадры MPEG, FLAC, Ogg Vorbis/Opus, WAV, MP4/M4A/MOV/3GP | — | все | ✅ этап 6 |
-| аудио: транскрипция | `SpeechRecognition` → **веб-API Google** | whisper.cpp 1.9.5 через FFI, модель small (q8_0), многоязычная; Silero VAD | — | все | ✅ 0.8 ([решения](#решения-транскрипции-08)) |
-| PDF/документы через Azure DI | `_doc_intel_converter` | — | — | — | ❌ облако |
-| Azure Content Understanding | `_cu_converter` | — | — | — | ❌ облако |
-| YouTube | `_youtube_converter` + `youtube_transcript_api` | порт: метаданные страницы + субтитры через InnerTube ([решения](#решения-09-ссылки)) | — | все, по ссылке | ✅ 0.9 |
-| Bing SERP | `_bing_serp_converter` | — | — | — | ❌ хрупкий разбор чужой выдачи |
-| ссылка на страницу или файл | `convert_uri` (`requests`) | `WebFetcher` (`dart:io`) → тот же реестр; тип — по `Content-Type`, имя — из `Content-Disposition` | — | все | ✅ 0.9 |
-| Wikipedia | `_wikipedia_converter` | порт: `#mw-content-text` без кнопок «править» | — | все, по ссылке | ✅ 0.9 |
-| RSS / Atom | `_rss_converter` | порт `_rss_converter` на `xml` + `html2md` | — | все | ✅ 0.9 |
+| `txt`, `md`, `log` | `_plain_text_converter` | `dart:convert` + encoding detection | — | all | ✅ Stage 1 |
+| `csv`, `tsv` | `_csv_converter` | `csv` + `markdown_writer.table` | — | all | ✅ Stage 1 |
+| `json` | `_plain_text_converter` | `dart:convert`, ```json fenced block | — | all | ✅ Stage 1 |
+| `xml` | `defusedxml` | `xml`, ```xml fenced block | — | all | ✅ Stage 1 |
+| `html`, `htm` | `beautifulsoup4` + `markdownify` | `html` + `html2md` | — | all | ✅ Stage 1 |
+| `docx` | `mammoth` + `lxml` | `archive` + `xml` (our own parsing of `word/document.xml`) | better on complex layouts | all | ✅ Stage 2 |
+| `xlsx` | `pandas` + `openpyxl` | `archive` + `xml` (`sharedStrings` + sheets) | — | all | ✅ Stage 2 |
+| `pptx` | `python-pptx` | `archive` + `xml` (slides + notes) | — | all | ✅ Stage 2 |
+| `epub` | zip + html converter | `archive` + the Stage 1 `HtmlConverter` via `recurse` | — | all | ✅ Stage 2 |
+| `ipynb` | `_ipynb_converter` | `dart:convert` + our own cell rendering | — | all | ✅ Stage 2 |
+| `pdf` | `pdfminer.six`, `pdfplumber` | PDFium via our own FFI bindings, see below | better on tables (which we don't do), see the [reconciliation](#reconciliation-with-the-reference-stage-4) | all | ✅ Stage 3 |
+| `xls` (BIFF8, BIFF5) | `xlrd` | our own CFB and BIFF parsing ([0.9 decisions](#09-decisions-xls-msg-rss)), sheet rendering shared with `xlsx` | goes first on desktop | all | ✅ Stage 4 (sidecar), 0.9 (Dart) |
+| `doc` (OLE2) | — (not in markitdown either) | recognized as `.doc`, no converter | — | — | ❌ an honest "not supported" |
+| `msg` (Outlook) | `olefile` | our own CFB parsing, output character-for-character matching markitdown | goes first on desktop | all | ✅ Stage 4 (sidecar), 0.9 (Dart); fixtures are synthetic |
+| `zip` | `_zip_converter` | `archive` + recursion through the registry | — | all | ✅ Stage 2 |
+| images: EXIF | `_exiftool` (external binary) | our own TIFF/EXIF parsing, size from the header; PNG, JPEG, GIF, BMP, WebP, TIFF, HEIC | — (exiftool is not bundled in the sidecar) | all | ✅ Stage 6 |
+| images and scanned PDFs: OCR | via external OCR / LLM | Tesseract 5.5.1 via FFI, `rus+eng` (JPEG, PNG, BMP; GIF, WebP, TIFF — first frame via `package:image`; scanned PDF pages — rendered by PDFium) | — | all | ✅ Stage 6, 0.9 |
+| images: LLM caption | `_llm_caption` → OpenAI | — | — | — | ❌ network |
+| audio and video: metadata | `_audio_converter` (exiftool) | our own parsing: ID3v1/v2 + MPEG frames, FLAC, Ogg Vorbis/Opus, WAV, MP4/M4A/MOV/3GP | — | all | ✅ Stage 6 |
+| audio: transcription | `SpeechRecognition` → **Google web API** | whisper.cpp 1.9.5 via FFI, small model (q8_0), multilingual; Silero VAD | — | all | ✅ 0.8 ([decisions](#transcription-decisions-08)) |
+| PDF/documents via Azure DI | `_doc_intel_converter` | — | — | — | ❌ cloud |
+| Azure Content Understanding | `_cu_converter` | — | — | — | ❌ cloud |
+| YouTube | `_youtube_converter` + `youtube_transcript_api` | port: page metadata + captions via InnerTube ([decisions](#09-decisions-links)) | — | all, via link | ✅ 0.9 |
+| Bing SERP | `_bing_serp_converter` | — | — | — | ❌ fragile parsing of someone else's search results |
+| link to a page or file | `convert_uri` (`requests`) | `WebFetcher` (`dart:io`) → the same registry; type by `Content-Type`, name from `Content-Disposition` | — | all | ✅ 0.9 |
+| Wikipedia | `_wikipedia_converter` | port: `#mw-content-text` without the "edit" buttons | — | all, via link | ✅ 0.9 |
+| RSS / Atom | `_rss_converter` | port of `_rss_converter` on top of `xml` + `html2md` | — | all | ✅ 0.9 |
 
-### Почему четыре строки помечены ❌
+### Why four rows are marked ❌
 
-Это не «пока не сделали». Подписи к картинкам через LLM и оба
-Azure-конвертера отправляют содержимое документа в чужой сервис — ровно то,
-против чего продукт и затевался, — и к тому же платные (у Azure бесплатный
-уровень с месячным лимитом страниц); автор отклонил их явно (15.10.2026).
-Текст с картинок и сканов даёт свой OCR. Bing — разбор страницы
-результатов поиска: хрупко (вёрстка выдачи меняется) и против условий
-Bing. YouTube и Wikipedia до 0.9 тоже стояли здесь — «принимают URL, а не
-файл»; с режимом «ссылка» они сделаны, см. [решения 0.9](#решения-09-ссылки)
-и [offline-and-privacy.md](offline-and-privacy.md).
+This isn't "not done yet." LLM image captioning and both Azure converters
+send document content to a third-party service — exactly what this product
+was built to avoid — and on top of that they're paid (Azure has a free tier
+with a monthly page limit); the author explicitly rejected them
+(2026-10-15). Text from images and scans is covered by our own OCR instead.
+Bing means parsing a search-results page: fragile (the results layout keeps
+changing) and against Bing's terms. YouTube and Wikipedia were also here
+before 0.9 — "they take a URL, not a file"; with the "link" mode they're now
+done, see [0.9 decisions](#09-decisions-links) and
+[offline-and-privacy.md](offline-and-privacy.md).
 
-### Решения Этапа 1
+### Stage 1 decisions
 
-- **`json`/`xml` отдаются фенс-блоком кода**, а не превращаются в
-  markdown-структуру (таблицы/заголовки). Произвольный JSON/XML не
-  укладывается в markdown без потерь, а фенс-блок читаем и для человека, и
-  для LLM — и это ровно то, как с ними по факту обходится сам `markitdown`
-  (`_plain_text_converter`, то есть почти без преобразования).
-- **`html`-конвертер не идёт через `markdown_writer`** — вся конвертация
-  делегируется `html2md`, библиотеке, которая и выбрана для этого в
-  [client-architecture.md](client-architecture.md). Правило «весь markdown
-  собирается через один модуль» (см. [../AGENTS.md](../AGENTS.md)) здесь не
-  нарушено по умыслу: `markdown_writer` обязателен там, где markdown строим
-  мы сами (таблицы csv/tsv), а не там, где готовую конвертацию делает
-  сторонняя библиотека — переизобретать html-парсинг ради единообразия
-  смысла не было.
+- **`json`/`xml` are output as a fenced code block**, not turned into a
+  markdown structure (tables/headings). Arbitrary JSON/XML doesn't fit into
+  markdown without loss, and a fenced block is readable both for a human and
+  for an LLM — and that's exactly how `markitdown` itself handles them in
+  practice (`_plain_text_converter`, i.e. almost no transformation).
+- **The `html` converter doesn't go through `markdown_writer`** — the whole
+  conversion is delegated to `html2md`, the library chosen for this in
+  [client-architecture.md](client-architecture.md). The rule "all markdown
+  is assembled through one module" (see [../AGENTS.md](../AGENTS.md)) isn't
+  violated here by accident: `markdown_writer` is mandatory where we build
+  markdown ourselves (csv/tsv tables), not where a third-party library
+  already does the conversion — reinventing HTML parsing just for
+  consistency wasn't worth it.
 
-### Решения Этапа 2
+### Stage 2 decisions
 
-- **Заголовок `xlsx`-таблицы — буквы столбцов (A, B, C…), а не первая
-  строка данных.** В отличие от `csv` (где первая строка почти всегда
-  заголовок), на листе `xlsx` это не гарантировано вовсе — выдавать данные
-  за заголовок было бы обманом. `docx`-таблицы, наоборот, берут первую
-  строку заголовком: там это конвенция почти всех реальных документов.
-- **Объединённые ячейки `xlsx` — HTML-таблица целиком, не частично.** Решение
-  зафиксировано ещё на Этапе 0/1 в принципе, здесь — конкретная реализация:
-  `markdown_writer.htmlTable` с `colspan`/`rowspan`, лист помечается
-  `warnings`.
-- **Таблица в таблице (`docx`) схлопывается в плоский текст**, а не
-  рекурсивный markdown — Markdown-таблицы не умеют вкладываться. По той же
-  причине форматирование (bold/italic/ссылки) внутри ячеек не переносится:
-  `markdown_writer.table` сам экранирует содержимое ячейки, и повторная
-  экранировка уже готовой разметки её бы сломала.
-- **`epub`-главы уходят через `request.recurse`, а не прямым вызовом
-  `HtmlConverter`.** Так глава конвертируется через тот же реестр, что и
-  верхнеуровневый файл — если на следующем этапе появится лучший html-
-  конвертер или сайдкар для html, `epub` получит его бесплатно, не меняя
-  код.
-- **`zip` хард-фейлит на `LimitExceededFailure` вложенного файла, `epub` —
-  нет.** У архива превышенный лимит значит «дальше идти небезопасно» для
-  всего файла; у книги один обрезанный/огромный `.xhtml` не должен топить
-  всю остальную книгу — `warnings` и пропуск главы, частичный результат.
-- **Бюджет рекурсии (`maxFilesInArchive`, суммарный распакованный объём)
-  общий на всё дерево `zip`-в-`zip`, не на один уровень** — иначе архив из
-  тысяч мелких вложенных архивов обходил бы лимит, оставаясь каждый раз
-  «безопасным» на своём уровне. Суммарный объём проверяется по **факту
-  полученных байт после распаковки**, не по заголовку zip — но сама
-  распаковка одного файла `archive`-пакетом не прерывается на середине, так
-  что защита не полна против одного файла-бомбы (см. комментарий в
-  `zip_converter.dart`). Для масштаба этого проекта это сознательный
-  компромисс.
+- **The `xlsx` table header is column letters (A, B, C…), not the first row
+  of data.** Unlike `csv` (where the first row is almost always the
+  header), on an `xlsx` sheet that's not guaranteed at all — passing off
+  data as a header would be misleading. `docx` tables, conversely, take the
+  first row as the header: that's the convention in most real-world
+  documents.
+- **Merged `xlsx` cells become a full HTML table, not a partial one.** The
+  decision was already fixed in principle back in Stage 0/1; here it's the
+  concrete implementation: `markdown_writer.htmlTable` with
+  `colspan`/`rowspan`, the sheet is flagged with `warnings`.
+- **A table nested inside a table (`docx`) collapses into flat text**,
+  rather than recursive markdown — Markdown tables can't nest. For the same
+  reason, formatting (bold/italic/links) inside cells isn't carried over:
+  `markdown_writer.table` escapes cell content itself, and re-escaping
+  already-rendered markup would break it.
+- **`epub` chapters go through `request.recurse`, not a direct call to
+  `HtmlConverter`.** This way a chapter is converted through the same
+  registry as a top-level file — if a better HTML converter or sidecar for
+  HTML shows up at a later stage, `epub` gets it for free, with no code
+  change.
+- **`zip` hard-fails on a nested file's `LimitExceededFailure`, `epub`
+  doesn't.** For an archive, an exceeded limit means "it's unsafe to go
+  further" for the whole file; for a book, one truncated/huge `.xhtml`
+  shouldn't sink the entire rest of the book — `warnings` and the chapter is
+  skipped, giving a partial result.
+- **The recursion budget (`maxFilesInArchive`, total unpacked size) is
+  shared across the whole zip-inside-zip tree, not per level** — otherwise
+  an archive made of thousands of small nested archives would bypass the
+  limit by staying "safe" at every single level. The total size is checked
+  against the **actual number of bytes received after unpacking**, not the
+  zip header — but unpacking a single file via the `archive` package isn't
+  interruptible mid-way, so the protection isn't complete against a single
+  zip-bomb file (see the comment in `zip_converter.dart`). For a project of
+  this scale, that's a deliberate trade-off.
 
-### Решения Этапа 3
+### Stage 3 decisions
 
-- **PDF: PDFium через свои FFI-биндинги, не `syncfusion_flutter_pdf` и не
-  только сайдкар.** Три варианта стояли на этапе 3 — см. историю вопроса
-  ниже. Решило архитектурное ограничение, а не вкус: `core/` не имеет права
-  импортировать `flutter/` (проверяется в CI), а `syncfusion_flutter_pdf` —
-  Flutter-пакет, значит он там в принципе не может жить. PDFium через
-  `dart:ffi` — чистый Dart, работает и внутри `Isolate.run` (в отличие от
-  плагина платформы вроде `pdfrx`, который изнутри изолята не позвонит — та
-  же причина, по которой OCR на мобильных нельзя звать из конвейера, см.
-  [client-architecture.md](client-architecture.md#конвертация-в-изоляте)).
-  Заодно снимается и лицензионный вопрос: PDFium постоянно используется в
-  Chrome, двигаемые условия лицензии его сборок — BSD/MIT-подобные,
-  коммерческих оговорок нет.
-- **Биндинги — свои, а не готовый пакет.** Нужно от силы десять функций
-  (`FPDF_LoadMemDocument`, `FPDFText_GetText`, `FPDFText_GetFontSize`,
-  `FPDFPageObj_GetType` и соседние) — переиспользовать тяжёлый
-  автогенерированный биндинг ради них не стоило. Сама нативная библиотека не
-  коммитится — её качает `pdfium/fetch.sh` (тот же порядок, что у
-  `python-build-standalone` для сайдкара, см.
-  [python-sidecar.md](python-sidecar.md)), не-V8/XFA сборка
-  (`pdfium-mac-x64.tgz`/`pdfium-android-arm64.tgz`), она втрое легче
-  V8-варианта и не нужна для одного только извлечения текста.
-- **Замер размера бандла.** `libpdfium.so` (arm64, не-V8) весит **6,3 МБ** и
-  занимает в APK ровно столько — Android Gradle Plugin хранит `.so` без
-  сжатия (`Stored`, не `Deflated`) начиная с `minSdk 23`, который у нас и
-  так минимум. На арм64-сборке (`flutter build apk --target-platform
-  android-arm64 --split-per-abi`) это **25,1 МБ из 25,1 МБ общих** против
-  **≈18,6 МБ** без PDF — то есть PDF у нас стоит почти четверть размера APK.
-  Цена принята осознанно: PDF — самый частый формат после Office, альтернатива
-  (только сайдкар) вообще не работала бы на телефоне.
-- **Заголовки — по размеру шрифта первого непробельного символа строки**,
-  относительно типового (самого частого, взвешенного длиной текста) размера
-  в документе; нет текста вовсе — нет и заголовков, весь текст идёт плоским.
-  Соседние строки без разрыва по вертикали склеиваются в один абзац, а не
-  остаются отдельными строками — PDF переносит текст по ширине печатной
-  страницы, и сохранять этот перенос в Markdown означало бы нарушить
-  собственное правило «текст не переносится по ширине»
-  ([conversion-pipeline.md](conversion-pipeline.md#как-markdown-собирается)).
-  Порог склейки — с запасом (двойной кегль строки), потому что то, что
-  PDFium отдаёт как «верх» символа, — это верх его bbox, не базовая линия:
-  у строки, начинающейся с буквы без выносного элемента, он на 1–2pt ниже,
-  чем у буквы с выносным, при одном и том же реальном интервале. Комментарий
-  в `pdf_converter.dart` — рядом с кодом, с цифрами с реальной фикстуры.
-- **Страница без текста, но с картинкой на ней — «похоже на скан»**,
-  предупреждение по диапазонам страниц; без текста и без единого объекта —
-  просто пустая страница, не повод для warning. Различение через
-  `FPDFPage_CountObjects`/`FPDFPageObj_GetType` на зафиксированный
-  `FPDF_PAGEOBJ_IMAGE = 3` — часть публичного ABI PDFium, этот номер не
-  менялся между релизами.
-- **Таблицы в PDF не делаем** — решение было принято заранее (см. план),
-  здесь просто реализовано: PDFium даёт текст и размер шрифта, но не
-  структуру таблицы, а эвристика «какие вертикальные линии — границы
-  ячеек» — отдельная задача уровня `pdfplumber`, не на один вечер.
+- **PDF: PDFium via our own FFI bindings, not `syncfusion_flutter_pdf` and
+  not the sidecar alone.** Three options were on the table at Stage 3 — see
+  the background below. The decision was made by an architectural
+  constraint, not taste: `core/` isn't allowed to import `flutter/` (checked
+  in CI), and `syncfusion_flutter_pdf` is a Flutter package, so it simply
+  can't live there. PDFium via `dart:ffi` is pure Dart, and works inside
+  `Isolate.run` too (unlike a platform plugin like `pdfrx`, which can't be
+  called from inside an isolate — the same reason mobile OCR can't be called
+  from the pipeline, see
+  [client-architecture.md](client-architecture.md#conversion-in-an-isolate)).
+  This also sidesteps the licensing question: PDFium is used continuously in
+  Chrome, and the license terms of its builds are BSD/MIT-like, with no
+  commercial restrictions.
+- **The bindings are our own, not a ready-made package.** At most ten
+  functions are needed (`FPDF_LoadMemDocument`, `FPDFText_GetText`,
+  `FPDFText_GetFontSize`, `FPDFPageObj_GetType` and a few neighbors) —
+  reusing a heavy auto-generated binding just for these wasn't worth it. The
+  native library itself isn't committed — it's downloaded by
+  `pdfium/fetch.sh` (the same approach as `python-build-standalone` for the
+  sidecar, see [python-sidecar.md](python-sidecar.md)), a non-V8/XFA build
+  (`pdfium-mac-x64.tgz`/`pdfium-android-arm64.tgz`), which is a third the
+  size of the V8 variant and isn't needed for plain text extraction.
+- **Bundle-size measurement.** `libpdfium.so` (arm64, non-V8) weighs
+  **6.3 MB** and takes up exactly that much in the APK — the Android Gradle
+  Plugin stores `.so` files uncompressed (`Stored`, not `Deflated`) starting
+  from `minSdk 23`, which is already our minimum anyway. On the arm64 build
+  (`flutter build apk --target-platform android-arm64 --split-per-abi`)
+  that's **25.1 MB out of 25.1 MB total** versus **≈18.6 MB** without PDF —
+  so PDF support costs us almost a quarter of the APK size. The cost was
+  accepted deliberately: PDF is the most common format after Office, and
+  the alternative (sidecar only) simply wouldn't work on a phone at all.
+- **Headings are determined by the font size of a line's first non-space
+  character**, relative to the typical (most frequent, length-weighted) size
+  in the document; if there's no text at all, there are no headings either,
+  and all the text goes in flat. Adjacent lines with no vertical gap are
+  merged into one paragraph rather than staying as separate lines — PDF
+  wraps text to fit the page width, and preserving that wrap in Markdown
+  would violate our own rule "text isn't wrapped to a fixed width"
+  ([conversion-pipeline.md](conversion-pipeline.md#how-the-markdown-is-assembled)).
+  The merge threshold has headroom (double the line's point size), because
+  what PDFium reports as a character's "top" is the top of its bbox, not its
+  baseline: a line starting with a letter with no ascender sits 1–2pt lower
+  than one starting with a letter that has one, even with identical real
+  line spacing. The comment in `pdf_converter.dart` sits right next to the
+  code, with numbers taken from a real fixture.
+- **A page with no text but with an image on it "looks like a scan"** — a
+  warning by page ranges; a page with no text and no object at all is just
+  a blank page, not a reason for a warning. The distinction is made via
+  `FPDFPage_CountObjects`/`FPDFPageObj_GetType` against the fixed
+  `FPDF_PAGEOBJ_IMAGE = 3` — part of PDFium's public ABI, a number that
+  hasn't changed across releases.
+- **Tables in PDF are not supported** — the decision was made earlier (see
+  the plan), here it's simply implemented: PDFium gives us text and font
+  size, but not table structure, and a heuristic for "which vertical lines
+  are cell borders" is a separate task at the level of `pdfplumber`, not a
+  one-evening job.
 
-### Решения Этапа 4 (клиентская часть)
+### Stage 4 decisions (client side)
 
-- **`xls` и `msg` — только через сайдкар, Dart-конвертеров не будет.** Решение
-  плана, а не недоделка: разбор BIFF8 и MAPI-свойств `.msg` ради двух форматов
-  не стоит. На Android/iOS они остаются «не поддерживается» с названием
-  формата (`Excel 97–2003 (.xls)`, `Outlook-сообщение (.msg)`), а не общим
-  «OLE2-контейнер».
-- **OLE2 различается по каталогу Compound File, а не по расширению.** Все
-  четыре старых формата Office делят сигнатуру `D0 CF 11 E0 A1 B1 1A E1`;
-  `type_detection/ole2_directory.dart` читает только имена записей (секторы
-  каталога по цепочке FAT, версии 3 и 4, защита от зацикленных цепочек).
-  Старые `.doc` и `.ppt` теперь тоже узнаются по имени (`WordDocument`,
-  `PowerPoint Document`), но конвертера для них нет ни у нас, ни в markitdown
-  — честный отказ с названием формата.
-- **Сайдкар отказал — пробуем Dart-реализацию.** Для `pdf`/`docx`/`xlsx`/
-  `pptx`, где обе реализации есть, любой провал сайдкара (включая таймаут и
-  мусор в stdout) не отнимает результат: срабатывает Dart-конвертер, а в
-  `warnings` первой строкой пишется, что сайдкар не справился. Обоснование
-  и механика — в
-  [conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер).
-- **Где сработал сайдкар — видно в `warnings`** (`converterId: sidecar` с
-  версиями markitdown и Python), чтобы расхождение телефона и макбука не
-  приходилось угадывать.
-- **Фикстуры `.xls`/`.msg`** — `xls/simple.xls`, `msg/simple.msg` и
-  `*.expected.md` рядом. Ожидаемый Markdown — вывод сайдкара (Dart-конвертера
-  для них нет), исходники порождает `sidecar/samples/make_samples.py`. `.msg`
-  — синтетика (минимальный писатель CFB в самом скрипте, а не Outlook):
-  проверяет путь `olefile` → `OutlookMsgConverter`, но не вложения, ANSI-
-  кодировки и RTF-тело настоящих писем. Тест
-  `core/test/sidecar_integration_test.dart` гоняет через реестр настоящий
-  сайдкар и **пропускается**, если `MARKITDOWN_SIDECAR_DIR` не задан
-  (в CI его нет). Детекция ядра узнаёт оба файла по содержимому, без
-  расширения: `.msg` — по `__properties_version1.0`/`__substg1.0_*`. Пустой
-  `__recip_version1.0_#00000000` в образце (его `olefile` не перечисляет) на
-  это не влияет; расширение, как и в markitdown, нужно лишь для резервного
-  случая, когда каталог не прочитался.
+- **`xls` and `msg` — sidecar only, there will be no Dart converters.** This
+  is a plan decision, not an unfinished task: parsing BIFF8 and `.msg` MAPI
+  properties isn't worth it for just two formats. On Android/iOS they
+  remain "not supported" with the format name shown (`Excel 97–2003
+  (.xls)`, `Outlook message (.msg)`), not a generic "OLE2 container."
+- **OLE2 is distinguished by the Compound File directory, not by
+  extension.** All four legacy Office formats share the signature
+  `D0 CF 11 E0 A1 B1 1A E1`; `type_detection/ole2_directory.dart` reads only
+  the directory entry names (directory sectors via the FAT chain, versions
+  3 and 4, protection against looping chains). Legacy `.doc` and `.ppt` are
+  now also recognized by name (`WordDocument`, `PowerPoint Document`), but
+  there's no converter for them either in our code or in markitdown — an
+  honest rejection with the format name shown.
+- **If the sidecar fails, we fall back to the Dart implementation.** For
+  `pdf`/`docx`/`xlsx`/`pptx`, where both implementations exist, any sidecar
+  failure (including a timeout or garbage on stdout) doesn't cost us the
+  result: the Dart converter kicks in, and the first line of `warnings`
+  records that the sidecar failed. The rationale and mechanics are in
+  [conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter).
+- **Where the sidecar was used is visible in `warnings`**
+  (`converterId: sidecar` with markitdown and Python version numbers), so a
+  mismatch between a phone and a MacBook doesn't have to be guessed at.
+- **`.xls`/`.msg` fixtures** — `xls/simple.xls`, `msg/simple.msg` and their
+  `*.expected.md` siblings. The expected Markdown is the sidecar's output
+  (there's no Dart converter for these), and the sources are generated by
+  `sidecar/samples/make_samples.py`. `.msg` is synthetic (a minimal CFB
+  writer inside the script itself, not Outlook): it exercises the
+  `olefile` → `OutlookMsgConverter` path, but not attachments, ANSI
+  encodings, or the RTF body of real-world messages. The
+  `core/test/sidecar_integration_test.dart` test runs the real sidecar
+  through the registry and is **skipped** if `MARKITDOWN_SIDECAR_DIR` isn't
+  set (it isn't in CI). Core detection recognizes both file types by
+  content, without relying on the extension: `.msg` is recognized by
+  `__properties_version1.0`/`__substg1.0_*`. An empty
+  `__recip_version1.0_#00000000` in the sample (which `olefile` doesn't
+  enumerate) doesn't affect this; as in markitdown, the extension is only
+  used as a fallback when the directory couldn't be read.
 
-### Android не потолстел (Этап 4)
+### Android didn't get fatter (Stage 4)
 
-Пункт 6 плана этапа. Сайдкар на Android не попадает, и это проверено сборкой, а
-не уверенностью. Меряли так же, как на Этапе 3: `flutter build apk
---target-platform android-arm64 --split-per-abi` (release), с уже лежащей в
-`jniLibs` `libpdfium.so`; эмулятор не запускался. Для честного сравнения
-сборку Этапа 3 (коммит `9cf89ca`) пересобрали на этой же машине, а не брали
-цифру из памяти.
+Item 6 of the stage plan. The sidecar doesn't end up on Android, and that's
+verified by a build, not by confidence. Measured the same way as in Stage
+3: `flutter build apk --target-platform android-arm64 --split-per-abi`
+(release), with `libpdfium.so` already sitting in `jniLibs`; the emulator
+wasn't launched. For a fair comparison, the Stage 3 build (commit
+`9cf89ca`) was rebuilt on the same machine rather than taking the number
+from memory.
 
-| | Этап 3 | Этап 4 | разница |
+| | Stage 3 | Stage 4 | difference |
 |---|---|---|---|
-| APK (arm64, release) | 25 136 199 Б (**25,1 МБ**) | 25 267 282 Б (**25,3 МБ**) | **+131 083 Б** (≈128 КиБ) |
-| `libapp.so` (Dart AOT) | 5 702 560 Б | 5 833 632 Б | +131 072 Б |
-| `libflutter.so` | 11 277 384 Б | 11 277 384 Б | 0 |
-| `libpdfium.so` | 6 563 456 Б | 6 563 456 Б | 0 |
-| `classes.dex` | 531 672 Б | 531 672 Б | 0 |
+| APK (arm64, release) | 25,136,199 B (**25.1 MB**) | 25,267,282 B (**25.3 MB**) | **+131,083 B** (≈128 KiB) |
+| `libapp.so` (Dart AOT) | 5,702,560 B | 5,833,632 B | +131,072 B |
+| `libflutter.so` | 11,277,384 B | 11,277,384 B | 0 |
+| `libpdfium.so` | 6,563,456 B | 6,563,456 B | 0 |
+| `classes.dex` | 531,672 B | 531,672 B | 0 |
 
-Рост — это целиком `libapp.so`, то есть новый Dart-код: `SidecarConverter`,
-чтение каталога Compound File, исправления `xlsx`/`docx` из сверки. Остальные
-нативные библиотеки и `classes.dex` не изменились ни на байт.
+The entire growth is in `libapp.so`, i.e. new Dart code: `SidecarConverter`,
+reading the Compound File directory, `xlsx`/`docx` fixes from the
+reconciliation. The other native libraries and `classes.dex` didn't change
+by a single byte.
 
-Что проверено:
+What was verified:
 
-- **В APK нет ничего из сайдкара.** `unzip -l` по `python`, `run.py`,
-  `manifest.json` (сайдкара; в APK есть только `AssetManifest.json`/
-  `FontManifest.json`/`NativeAssetsManifest.json` самого Flutter),
-  `site-packages`, `*.py`/`*.pyc`, `sidecar` — пусто. В `assets/` лежит только
-  `flutter_assets` (шрифт иконок 1,8 КБ, шейдер, `NOTICES.Z`) и
+- **The APK contains nothing from the sidecar.** `unzip -l` for `python`,
+  `run.py`, `manifest.json` (from the sidecar; the APK only has Flutter's
+  own `AssetManifest.json`/`FontManifest.json`/`NativeAssetsManifest.json`),
+  `site-packages`, `*.py`/`*.pyc`, `sidecar` — all empty. `assets/` only
+  contains `flutter_assets` (a 1.8 KB icon font, a shader, `NOTICES.Z`) and
   `dexopt`.
-- **`sidecar/` не подключён как ассет.** В `app/pubspec.yaml` секции `assets:`
-  нет вовсе, в Gradle-файлах `app/android/` сайдкар не упоминается.
-- **Нет `android.permission.INTERNET`.** `aapt dump permissions` отдаёт одно
-  разрешение — служебное `<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
-  из androidx. (С 0.9 `INTERNET` есть — режим «ссылка»; замер выше — про
-  Этап 4.)
-- Версия в собранном APK: `versionName 0.4.0`, `versionCode 4`.
+- **`sidecar/` isn't wired in as an asset.** `app/pubspec.yaml` has no
+  `assets:` section at all, and the sidecar isn't mentioned anywhere in the
+  Gradle files under `app/android/`.
+- **No `android.permission.INTERNET`.** `aapt dump permissions` returns a
+  single permission — the internal androidx
+  `<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. (As of 0.9,
+  `INTERNET` is present — for the "link" mode; the measurement above is for
+  Stage 4.)
+- Version in the built APK: `versionName 0.4.0`, `versionCode 4`.
 
-Почему иначе и быть не могло: на мобильных `SidecarConverter` просто не
-регистрируется (каталога сайдкара там нет), а в `sidecar/` лежат скрипты и
-`dist/`, которых Flutter не видит, пока их не назвали в `pubspec.yaml`.
+Why it couldn't be otherwise: on mobile, `SidecarConverter` simply doesn't
+get registered (there's no sidecar directory there), and `sidecar/` holds
+scripts and `dist/` that Flutter doesn't see unless they're named in
+`pubspec.yaml`.
 
-### Сверка с эталоном (Этап 4)
+### Reconciliation with the reference (Stage 4)
 
-Прогон всех фикстур, которые берёт сайдкар, через Dart-ядро и через настоящий
-markitdown 0.1.8: **`make compare-sidecar`** (нужен `make sidecar`; в
-`make verify` не входит — в CI сайдкара нет). Инструмент —
-`core/tool/compare_sidecar.dart`; отчёт (сводка, `*.dart.md`, `*.sidecar.md`,
-построчный `*.diff`) — в `core/build/sidecar-compare/`, вне git. Нормализуется
-только форма: переводы строк, хвостовые пробелы, хвостовые пустые строки;
-`\f` и всё остальное остаётся, это и есть расхождение. Dart-путь идёт через
-реестр без сайдкара, сайдкар — через реестр из одного `SidecarConverter`
-(откат на Dart не маскирует сбой).
+Running every fixture that the sidecar handles through both the Dart core
+and the real markitdown 0.1.8: **`make compare-sidecar`** (needs `make
+sidecar`; not part of `make verify` — there's no sidecar in CI). The tool is
+`core/tool/compare_sidecar.dart`; the report (a summary, `*.dart.md`,
+`*.sidecar.md`, a line-by-line `*.diff`) lands in
+`core/build/sidecar-compare/`, outside git. Only the shape is normalized:
+line endings, trailing whitespace, trailing blank lines; `\f` and
+everything else is left as is — that's exactly what counts as a
+discrepancy. The Dart path runs through the registry without the sidecar,
+the sidecar runs through a registry made of a single `SidecarConverter`
+(falling back to Dart doesn't mask a failure).
 
-**Правило:** эталон помогает заметить ошибку, а не диктует стиль. Каждое
-расхождение — одно из (а) баг Dart-ядра, исправлен; (б) баг или особенность
-markitdown, которую мы осознанно не повторяем; (в) разница в стиле без потери
-смысла. Подгонять Dart под markitdown ради совпадения не нужно.
+**Rule:** the reference helps catch bugs, it doesn't dictate style. Every
+discrepancy is one of: (a) a Dart core bug, now fixed; (b) a markitdown bug
+or quirk that we deliberately don't replicate; (c) a stylistic difference
+with no loss of meaning. There's no need to bend Dart to match markitdown
+just for the sake of matching.
 
-**(а) Исправлено в Dart-ядре** (найдено именно сверкой на фикстурах, которых
-раньше не было):
+**(a) Fixed in the Dart core** (found specifically through reconciliation,
+on fixtures that didn't exist before):
 
-| формат | что было | что теперь |
+| format | before | now |
 |---|---|---|
-| `xlsx` | пакет от openpyxl (и любой писатель с абсолютными `Target="/xl/worksheets/…"` в `.rels`) читался **пустым без единого warning**: путь склеивался как `xl/xl/worksheets/…` | абсолютный `Target` режется от корня пакета; лист, который не удалось прочитать, даёт warning, а не молча пропадает |
-| `xlsx` | даты выходили серийным числом (`45352` вместо `2024-03-01`) | по стилю ячейки (`numFmtId` / пользовательский код формата) узнаются дата и время, выводятся `2024-03-01`, `2024-03-05 13:30:00`; учтены `date1904` и ошибка високосного 1900-го |
-| `docx` | пункты списка разделялись пустой строкой (разреженный список: в Markdown-рендерерах каждый пункт — абзац, строк вдвое больше) | подряд идущие пункты — плотный список |
-| `docx` | вложенный пункт под **нумерованным** родителем отступал на 2 пробела, а `1. ` требует 3: CommonMark не считал его вложенным | отступ равен ширине маркера родителя (`- ` 2, `1. ` 3, `10. ` 4) |
+| `xlsx` | a package produced by openpyxl (and any writer with absolute `Target="/xl/worksheets/…"` in `.rels`) was read as **empty, with no warning at all**: the path was concatenated into `xl/xl/worksheets/…` | an absolute `Target` is trimmed relative to the package root; a sheet that fails to read produces a warning instead of silently disappearing |
+| `xlsx` | dates came out as a serial number (`45352` instead of `2024-03-01`) | the cell style (`numFmtId` / custom format code) is used to recognize dates and times, output as `2024-03-01`, `2024-03-05 13:30:00`; accounts for `date1904` and the 1900 leap-year bug |
+| `docx` | list items were separated by a blank line (a loose list: in Markdown renderers every item becomes its own paragraph, doubling the number of lines) | consecutive items form a tight list |
+| `docx` | a nested item under a **numbered** parent was indented by 2 spaces, but `1. ` needs 3: CommonMark didn't treat it as nested | indentation matches the parent marker's width (`- ` → 2, `1. ` → 3, `10. ` → 4) |
 
-**(б) Особенность или баг markitdown, не повторяем** (считаем улучшением):
+**(b) A markitdown quirk or bug that we don't replicate** (treated as an
+improvement):
 
-| формат | расхождение | решение | почему |
+| format | discrepancy | our choice | why |
 |---|---|---|---|
-| `xlsx`/`xls` | пустые ячейки — `NaN`, пустые даты — `NaT`, пустой заголовок — `Unnamed: N` | пустая ячейка пуста | артефакт `pandas`: для читателя и LLM `NaN` — данные, которых нет в файле |
-| `xlsx` | объединённая ячейка: `Unnamed: 1` в соседней, объединение нигде не отмечено | HTML-таблица с `colspan`/`rowspan` и warning | сетка Markdown объединение выразить не может; молча её ломать хуже |
-| `xlsx` | булевы — `1.0`/`0.0`; целые в колонке с дробными — `7.000` | `TRUE`/`FALSE`, число как в файле | `pandas` приводит тип колонки целиком и искажает значения |
-| `xlsx` | `\|` в ячейке не экранируется — таблица ломается; перенос строки в ячейке — буквальные `\n` | `\|` и `<br>` | `markdown_writer` экранирует один раз для всех конвертеров |
-| `xlsx` | пустой лист — `\|` и `\|  \|` мусором | `*лист пуст*` | — |
-| `docx` | таблица без `<th>` получает пустую шапку `\|  \|  \|`, первая строка уезжает в данные | первая строка — заголовок | решение Этапа 2: так в большинстве реальных документов |
-| `docx` | таблица в таблице разворачивается в одну строку с `\| --- \|` внутри ячейки — таблица ломается | схлопывается в текст ячейки через `<br>` | вложенность Markdown не выражает |
-| `pdf` | нет заголовков, перенесённые по ширине страницы строки остаются жёсткими (`two lines that⏎continue …`) | заголовки по кеглю, строки абзаца склеиваются | Этап 3: перенос по ширине печатной страницы в Markdown — шум |
-| `pdf` | `\f` (form feed) между страницами, в `scanned.pdf` — три подряд на пустых страницах | `\f` не выводим | управляющий символ в тексте; страницы-сканы — warning |
-| `pptx` | python-pptx отказывает на `pptx/no_sppr.pptx` (фигуры без обязательного `<p:spPr>`, код 3) | Dart терпит; сайдкар отказал → откат на Dart читает файл | см. ниже |
+| `xlsx`/`xls` | empty cells → `NaN`, empty dates → `NaT`, empty header → `Unnamed: N` | an empty cell is empty | an artifact of `pandas`: for a reader or an LLM, `NaN` reads as data that isn't actually in the file |
+| `xlsx` | a merged cell: `Unnamed: 1` appears in the neighboring cell, the merge isn't marked anywhere | an HTML table with `colspan`/`rowspan` plus a warning | a Markdown grid can't express a merge; silently breaking it is worse |
+| `xlsx` | booleans → `1.0`/`0.0`; integers in a column with decimals → `7.000` | `TRUE`/`FALSE`, the number as stored in the file | `pandas` coerces the whole column's type and distorts values |
+| `xlsx` | `\|` in a cell isn't escaped — breaks the table; a line break in a cell becomes a literal `\n` | `\|` and `<br>` | `markdown_writer` escapes once, consistently for every converter |
+| `xlsx` | an empty sheet → junk like `\|` and `\|  \|` | `*sheet is empty*` | — |
+| `docx` | a table with no `<th>` gets an empty header row `\|  \|  \|`, the first row shifts into the data | the first row becomes the header | Stage 2 decision: that's how most real-world documents work |
+| `docx` | a table nested in a table unrolls into one row with `\| --- \|` inside a cell — breaks the table | collapses into cell text via `<br>` | Markdown can't express nesting |
+| `pdf` | no headings, lines wrapped to page width stay hard-wrapped (`two lines that⏎continue …`) | headings by font size, paragraph lines merged | Stage 3: wrapping to the printed page width is noise in Markdown |
+| `pdf` | `\f` (form feed) between pages, three in a row on blank pages in `scanned.pdf` | `\f` is not output | it's a control character inside text; scanned pages get a warning instead |
+| `pptx` | python-pptx rejects `pptx/no_sppr.pptx` (shapes missing the mandatory `<p:spPr>`, error code 3) | Dart tolerates it; the sidecar fails → falls back to Dart, which reads the file | see below |
 
-**(в) Стиль без потери смысла**, оставлено как есть:
+**(c) Stylistic, with no loss of meaning**, left as is:
 
-| формат | расхождение | решение | почему |
+| format | discrepancy | our choice | why |
 |---|---|---|---|
-| `docx` | маркер списка `-` против `*` | `-` | оба — валидный Markdown |
-| `docx` | сноски `[^1]` + `[^1]: …` против `[[1]](#footnote-1)` + `1. … [↑](#footnote-ref-1)` | `[^1]` | компактнее; расширение GFM рендерится не везде, но текст сноски остаётся рядом |
-| `xlsx`/`xls` | первая строка листа — заголовок (`pandas`) против букв столбцов `A, B, C` + данных целиком | буквы столбцов | решение Этапа 2: на листе первая строка не обязательно заголовок, выдавать данные за шапку было бы обманом |
-| `xlsx`/`xls` | `0.500`, `2.000` (общее число знаков по колонке) против `0.5`, `2` | значение из файла | `pandas` форматирует по колонке, Excel хранит значение ячейки |
-| `xlsx` | колонка дат, где есть время: `2024-03-01 00:00:00` у всех против `2024-03-01` и `2024-03-05 13:30:00` | по значению ячейки | то же |
-| `xlsx`/`xls` | после `## Лист` нет пустой строки перед таблицей | пустая строка есть | единая сборка блоков через `markdown_writer` |
-| `pptx` | `<!-- Slide number: N -->`, заголовок слайда `#`, заметки `### Notes:` против `##` и `**Заметки докладчика:**` | наше | слайд — раздел документа, а не сам документ; комментарии тратят токены |
-| `pdf` | пустой PDF: warning «результат пуст» против «в PDF не найдено текста» | наше | Markdown одинаков (пустой) |
+| `docx` | list marker `-` vs `*` | `-` | both are valid Markdown |
+| `docx` | footnotes `[^1]` + `[^1]: …` vs `[[1]](#footnote-1)` + `1. … [↑](#footnote-ref-1)` | `[^1]` | more compact; the GFM extension doesn't render everywhere, but the footnote text still stays close by |
+| `xlsx`/`xls` | the sheet's first row as header (`pandas`) vs column letters `A, B, C` + the data in full | column letters | Stage 2 decision: on a sheet the first row isn't necessarily a header, and passing off data as a header would be misleading |
+| `xlsx`/`xls` | `0.500`, `2.000` (uniform decimal places per column) vs `0.5`, `2` | the value as stored in the file | `pandas` formats per column, Excel stores the cell's own value |
+| `xlsx` | a date column that also has time values: `2024-03-01 00:00:00` for every row vs `2024-03-01` and `2024-03-05 13:30:00` | by the cell's own value | same reason |
+| `xlsx`/`xls` | no blank line after `## Sheet` before the table | a blank line is present | consistent block assembly via `markdown_writer` |
+| `pptx` | `<!-- Slide number: N -->`, slide title as `#`, notes as `### Notes:` vs `##` and `**Speaker notes:**` | ours | a slide is a section of the document, not the document itself; comments burn tokens |
+| `pdf` | an empty PDF: warning "result is empty" vs "no text found in PDF" | ours | the Markdown is identical either way (empty) |
 
-**Известное отставание ядра: таблицы в PDF.** `pdf/table.pdf` (сетка линий,
-три столбца, четыре строки) сайдкар отдаёт настоящей Markdown-таблицей
-(`pdfplumber`), Dart-ядро — строкой `City Population Country`, а три оставшиеся
-строки склеивает в один абзац (шаг строк 24pt меньше порога склейки «двойной
-кегль»). Решение об этом принято на Этапе 3 («таблицы в PDF не делаем»),
-сверка лишь подтвердила цену; `pdf/table.expected.md` фиксирует **текущее**
-поведение и обновляется, когда таблицы появятся. Поэтому на десктопе сайдкар
-стоит для PDF первым — но только до 50 страниц (Этап 5, п. 5: длиннее он
-слишком медленный, и такой PDF уходит в Dart с предупреждением про таблицы),
-а на телефоне таблица в PDF — потеря структуры (текст остаётся).
+**Known core gap: tables in PDF.** For `pdf/table.pdf` (a ruled grid, three
+columns, four rows) the sidecar produces a real Markdown table
+(`pdfplumber`), while the Dart core produces the line `City Population
+Country`, and merges the remaining three rows into a single paragraph
+(a 24pt line pitch is below the "double point size" merge threshold). The
+decision was made at Stage 3 ("no PDF tables"), and the reconciliation only
+confirmed the cost; `pdf/table.expected.md` captures the **current**
+behavior and will be updated once table support lands. That's why on
+desktop the sidecar still goes first for PDF — but only up to 50 pages
+(Stage 5, item 5: beyond that it's too slow, and such a PDF falls back to
+Dart with a warning about tables), while on a phone a PDF table means lost
+structure (the text itself is kept).
 
-**`pptx/no_sppr.pptx`** — прежняя `pptx/simple.pptx`, собранная руками под
-Dart-парсер: у фигур нет `<p:spPr>`, обязательного по схеме, поэтому настоящий
-python-pptx её не открывает (`InvalidXmlError`, код 3). Оставлена как **злая**
-фикстура под честным именем, а `pptx/simple.pptx` теперь порождена самим
-python-pptx (`make_samples.py`) и валидна. Dart-конвертер такие файлы терпит
-сознательно: генераторов презентаций много, часть пишет нестрого, и файл, который
-не открылся у эталона, ядро всё равно может прочитать — а при отказе сайдкара
-реестр именно к нему и откатывается (проверено интеграционным тестом).
+**`pptx/no_sppr.pptx`** used to be `pptx/simple.pptx`, hand-built for the
+Dart parser: its shapes lack `<p:spPr>`, which is mandatory per the schema,
+so real python-pptx can't open it (`InvalidXmlError`, code 3). It's kept as
+a deliberately **malformed** fixture under an honest name, while
+`pptx/simple.pptx` is now generated by python-pptx itself
+(`make_samples.py`) and is valid. The Dart converter deliberately tolerates
+such files: there are many presentation generators, some write non-strict
+output, and a file the reference implementation can't open may still be
+readable by our core — and when the sidecar fails, the registry falls back
+precisely to that core (verified by the integration test).
 
-**Фикстуры, добавленные сверкой:** `docx/nested_numbered.docx` (вложенные
-пункты под нумерованным родителем), `xlsx/types_and_gaps.xlsx` (даты, булевы,
-пропуски, `|` и перенос в ячейке, пустой лист; openpyxl, абсолютные `Target`),
-`pdf/table.pdf`, валидный `pptx/simple.pptx`, `xls/simple.xls`,
-`msg/simple.msg`. Генератор — `sidecar/samples/make_samples.py`.
+**Fixtures added through reconciliation:** `docx/nested_numbered.docx`
+(nested items under a numbered parent), `xlsx/types_and_gaps.xlsx` (dates,
+booleans, gaps, `|` and line breaks in a cell, an empty sheet; openpyxl,
+absolute `Target`), `pdf/table.pdf`, a valid `pptx/simple.pptx`,
+`xls/simple.xls`, `msg/simple.msg`. Generated by
+`sidecar/samples/make_samples.py`.
 
-**Время сайдкара и таймаут по умолчанию (120 с).** Фикстуры крошечные
-(самая большая — 34 КБ), поэтому замер сделан на синтетике: многостраничный
-PDF и большой лист. Intel, macOS 12, один вызов, холодный процесс:
+**Sidecar timing and the default timeout (120 s).** The fixtures are tiny
+(the largest is 34 KB), so the measurement was done on synthetic input: a
+multi-page PDF and a large sheet. Intel, macOS 12, a single call, a cold
+process:
 
-| вход | сайдкар | Dart-ядро | ОЗУ сайдкара (пик) |
+| input | sidecar | Dart core | sidecar RAM (peak) |
 |---|---|---|---|
-| любая фикстура (`pptx`, `pdf`) | 1,2 с | 2–550 мс | ~96 МБ |
-| PDF 300 страниц × 48 строк (1,8 МБ, ~1,3 МБ текста) | **111,6 с** | 1,2 с | ~117 МБ |
-| xlsx 50 000 строк × 8 столбцов (2,4 МБ) | **54,7 с** | 4,4 с | **~860 МБ** |
+| any fixture (`pptx`, `pdf`) | 1.2 s | 2–550 ms | ~96 MB |
+| 300-page PDF × 48 rows/page (1.8 MB, ~1.3 MB of text) | **111.6 s** | 1.2 s | ~117 MB |
+| xlsx, 50,000 rows × 8 columns (2.4 MB) | **54.7 s** | 4.4 s | **~860 MB** |
 
-Холодный старт при замере был 1,2 с, а не 0,65 с из
-[python-sidecar.md](python-sidecar.md): машина была занята другой сборкой.
-Итог: сайдкар в 100–1000 раз медленнее на больших файлах (`pdfplumber` и
-`pandas`), примерно 0,37 с на плотную страницу PDF. **120 с — нормальный
-потолок, но не запас:** 300 плотных страниц укладываются в 93% таймаута, чуть
-больше — и вызов убивается. Для `pdf`/`docx`/`xlsx`/`pptx` это не катастрофа:
-реестр откатывается на Dart-конвертер (он справляется за секунды) с warning
-«сайдкар не смог обработать файл (превышено время ожидания 120 с)», но человек
-ждёт ещё две минуты зря. Для `xls`/`msg` отката нет, и таймаут — это отказ.
-Дефолт оставлен: он реалистично покрывает документы до ~250 страниц и таблицы
-до десятков тысяч строк; реже встречающееся лучше обслужит Dart-ядро. Если
-понадобится ужесточать — делать таймаут зависимым от размера файла (не общий
-минимум), и показывать в интерфейсе, что идёт долгая обработка. Отдельно: пик
-ОЗУ 860 МБ на xlsx в 2,4 МБ — `pandas` разворачивает лист в память целиком,
-это стоит помнить при выборе лимитов для больших таблиц.
+The cold start measured was 1.2 s rather than the 0.65 s from
+[python-sidecar.md](python-sidecar.md): the machine was busy with another
+build at the time. Bottom line: the sidecar is 100–1000x slower on large
+files (`pdfplumber` and `pandas`), roughly 0.37 s per dense PDF page.
+**120 s is a reasonable ceiling, but not a margin:** 300 dense pages use up
+93% of the timeout, and a bit more gets the call killed. For
+`pdf`/`docx`/`xlsx`/`pptx` this isn't a disaster: the registry falls back to
+the Dart converter (which finishes in seconds) with a warning "the sidecar
+failed to process the file (120 s timeout exceeded)," but the person still
+waits two minutes for nothing. For `xls`/`msg` there's no fallback, and the
+timeout is an outright failure. The default is kept as is: it realistically
+covers documents up to ~250 pages and tables up to tens of thousands of
+rows; rarer cases are better served by the Dart core anyway. If tightening
+it ever becomes necessary, the right move is to scale the timeout with file
+size (not a single flat minimum) and show in the UI that a long-running
+conversion is in progress. Separately: an 860 MB RAM peak on a 2.4 MB xlsx
+— `pandas` unpacks the whole sheet into memory — is worth remembering when
+setting limits for large tables.
 
 ---
 
-### Сверка на Windows (Этап 5)
+### Reconciliation on Windows (Stage 5)
 
-Тот же `compare_sidecar.dart`, но на `windows-2022` в CI (джоб
-`windows-sidecar`, отчёт — артефакт `sidecar-compare-windows-x86_64` и
-сводка в summary прогона), сайдкар собран там же по
-`sidecar/locks/windows-x86_64.txt`. **Все 25 выводов — и Dart-ядра, и
-сайдкара — побайтно совпали с macOS-прогоном Этапа 4**, хотя версии части
-зависимостей другие (`cryptography` 50.0.2 против 48.0.1, `onnxruntime`
-1.20.1 против 1.19.2, `pypdfium2` 5.14.0 против 5.11.0: свежих колёс под
-Intel-Mac нет, и macOS-lock остался на старых). Новых расхождений Windows не
-принёс; разбор выше действует для обеих платформ. Интеграционные тесты
-(`sidecar_integration_test.dart`) на Windows тоже зелёные.
+The same `compare_sidecar.dart`, but on `windows-2022` in CI (the
+`windows-sidecar` job; the report is published as the
+`sidecar-compare-windows-x86_64` artifact, with a summary in the run's job
+summary), with the sidecar built on the same machine from
+`sidecar/locks/windows-x86_64.txt`. **All 25 outputs — from both the Dart
+core and the sidecar — matched the macOS Stage 4 run byte for byte**, even
+though some dependency versions differ (`cryptography` 50.0.2 vs 48.0.1,
+`onnxruntime` 1.20.1 vs 1.19.2, `pypdfium2` 5.14.0 vs 5.11.0: there are no
+fresh wheels for Intel Mac, so the macOS lock stayed on older versions).
+Windows didn't introduce any new discrepancies; the analysis above holds
+for both platforms. The integration tests
+(`sidecar_integration_test.dart`) are green on Windows too.
 
-Время сайдкара на раннере — 0,65–1,1 с на фикстуру (холодный процесс на
-каждый вызов) против единиц миллисекунд у Dart: тот же порядок, что на Mac.
+Sidecar timing on the runner is 0.65–1.1 s per fixture (a cold process on
+every call) versus single-digit milliseconds for Dart: the same order of
+magnitude as on Mac.
 
-### Решения Этапа 6
+### Stage 6 decisions
 
-- **EXIF — свой разбор, а не пакет `exif`.** План называл `exif`, но в нём
-  цепочка IFD читается циклом `while (i > 0)` без памяти о пройденных
-  смещениях: файл, где «следующий IFD» указывает сам на себя, раздувает
-  список до нехватки памяти, а `Isolate.run` не отменить. Остальное тоже
-  мимо: строки декодируются как Latin-1 (`makeString`) или падают в
-  `b'…'`-представление, а тянет он `args`/`sprintf`/`json_annotation` ради
-  разбора MakerNote, который нам не нужен. Нужно же ~20 тегов из трёх IFD —
-  это `core/lib/src/conversion/image/exif_reader.dart`: посещённые смещения,
-  потолок 1000 записей на IFD и 64 КБ на значение, каждое смещение проверено
-  против длины блока. Тот же довод, что у своих биндингов PDFium на Этапе 3.
-- **Где искать EXIF** (`image_container.dart`): JPEG — `APP1` с
-  `Exif\0\0`; PNG — чанк `eXIf`; WebP — чанк `EXIF` (с префиксом и без);
-  TIFF — сам файл; HEIC — **поиск по содержимому** `Exif\0\0` + заголовок
-  TIFF вместо разбора `meta` → `iinf` + `iloc`. Размер HEIC — наибольший
-  `ispe` в `meta` (у iPhone там ещё плитки 512 × 512 и миниатюра). Оба
-  упрощения записаны в коде.
-- **Строки — UTF-8, затем Windows-1251**, как текстовые файлы
-  (`decodeTextBytes`): стандарт обещает ASCII, а телефоны и Windows пишут
-  UTF-8. `XPTitle`/`XPComment`/`XPAuthor`/`XPKeywords` (UTF-16LE, их пишет
-  Проводник Windows в «Свойствах») читаются: Windows — целевая платформа.
-- **Вывод — список «поле: значение»** по-русски, как остальные
-  фиксированные строки ядра («Заметки докладчика»). markitdown с
-  `exiftool` отдаёт сырые имена тегов (`DateTimeOriginal: 2024:07:14 …`); мы
-  отдаём человеческие («Снято: 2024-07-14 …»), сайдкар тут не эталон —
-  `exiftool` в него не ставится, без него markitdown по картинке вернёт
-  пустоту. Подписи камер по умолчанию (`OLYMPUS DIGITAL CAMERA`, `SONY DSC`)
-  отбрасываются; `0, 0` в GPS — «спутников не нашли», не пишется.
-- **Предупреждения.** Геометка в результате — отдельный warning: текст
-  уйдёт в чат, а координаты дома — не то, что человек ждёт найти в
-  «метаданных фото». Битый EXIF — warning, не отказ: формат и размер уже
-  есть. Если текст не распознавался (OCR недоступен или формат не тот) —
-  так и сказано: человек, бросивший фото документа, иначе не поймёт, почему
-  текста нет.
-- **Отказа у изображений и аудио не бывает.** Сигнатура опознана — значит
-  есть хотя бы формат. Это проверяет `media_robustness_test.dart`: каждая
-  фикстура-картинка и аудиофайл, обрезанные и с испорченными байтами,
-  даёт результат, а не `ConversionError`.
-- **Фикстуры** — `sidecar/samples/make_samples.py --only image` (Pillow из
-  сайдкара; HEIC — системной `sips`, только на macOS), в том числе злая
-  `evil_loop.jpg`: IFD с петлёй, смещение за пределы блока, GPS-IFD на 65535
-  несуществующих записей.
+- **EXIF — our own parsing, not the `exif` package.** The plan named
+  `exif`, but it walks the IFD chain with a `while (i > 0)` loop that
+  doesn't remember visited offsets: a file where "next IFD" points back to
+  itself inflates the list until memory runs out, and `Isolate.run` can't
+  be cancelled. The rest misses the mark too: strings are decoded as
+  Latin-1 (`makeString`) or fall back to a `b'…'` representation, and it
+  pulls in `args`/`sprintf`/`json_annotation` just to parse MakerNote,
+  which we don't need. What's actually needed is ~20 tags from three
+  IFDs — hence
+  `core/lib/src/conversion/image/exif_reader.dart`: visited offsets, a cap
+  of 1000 entries per IFD and 64 KB per value, every offset checked against
+  the block length. The same reasoning as for our own PDFium bindings at
+  Stage 3.
+- **Where to look for EXIF** (`image_container.dart`): JPEG — the `APP1`
+  segment with `Exif\0\0`; PNG — the `eXIf` chunk; WebP — the `EXIF` chunk
+  (with and without the prefix); TIFF — the file itself; HEIC — **searching
+  the content** for `Exif\0\0` plus a TIFF header, instead of parsing `meta`
+  → `iinf` + `iloc`. HEIC size is the largest `ispe` inside `meta` (on an
+  iPhone file there are also 512×512 tiles and a thumbnail). Both
+  simplifications are documented in the code.
+- **Strings — UTF-8, then Windows-1251**, same as text files
+  (`decodeTextBytes`): the standard promises ASCII, but phones and Windows
+  write UTF-8. `XPTitle`/`XPComment`/`XPAuthor`/`XPKeywords` (UTF-16LE,
+  written by Windows Explorer's "Properties" dialog) are read: Windows is
+  a target platform.
+- **Output is a list of "field: value" pairs** in Russian, like the rest of
+  the core's fixed strings ("Speaker notes"). markitdown with `exiftool`
+  returns raw tag names (`DateTimeOriginal: 2024:07:14 …`); we return
+  human-readable ones ("Taken: 2024-07-14 …") — the sidecar isn't the
+  reference here, since `exiftool` isn't bundled with it, and without it
+  markitdown returns nothing for an image. Default camera captions
+  (`OLYMPUS DIGITAL CAMERA`, `SONY DSC`) are dropped; `0, 0` in GPS means
+  "no satellite fix" and isn't written out.
+- **Warnings.** A geolocation in the result gets its own separate warning:
+  the text is going into a chat, and home coordinates aren't what someone
+  expects to find in "photo metadata." Corrupt EXIF is a warning, not a
+  failure: the format and size are already known. If text recognition
+  wasn't attempted (OCR unavailable or wrong format), that's stated
+  explicitly: otherwise someone who dropped in a photo of a document
+  wouldn't understand why there's no text.
+- **Images and audio never fail outright.** If the signature is recognized,
+  there's at least a format to report. This is checked by
+  `media_robustness_test.dart`: every image and audio fixture, truncated
+  and with corrupted bytes, still produces a result rather than a
+  `ConversionError`.
+- **Fixtures** — `sidecar/samples/make_samples.py --only image` (Pillow
+  from the sidecar; HEIC via the system `sips`, macOS only), including a
+  malicious `evil_loop.jpg`: an IFD with a loop, an offset past the end of
+  the block, and a GPS IFD claiming 65535 nonexistent entries.
 
-- **Аудио — тоже свой разбор, по тем же причинам.** Нужны длительность,
-  параметры звука и десяток тегов; разбор — `core/lib/src/conversion/audio/`.
-  MP3: ID3v2.2–2.4 (synchsafe-размеры, unsynchronisation, расширенный
-  заголовок, `COMM`/`USLT`) + ID3v1 + первый кадр MPEG (два валидных
-  заголовка подряд — иначе мусор с `0xFFE…` сходит за кадр); длительность по
-  Xing/Info/VBRI, иначе по размеру при CBR. FLAC — `STREAMINFO` и Vorbis
-  comment; Ogg — пакеты из страниц, длительность по granule position
-  последней страницы (Opus — в 48 кГц минус pre-skip); WAV — `fmt `/`data`/
-  `LIST INFO`; MP4/M4A/MOV/3GP — `mvhd`, дорожки (`hdlr`), `stsd`, теги
-  `ilst`. Видео в MP4 получает размер кадра — почти бесплатно.
-- **«Latin-1» в тегах — почти всегда Windows-1251** (`decodeLegacyText`):
-  валидный UTF-8 → Windows-1251, если есть три и больше подряд байта букв
-  кириллицы → Latin-1. `Motörhead Café` остаётся латиницей (фикстура
-  `audio/legacy.mp3`).
-- **Текст песни (`USLT`, `LYRICS`) — отдельным разделом**: это настоящий
-  текст, ради которого файл и могут бросить в окно. Служебные комментарии
-  iTunes (`iTunNORM`, `iTunSMPB`) отбрасываются.
-- **`ftyp` — не значит HEIC.** MP4, M4A, MOV и HEIF делят коробку `ftyp`;
-  различение — по марке (`heic`/`mif1`/`avif` → картинка, остальное —
-  медиа). Голосовые из мессенджеров (`isom` с одной звуковой дорожкой) —
-  «MP4 (аудио)», а не видео.
-- **OCR — Tesseract на обеих платформах, а не ML Kit** (решение автора,
-  2026-10-11). План предлагал ML Kit на мобильных, но ML Kit Text
-  Recognition **не знает кириллицы** (латиница, китайский, японский,
-  корейский, деванагари) — для русских документов он бесполезен. Tesseract
-  даёт один движок и один результат на Windows и Android, `rus+eng`.
-- **Через FFI из `core/`, а не плагином** — как PDFium. Плагин платформы
-  из изолята конвертации не позвонить, а FFI работает в нём, поэтому OCR
-  встроен прямо в `ImageConverter` и `PdfConverter`: страница-скан
-  рендерится PDFium (300 dpi, BGRx, длинная сторона ≤ 5000 px) и уходит в
-  Tesseract указателем на буфер, без копии. Биндинги — свои, на C API
-  (`TessBaseAPI*`) и пять функций Leptonica (`pixReadMem`, `pixRotateOrth`,
-  `pixScale`, …).
-- **Откуда библиотеки.** Android — `.so` из AAR Tesseract4Android 4.9.0
-  (Tesseract 5.5.1, экспортирует C API; ≈7,5 МБ на arm64; LOAD-сегменты
-  выровнены на 16 КБ, как требует Android 15). Десктоп —
-  `tesseract/build.sh` из исходников той же версии: порт vcpkg и инсталлятор
-  UB Mannheim тянут **libcurl** (Tesseract умеет качать картинку по URL), а
-  сетевую библиотеку в продукт без сети не кладём. Сборка — с
-  `DISABLE_CURL`, `DISABLE_ARCHIVE`, без `Ws2_32` (его CMake Tesseract на
-  Windows линкует безусловно ради отладочного ScrollView), и с проверкой в
-  конце, что ни одна библиотека не ссылается на сетевые. `ENABLE_NATIVE`
-  выключен: собранное в CI должно запускаться на любом x86-64.
-- **Модели — `tessdata_fast` rus + eng (≈8 МБ), закреплённые по коммиту и
-  sha256** (`tesseract/versions.sh`), едут ассетами приложения: на Windows
-  лежат файлами рядом с `.exe`, на Android копируются из APK в каталог
-  приложения при первом OCR (`app/lib/src/conversion/ocr_data.dart`).
-  `tessdata_best` в 4–5 раз тяжелее при почти том же качестве на печати.
-- **Что получает человек.** Картинка: раздел «Текст на изображении» после
-  метаданных; снимок «боком» поворачивается по EXIF `Orientation`; фото
-  больше 5000 px уменьшается. PDF: распознанный текст встаёт на место
-  страницы-скана. В `warnings` — всегда движок и версия («возможны ошибки
-  распознавания»), при средней уверенности ниже 60 из 100 — «проверьте
-  текст». OCR страниц PDF ограничен 20 страницами (`OcrSettings.maxPdfPages`):
-  `Isolate.run` не отменить, а страница на телефоне — секунды.
-- **Строки текста OCR склеиваются в абзацы**, как у PDF (текст не
-  переносится по ширине); перенос по слогам (`пере-` / `нос`) склеивается
-  без дефиса. Цена — `кто-` / `то` на стыке строк станет `ктото`.
-- **OCR — только JPEG, PNG и BMP.** Это то, что декодирует Leptonica обеих
-  сборок (на Android без libtiff/libwebp/giflib, на десктопе их не
-  собираем, чтобы не плодить зависимости). GIF, WebP, TIFF, HEIC получают
-  метаданные и честное «распознавание для этого формата не поддерживается».
-- **Сайдкар уступает PDF со сканами, когда OCR доступен**
-  (`SidecarConverter.scannedPdfToDart`). Иначе на Windows PDF-скан до 50
-  страниц уходил бы в сайдкар (решение Этапа 5, п. 5), pdfminer отдавал бы
-  пустоту как успех, и OCR не запускался бы вовсе. Цена — таблицы на
-  текстовых страницах такого PDF извлекаются текстом; об этом
-  предупреждение.
-- **Тесты OCR сверяют фразы, а не побайтный эталон** (`ocr_test.dart`):
-  вывод зависит от версии движка, а на CI Linux Tesseract — пакет
-  дистрибутива (5.3), не наша сборка. Фикстуры с OCR в общем наборе
-  (`conversion_fixtures_test.dart`) гоняются без OCR — их вывод от движка
-  не зависит. Фикстуры — `make_samples.py --only ocr` (Arial macOS, текст
-  с «№», «ё» и «ёлочками»).
+- **Audio — also our own parsing, for the same reasons.** What's needed is
+  duration, audio parameters, and a dozen tags; the parsing lives in
+  `core/lib/src/conversion/audio/`. MP3: ID3v2.2–2.4 (synchsafe sizes,
+  unsynchronisation, extended header, `COMM`/`USLT`) + ID3v1 + the first
+  MPEG frame (two valid headers in a row — otherwise junk starting with
+  `0xFFE…` would pass as a frame); duration from Xing/Info/VBRI, or from
+  file size for CBR. FLAC — `STREAMINFO` and the Vorbis comment; Ogg —
+  packets from pages, duration from the granule position of the last page
+  (for Opus, at 48 kHz minus pre-skip); WAV — `fmt `/`data`/`LIST INFO`;
+  MP4/M4A/MOV/3GP — `mvhd`, tracks (`hdlr`), `stsd`, `ilst` tags. Video in
+  MP4 gets its frame size almost for free.
+- **"Latin-1" in tags is almost always Windows-1251** (`decodeLegacyText`):
+  valid UTF-8 → Windows-1251 if there are three or more consecutive bytes
+  that look like Cyrillic letters → otherwise Latin-1. `Motörhead Café`
+  stays Latin (fixture `audio/legacy.mp3`).
+- **Lyrics (`USLT`, `LYRICS`) get their own section**: that's genuine text,
+  the very reason someone might drop the file into the window in the first
+  place. iTunes housekeeping comments (`iTunNORM`, `iTunSMPB`) are dropped.
+- **`ftyp` doesn't mean HEIC.** MP4, M4A, MOV and HEIF all share the `ftyp`
+  box; the distinction is made by brand (`heic`/`mif1`/`avif` → image,
+  everything else → media). Messenger voice notes (`isom` with a single
+  audio track) are labeled "MP4 (audio)," not video.
+- **OCR — Tesseract on both platforms, not ML Kit** (the author's decision,
+  2026-10-11). The plan proposed ML Kit on mobile, but ML Kit Text
+  Recognition **doesn't know Cyrillic** (Latin, Chinese, Japanese, Korean,
+  Devanagari) — useless for Russian documents. Tesseract gives us a single
+  engine and a single result on both Windows and Android, `rus+eng`.
+- **Via FFI from `core/`, not as a plugin** — same as PDFium. A platform
+  plugin can't be called from the conversion isolate, but FFI works there,
+  so OCR is wired directly into `ImageConverter` and `PdfConverter`: a
+  scanned page is rendered by PDFium (300 dpi, BGRx, long side ≤ 5000 px)
+  and handed to Tesseract as a pointer into the buffer, with no copy. The
+  bindings are our own, on the C API (`TessBaseAPI*`) plus five Leptonica
+  functions (`pixReadMem`, `pixRotateOrth`, `pixScale`, …).
+- **Where the libraries come from.** Android — the `.so` from the
+  Tesseract4Android 4.9.0 AAR (Tesseract 5.5.1, exports the C API; ≈7.5 MB
+  on arm64; LOAD segments aligned to 16 KB, as required by Android 15).
+  Desktop — `tesseract/build.sh` built from source, same version: the
+  vcpkg port and the UB Mannheim installer both pull in **libcurl**
+  (Tesseract can fetch an image by URL), and we don't put a networking
+  library into a no-network product. The build uses `DISABLE_CURL`,
+  `DISABLE_ARCHIVE`, no `Ws2_32` (which Tesseract's CMake links
+  unconditionally on Windows for a debug ScrollView), plus a final check
+  that no library references anything networking-related.
+  `ENABLE_NATIVE` is off: a CI build must run on any x86-64 machine.
+- **Models — `tessdata_fast` rus + eng (≈8 MB), pinned by commit and
+  sha256** (`tesseract/versions.sh`), shipped as app assets: on Windows
+  they sit as files next to the `.exe`, on Android they're copied from the
+  APK into the app's directory on first OCR use
+  (`app/lib/src/conversion/ocr_data.dart`). `tessdata_best` is 4–5x
+  heavier for almost the same quality on printed text.
+- **What the person gets.** For an image: a "Text in image" section after
+  the metadata; a sideways shot is rotated according to the EXIF
+  `Orientation`; a photo larger than 5000 px is downsized. For a PDF: the
+  recognized text takes the place of the scanned page. `warnings` always
+  states the engine and version ("recognition errors are possible"), and
+  when average confidence is below 60 out of 100 it adds "please check the
+  text." PDF-page OCR is capped at 20 pages
+  (`OcrSettings.maxPdfPages`): `Isolate.run` can't be cancelled, and a page
+  takes seconds even on a phone.
+- **OCR text lines are merged into paragraphs**, same as for PDF (text
+  isn't wrapped to a width); a hyphenated word break (`hyph-` / `enated`)
+  is merged without the hyphen. The cost: `some-` / `thing` across a line
+  break becomes `somethinelsewhere` — i.e. the hyphen is simply dropped at
+  the join.
+- **OCR only covers JPEG, PNG and BMP.** That's what Leptonica decodes in
+  both builds (on Android without libtiff/libwebp/giflib; on desktop we
+  don't build them either, to avoid piling on dependencies). GIF, WebP,
+  TIFF, HEIC get metadata and an honest "recognition isn't supported for
+  this format."
+- **The sidecar yields to PDF-with-scans handling when OCR is available**
+  (`SidecarConverter.scannedPdfToDart`). Otherwise, on Windows, a scanned
+  PDF of up to 50 pages would have gone to the sidecar (the Stage 5, item 5
+  decision), pdfminer would have returned emptiness as a "success," and OCR
+  would never have run at all. The cost: tables on text pages of such a PDF
+  are extracted as plain text; a warning notes this.
+- **OCR tests compare phrases, not a byte-for-byte reference**
+  (`ocr_test.dart`): the output depends on the engine version, and on CI
+  Linux, Tesseract is the distro package (5.3), not our build. Fixtures
+  that involve OCR are run without OCR as part of the general suite
+  (`conversion_fixtures_test.dart`) — their output doesn't depend on the
+  engine. Fixtures come from `make_samples.py --only ocr` (Arial on macOS,
+  text containing "№", "ё" and guillemet quotes).
 
-### Решения транскрипции (0.8)
+### Transcription decisions (0.8)
 
-Запрос автора после 0.7 — «добавить faster-whisper» — с уточнениями: русский,
-итальянский и английский; Windows и Android; модель small; в основном
-бандле, а не отдельным пакетом.
+The author's request after 0.7 — "add faster-whisper" — with
+clarifications: Russian, Italian and English; Windows and Android; the
+small model; bundled in, not a separate package.
 
-- **Почему не штатный путь markitdown.** markitdown транскрибирует через
-  `SpeechRecognition`, а тот по умолчанию ходит в **веб-API Google**:
-  «markitdown умеет аудио» и «markitdown умеет аудио офлайн» — разные
-  утверждения, и верно только первое. Сайдкар этого не даёт и не даст.
-- **whisper.cpp, а не faster-whisper.** faster-whisper — Python (CTranslate2
-  + PyAV), а Python есть только в десктопном сайдкаре: на Android его нет и
-  не будет (см. «Ограничения среды» в [../AGENTS.md](../AGENTS.md)).
-  whisper.cpp — C/C++, тот же путь, что у Tesseract: своя сборка
-  (`whisper/build.sh`), FFI из `core/`, один движок на Windows и на Android
-  — и одинаковый результат на обеих. faster-whisper на CPU быстрее, но
-  вторая реализация ради одной платформы — двойная поддержка и расхождения.
-  Версия — 1.9.5 (последняя на момент 0.8, по просьбе автора: патч-релиз,
-  правки почти все в GPU-бэкендах).
-- **Своя C-прослойка `whisper/shim/` (`mdw.h`), а не FFI на `whisper.h`.**
-  `whisper_full_params` — структура на сотню полей, меняющаяся между
-  версиями; её раскладка в Dart после очередного обновления молча читала бы
-  мусор. Прослойка заполняет параметры в C по заголовку той версии, с
-  которой собрана, и отдаёт в Dart десяток функций с простыми типами.
-- **Модель — `ggml-small-q8_0.bin`, 264 МБ, многоязычная.** Small — первая
-  модель, которая прилично понимает русский (tiny и base на нём заметно
-  ошибаются); итальянский и английский Whisper распознаёт даже точнее
-  русского. q8_0 — те же веса, квантованные в 8 бит: вдвое легче f16
-  (488 МБ) почти без потери качества и быстрее на CPU. Не `small.en` — та
-  только английская. Язык определяется сам по первым 30 секундам речи;
-  модель и
-  её коммит на Hugging Face закреплены с sha256 в `whisper/versions.sh`.
-- **Silero VAD (0,9 МБ).** Whisper на тишине «дописывает» текст, которого не
-  было: «Продолжение следует…», «Субтитры сделал …». VAD вырезает паузы до
-  распознавания — и заодно ускоряет его. Плюс `suppress_nst`: без
-  «[музыка]» и нот в расшифровке.
-- **Жадный поиск, не beam search.** whisper-cli по умолчанию берёт 5 лучей
-  — это вдвое медленнее, а на CPU телефона разница между «минуты» и
-  «десятки минут». При сомнительном окне whisper сам повторяет его с
-  температурой.
-- **CPU-бэкенд — десяток вариантов, выбор при запуске** (`GGML_BACKEND_DL`
-  + `GGML_CPU_ALL_VARIANTS`). Сборка под AVX2 роняет приложение целиком
-  («illegal instruction») на процессоре без AVX2 — а это и Pentium/Celeron
-  2020-х; под голый SSE — медленно в разы на всех остальных. Варианты:
-  x86-64 от SSE4.2 до AVX-512/AMX, arm64 от armv8.0 до armv9.2 (SVE2, SME);
-  ggml загружает лучший, что тянет процессор (`ggml_backend_score`). На
-  Windows они лежат рядом с `.exe` и перебираются по каталогу; на Android
-  `.so` в APK не распакованы на диск, поэтому прослойка пробует их по
-  именам от самого способного (`mdw_init`). Без OpenMP — свой пул потоков
-  ggml: иначе на Windows нужен `vcomp140.dll`, на Android — `libomp.so`.
-- **Декодирование звука — переносимое везде, кроме AAC.** Whisper ждёт
-  16 кГц моно float; WAV, MP3, FLAC и Ogg Vorbis декодирует miniaudio
-  (dr_wav/dr_mp3/dr_flac + stb_vorbis), Ogg Opus (голосовые мессенджеров) —
-  свой разбор страниц Ogg + libopus. Один и тот же код на Windows, Android
-  и хосте тестов. **AAC** (M4A диктофонов, звук MP4) — декодер платформы:
-  Media Foundation на Windows, NDK MediaCodec на Android. Свободного
-  AAC-декодера под нашу лицензию нет, а у платформы он есть всегда — и
-  ничего не весит. VLC рассматривался (вопрос автора) и не годится: это
-  плеер на десятки мегабайт с сетевыми модулями (http, rtsp, UPnP), AAC в
-  нём всё равно из FFmpeg. Если понадобится один AAC-декодер на все
-  платформы — минимальный FFmpeg только с `aac` и `mov` (≈1–2 МБ, LGPL, без
-  сети), а не VLC.
-- **Media Foundation выбирает обработчик по расширению.** Голосовое без
-  расширения или под чужим он не откроет — поэтому для декодера платформы
-  файл пишется во временный с расширением по сигнатуре (удаляется в
-  `finally`), а `localPath` берётся, только если расширение верное.
-- **Media Foundation грузится динамически**, из System32, а не импортом
-  DLL: в Windows «N» без Media Feature Pack и в Windows Server без
-  компонента Media Foundation `mfplat.dll` нет, и со статическим импортом
-  не загрузилась бы вся `markitdown_whisper.dll` — пропало бы всё
-  распознавание, а не только AAC. Так M4A там получает «кодек не
-  поддерживается», остальное распознаётся.
-- **Формат вывода Media Foundation перечитывается по ходу.** Декодер AAC
-  уточняет частоту и каналы по первому кадру
-  (`MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`); первая версия держала
-  числа из заголовка и принимала выход за float не проверяя — M4A в CI
-  «декодировался» в шум с пустой расшифровкой. Теперь формат читается
-  заново при смене, а 16-битный PCM тоже понимается.
-- **Прогресс и отмена — общая память, а не сообщения.** `Isolate.run`
-  отменить нельзя (см. «Грабли» в [../AGENTS.md](../AGENTS.md)), а изолят
-  занят в `whisper_full` и сообщений не принимает. Поэтому `mdw_control` —
-  два `int32` в нативной памяти: главный изолят пишет `cancel` и раз в
-  полсекунды читает `progress`, whisper проверяет `cancel` перед каждым
-  30-секундным окном и внутри вычисления графа. Остановленное отдаёт уже
-  распознанное с предупреждением «расшифровка неполная». Флаг проверяет и
-  приёмник декодированного звука, так что декодирование тоже
-  останавливается; не прерываются только VAD и мел-спектрограмма одного
-  10-минутного куска (секунды). «Неполной» расшифровка считается, только
-  если whisper действительно прервался по флагу: «Остановить», нажатая
-  после последнего окна, результат не портит. Процент — по длительности
-  из метаданных файла; если её нет, процента нет, только «Распознаётся
-  речь…».
-- **Предела длительности нет — звук распознаётся кусками по 10 минут
-  (0.8.1).** В 0.8 был предел 180 минут: whisper.cpp на одном вызове
-  держит весь звук, его копию после VAD и мел-спектрограмму всего файла —
-  ≈0,6 ГБ на час записи плюс 264 МБ модели, а нехватку нативной памяти
-  Android не превращает в исключение, а убивает процесс. Теперь
-  `mdw_transcribe_*` декодирует и распознаёт одновременно: приёмник
-  (`mdw_sink`) копит 10 минут отсчётов, отдаёт их в `whisper_full` и
-  копит дальше — память на звук ≈100 МБ при любой длине записи. Кусок
-  режется в самом тихом месте последних 15 секунд (окна по 0,1 с), чтобы
-  не разрезать слово; тест гоняет фразу, повторённую шесть раз поперёк
-  границы, — все шесть на месте. Время сегментов сдвигается на начало
-  куска. Язык при `auto` определяется по первому куску с речью и дальше
-  задан явно — один язык на файл, как было. Контекст между окнами
-  whisper.cpp и так не передаёт (`no_context` по умолчанию), так что
-  граница куска ничего не отнимает. Модель грузится при первом куске: файл,
-  который не декодировался, её не грузит. Остаётся то, что файл целиком
-  лежит в памяти (решение 0.7) — плюс его нативная копия на время
-  распознавания для переносимых декодеров.
-- **Android: модель копируется из APK на диск** при первом аудиофайле (не на
-  старте — тот, кто конвертирует PDF, не ждёт 265 МБ копирования). Цена —
-  модель лежит дважды (≈530 МБ вместе) и при копировании читается в память
-  целиком (`rootBundle.load`). Читать прямо из APK можно только через
-  `AAssetManager` (JNI, то есть плагин или Java-код) — для FFI из изолята не
-  годится. Чтобы каждый запуск не читать 265 МБ ради сравнения, рядом с
-  моделями лежит опись `models.json` (имя, размер, sha256 — пишет
-  `whisper/fetch.sh`), а копия названа по хешу.
-- **Сеть.** whisper.cpp собирается без `WHISPER_CURL` (скачивание модели по
-  URL) и без `GGML_RPC` (бэкенд по сети); `build.sh` в конце грепает
-  собранное на `libcurl`/`ws2_32`/`winhttp`/`wininet`, как у Tesseract.
-- **Риск: нативные декодеры в процессе приложения.** Битый файл, на котором
-  упадёт декодер, роняет приложение, а не конвертацию — как у PDFium и
-  Leptonica. dr_mp3/dr_flac/dr_wav и libopus фаззятся апстримом;
-  stb_vorbis исторически к злым файлам слабее всех — если это всплывёт,
-  заменить на libvorbis. Тест `speech_test.dart` гоняет обрезанные файлы
-  через все декодеры.
-- **Тесты сверяют слова, а не побайтный эталон** (`speech_test.dart`), как у
-  OCR: текст зависит от версии движка и даже от варианта CPU-бэкенда.
-  Фикстуры `speech/` — синтезированная речь (`say` на macOS: Milena,
-  Samantha, Alice), WAV на 22 кГц проверяет и ресемплер; английский и
-  итальянский — ещё и записями по 50 секунд на четырёх голосах с быстрой
-  речью в конце (`en_long.flac`, `it_long.flac`). Замер 0.8 на таких
-  записях (12 штук, включая быструю речь и белый шум ≈10 дБ): язык
-  определился верно везде; WER английского — 0 %, итальянского — 0–7 %
-  (ошибки — «ha» → «a», «caldaia» → «caldàia», «ti mando» → «stimando»
-  на быстрой речи). Синтезированная речь чище живой, так что это потолок,
-  а не ожидание. **AAC в CI проверяется только на Windows** (Media
-  Foundation на раннере `windows-2022` есть): распознавание M4A и прямой
-  тест декодера — длительность, громкость, пик. На Linux и macOS декодера
-  AAC нет — там проверяется честное предупреждение, и тест помечается
-  пропущенным, а не зелёным. Android-путь (MediaCodec) — только ручная
-  проверка на телефоне.
-  Общий набор фикстур (`conversion_fixtures_test.dart`) гоняется без
-  распознавания.
+- **Why not markitdown's built-in path.** markitdown transcribes via
+  `SpeechRecognition`, which by default calls **Google's web API**:
+  "markitdown can do audio" and "markitdown can do audio offline" are two
+  different claims, and only the first one is true. The sidecar doesn't
+  give us this, and never will.
+- **whisper.cpp, not faster-whisper.** faster-whisper is Python
+  (CTranslate2 + PyAV), and Python only exists in the desktop sidecar:
+  there's no Python on Android and there never will be (see "Environment
+  constraints" in [../AGENTS.md](../AGENTS.md)). whisper.cpp is C/C++, the
+  same approach as Tesseract: our own build (`whisper/build.sh`), FFI from
+  `core/`, one engine on both Windows and Android — and identical results
+  on both. faster-whisper is faster on CPU, but maintaining a second
+  implementation for a single platform means double the maintenance and
+  inconsistent results. Version 1.9.5 (the latest at the time of 0.8, at
+  the author's request: a patch release, with fixes almost entirely in the
+  GPU backends).
+- **Our own C shim `whisper/shim/` (`mdw.h`), rather than FFI straight on
+  `whisper.h`.** `whisper_full_params` is a struct with about a hundred
+  fields that changes between versions; mapping its layout in Dart would
+  silently read garbage after the next update. The shim fills in the
+  parameters in C against the header of the version it was built with, and
+  exposes a dozen functions with simple types to Dart.
+- **Model — `ggml-small-q8_0.bin`, 264 MB, multilingual.** Small is the
+  first model that understands Russian decently (tiny and base make
+  noticeably more mistakes on it); Whisper recognizes Italian and English
+  even more accurately than Russian. q8_0 is the same weights quantized to
+  8 bits: half the size of f16 (488 MB) with almost no quality loss, and
+  faster on CPU. Not `small.en` — that one is English-only. The language is
+  auto-detected from the first 30 seconds of speech; the model and its
+  commit on Hugging Face are pinned with sha256 in `whisper/versions.sh`.
+- **Silero VAD (0.9 MB).** Whisper "finishes" text on silence that was
+  never actually spoken: "To be continued…", "Subtitles by …". VAD trims
+  silence before recognition — and speeds it up at the same time. Plus
+  `suppress_nst`: no "[music]" or musical notes ending up in the
+  transcript.
+- **Greedy search, not beam search.** whisper-cli defaults to 5 beams —
+  twice as slow, and on a phone's CPU the difference is "minutes" vs "tens
+  of minutes." For an uncertain window whisper itself retries it with a
+  different temperature.
+- **CPU backend — a dozen variants, chosen at startup**
+  (`GGML_BACKEND_DL` + `GGML_CPU_ALL_VARIANTS`). A build targeting AVX2
+  crashes the whole app ("illegal instruction") on a CPU without AVX2 —
+  and that still includes 2020s Pentium/Celeron chips — while a plain SSE
+  build is several times slower on everything else. Variants: x86-64 from
+  SSE4.2 up to AVX-512/AMX, arm64 from armv8.0 up to armv9.2 (SVE2, SME);
+  ggml loads the best one the CPU can run (`ggml_backend_score`). On
+  Windows they sit as files next to the `.exe` and are enumerated from the
+  directory; on Android, `.so` files inside the APK aren't unpacked to
+  disk, so the shim tries them by name, starting from the most capable
+  (`mdw_init`). No OpenMP — our own ggml thread pool instead: otherwise
+  Windows would need `vcomp140.dll`, and Android would need `libomp.so`.
+- **Audio decoding — portable everywhere except AAC.** Whisper expects
+  16 kHz mono float; WAV, MP3, FLAC and Ogg Vorbis are decoded by
+  miniaudio (dr_wav/dr_mp3/dr_flac + stb_vorbis), Ogg Opus (messenger voice
+  notes) by our own Ogg page parsing + libopus. The same code runs on
+  Windows, Android and the test host. **AAC** (M4A from voice recorders,
+  audio in MP4) uses the platform decoder: Media Foundation on Windows,
+  NDK MediaCodec on Android. There's no freely licensable AAC decoder that
+  fits our license, while the platform always has one — at zero size cost.
+  VLC was considered (the author raised the question) and doesn't fit: it's
+  a player weighing tens of megabytes with networking modules (http, rtsp,
+  UPnP), and its AAC support comes from FFmpeg anyway. If a single AAC
+  decoder across all platforms is ever needed, the right pick is a minimal
+  FFmpeg build with only `aac` and `mov` (≈1–2 MB, LGPL, no networking),
+  not VLC.
+- **Media Foundation picks a handler by extension.** A voice note with no
+  extension, or the wrong one, won't open — so for the platform decoder the
+  file is written to a temp file with an extension inferred from the
+  signature (deleted in a `finally`), and `localPath` is only used once
+  the extension is confirmed correct.
+- **Media Foundation is loaded dynamically**, from System32, rather than
+  via a DLL import: on Windows "N" editions without the Media Feature Pack,
+  and on Windows Server without the Media Foundation component,
+  `mfplat.dll` doesn't exist, and a static import would have prevented all
+  of `markitdown_whisper.dll` from loading — killing all transcription, not
+  just AAC. This way M4A there gets "codec not supported," while everything
+  else still gets recognized.
+- **Media Foundation's output format is re-read as it goes.** The AAC
+  decoder refines sample rate and channel count from the first frame
+  (`MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`); the first version kept the
+  header's numbers and assumed float output without checking — M4A in CI
+  "decoded" into noise with an empty transcript. The format is now re-read
+  on change, and 16-bit PCM is also understood.
+- **Progress and cancellation via shared memory, not messages.**
+  `Isolate.run` can't be cancelled (see "Pitfalls" in
+  [../AGENTS.md](../AGENTS.md)), and the isolate is busy inside
+  `whisper_full` and isn't receiving messages. So `mdw_control` is two
+  `int32`s in native memory: the main isolate writes `cancel` and reads
+  `progress` roughly twice a second; whisper checks `cancel` before every
+  30-second window and inside the graph computation. A stopped run returns
+  whatever's already been recognized with a "transcript is incomplete"
+  warning. The transcript is only marked "incomplete" if whisper actually
+  stopped because of the flag: pressing "Stop" after the last window
+  doesn't taint the result. The percentage comes from the file's own
+  duration metadata; if that's missing, there's no percentage, just
+  "Recognizing speech…".
+- **No duration limit — audio is transcribed in 10-minute chunks
+  (0.8.1).** In 0.8 there was a 180-minute cap: whisper.cpp holds the whole
+  audio, its post-VAD copy, and the mel spectrogram of the entire file in
+  one call — ≈0.6 GB per hour of recording plus 264 MB for the model, and
+  Android doesn't turn a native out-of-memory into an exception, it just
+  kills the process. Now `mdw_transcribe_*` decodes and recognizes
+  simultaneously: a sink (`mdw_sink`) accumulates 10 minutes of samples,
+  hands them to `whisper_full`, and keeps accumulating — memory for the
+  audio stays ≈100 MB regardless of recording length. A chunk is cut at
+  the quietest point in the last 15 seconds (0.1 s windows), so as not to
+  cut a word in half; a test runs a phrase repeated six times across the
+  boundary — all six come through intact. Segment timestamps are shifted
+  to the start of the chunk. When `auto`, the language is detected from the
+  first chunk containing speech and then fixed for the rest — one language
+  per file, as before. whisper.cpp already doesn't carry context between
+  windows (`no_context` by default), so the chunk boundary doesn't cost
+  anything there. The model loads on the first chunk: a file that never
+  decodes never triggers a model load. What remains unchanged: the whole
+  file still sits in memory (a 0.7 decision) — plus its native copy, for
+  the duration of recognition, for portable decoders.
+- **Android: the model is copied from the APK to disk** on the first audio
+  file (not at startup — someone converting a PDF shouldn't wait for a
+  265 MB copy). The cost: the model exists twice on disk (≈530 MB
+  combined), and the copy step reads it entirely into memory
+  (`rootBundle.load`). Reading straight from the APK is only possible via
+  `AAssetManager` (JNI, i.e. a plugin or Java code) — unusable for FFI from
+  an isolate. To avoid re-reading 265 MB on every launch just for
+  comparison, a manifest `models.json` sits next to the models (name,
+  size, sha256 — written by `whisper/fetch.sh`), and the copy is named by
+  its hash.
+- **Networking.** whisper.cpp is built without `WHISPER_CURL` (downloading
+  a model by URL) and without `GGML_RPC` (networked backend); `build.sh`
+  finishes by grepping the build output for
+  `libcurl`/`ws2_32`/`winhttp`/`wininet`, same as for Tesseract.
+- **Risk: native decoders running in the app's process.** A corrupt file
+  that crashes the decoder brings down the whole app, not just the
+  conversion — same as with PDFium and Leptonica. dr_mp3/dr_flac/dr_wav and
+  libopus are fuzzed upstream; stb_vorbis has historically been the
+  weakest against malicious input — if that ever surfaces, it can be
+  swapped for libvorbis. The `speech_test.dart` test runs truncated files
+  through every decoder.
+- **Tests compare words, not a byte-for-byte reference**
+  (`speech_test.dart`), same as for OCR: the text depends on the engine
+  version and even on the CPU backend variant. The `speech/` fixtures are
+  synthesized speech (macOS `say`: Milena, Samantha, Alice), a 22 kHz WAV
+  that also exercises the resampler; English and Italian additionally get
+  50-second recordings across four voices with fast speech at the end
+  (`en_long.flac`, `it_long.flac`). The 0.8 measurement on these recordings
+  (12 files, including fast speech and white noise at ≈10 dB): the language
+  was detected correctly every time; English WER was 0%, Italian 0–7%
+  (errors were "ha" → "a", "caldaia" → "caldàia", "ti mando" →
+  "stimando" on fast speech). Synthesized speech is cleaner than real
+  speech, so this is a ceiling, not an expectation. **AAC is only tested in
+  CI on Windows** (Media Foundation is available on the `windows-2022`
+  runner): M4A transcription plus a direct decoder test — duration,
+  loudness, peak. On Linux and macOS there's no AAC decoder — there, the
+  honest warning is what's checked, and the test is marked skipped rather
+  than passing. The Android path (MediaCodec) is manual-verification-only,
+  on a real phone.
+  The general fixture suite (`conversion_fixtures_test.dart`) runs without
+  transcription.
 
-### Решения 0.9 (xls, msg, RSS)
+### 0.9 decisions (xls, msg, RSS)
 
-Запрос автора после 0.8 — «всё, что умеет обычный markitdown». То, что на
-Android раньше честно не поддерживалось, сделано в Dart-ядре.
+The author's request after 0.8 — "everything plain markitdown can do." What
+was previously honestly unsupported on Android has now been implemented in
+the Dart core.
 
-- **`xls` и `msg` — свой разбор OLE2 (`ole2/compound_file.dart`), не
-  пакет.** На pub.dev нет поддерживаемого чтения CFB, а нужно немного:
-  каталог как дерево, FAT, mini-FAT и чтение потока. Цепочкам секторов и
-  дереву каталога верить нельзя, как и заголовку zip — каждая проходится с
-  пределом шагов (`ole2_robustness_test.dart` режет и портит фикстуры).
-- **BIFF — только то, что нужно таблице** (`xls/biff_workbook.dart`): SST
-  с продолжением в `CONTINUE` (разрыв посреди символов начинается с нового
-  байта флагов — сжатая строка может смениться на UTF-16), `NUMBER`/`RK`/
-  `MULRK`, `LABEL`/`LABELSST`, `BOOLERR`, кэшированное значение `FORMULA`
-  (+ `STRING`), `MERGEDCELLS`, даты по `FORMAT`/`XF`/`DATEMODE`. Excel 95
-  (BIFF5, поток `Book`) читается с кодовой страницей книги (`CODEPAGE`).
-  Пароль (`FILEPASS`) и BIFF2–4 — понятный отказ.
-- **Лист `xls` выглядит как лист `xlsx`** — рендер общий
-  (`spreadsheet/sheet_markdown.dart`): заголовок — буквы столбцов,
-  объединения — HTML-таблица. От markitdown (pandas: первая строка —
-  заголовок, пустые — `NaN`) это то же расхождение, что у `xlsx`; на
-  содержимом ячеек `make compare-sidecar` расхождений не нашёл (120 строк
-  SST, разорванных `CONTINUE`, совпали с `xlrd` все).
-- **`msg` повторяет `OutlookMsgConverter` символ в символ**: From — адрес
-  отправителя, To — строка получателей, Subject; PT_UNICODE, иначе
-  PT_STRING8 в кодовой странице письма; та же нормализация вывода
-  (`normalizeLikeMarkitdown`). Сверх markitdown — одно: письмо без
-  текстового тела отдаёт HTML-тело, а не пустой раздел. Тело только в RTF
-  не читается — как и у markitdown.
-- **На десктопе первым на `xls`/`msg` по-прежнему идёт сайдкар** (решение
-  автора по Этапу 5): Dart-разбор там — запасной путь. Убрать их из
-  `SidecarConverter.appFormats` — снова решение автора.
-- **RSS/Atom — порт `_rss_converter`**: те же поля, правила Atom-типов
-  `text`/`html`/`xhtml` и `xml:base`, лента узнаётся и без расширения (по
-  корню `<rss>`/`<feed>`). HTML записей переводит `html2md`, как у
-  [`html`](#решения-этапа-1), — поэтому заголовки там setext, а списки
-  `*   `: структура совпадает с markitdown, оформление — как у остального
-  HTML в приложении. `xml` с корнем ленты, который лентой не оказался,
-  уходит обычному XML-конвертеру (у того приоритет ниже).
-- **OCR GIF/WebP/TIFF — через `package:image`**, а не пересборку Leptonica
-  с giflib/libwebp/libtiff на двух платформах: первый кадр декодирует Dart
-  и перекодирует в PNG для того же пути. Прозрачность кладётся на белый —
-  у стикера WebP прозрачный фон «чёрный», и чёрный текст на нём пропал бы.
-  HEIC не декодирует ни Leptonica, ни `package:image` — там по-прежнему
-  только метаданные.
-- **`archive` 3 → 4** — вместе с `image` 4.12, которому нужен `archive` 4.
-  Четвёртая версия на битом zip не бросает, а отдаёт пустой архив, поэтому
-  `decodeZip` (`zip_family.dart`) считает пустой архив повреждённым, если
-  файл не начинается с конца каталога (`PK\x05\x06`).
+- **`xls` and `msg` — our own OLE2 parsing (`ole2/compound_file.dart`), not
+  a package.** There's no maintained CFB reader on pub.dev, and not much
+  is actually needed: the directory as a tree, the FAT, the mini-FAT, and
+  stream reading. Sector chains and the directory tree can't be trusted,
+  same as a zip header — each is walked with a step limit
+  (`ole2_robustness_test.dart` truncates and corrupts fixtures).
+- **BIFF — only what the table needs** (`xls/biff_workbook.dart`): the SST
+  with `CONTINUE` continuation (a break mid-string starts with a fresh
+  flag byte — a compressed string can switch to UTF-16), `NUMBER`/`RK`/
+  `MULRK`, `LABEL`/`LABELSST`, `BOOLERR`, the cached `FORMULA` value
+  (+ `STRING`), `MERGEDCELLS`, dates via `FORMAT`/`XF`/`DATEMODE`. Excel 95
+  (BIFF5, the `Book` stream) is read using the workbook's code page
+  (`CODEPAGE`). A password (`FILEPASS`) and BIFF2–4 get a clear rejection.
+- **An `xls` sheet looks like an `xlsx` sheet** — the rendering is shared
+  (`spreadsheet/sheet_markdown.dart`): the header is column letters, merges
+  become an HTML table. This is the same discrepancy from markitdown
+  (pandas: first row as header, empty cells as `NaN`) as with `xlsx`; `make
+  compare-sidecar` found no discrepancies in cell content (120 SST rows,
+  some split across `CONTINUE`, all matched `xlrd`).
+- **`msg` replicates `OutlookMsgConverter` character for character**: From
+  is the sender's address, To is the recipient string, Subject;
+  PT_UNICODE, otherwise PT_STRING8 in the message's own code page; the
+  same output normalization (`normalizeLikeMarkitdown`). The one thing
+  beyond markitdown: a message with no plain-text body returns the HTML
+  body instead of an empty section. A body that only exists as RTF isn't
+  read — same as markitdown.
+- **On desktop the sidecar still goes first for `xls`/`msg`** (an author's
+  decision from Stage 5): the Dart parser there is a fallback path.
+  Removing them from `SidecarConverter.appFormats` is again the author's
+  decision to make.
+- **RSS/Atom — a port of `_rss_converter`**: the same fields, the same
+  Atom-type rules for `text`/`html`/`xhtml` and `xml:base`, a feed is
+  recognized even without an extension (by its `<rss>`/`<feed>` root
+  element). Entry HTML goes through `html2md`, same as
+  [`html`](#stage-1-decisions) — which is why headings there come out as
+  setext-style and lists as `*   `: the structure matches markitdown, the
+  styling matches the rest of HTML output in the app. An `xml` file with a
+  feed-like root that turns out not to be a feed falls through to the
+  regular XML converter (which has lower priority).
+- **OCR for GIF/WebP/TIFF via `package:image`**, instead of rebuilding
+  Leptonica with giflib/libwebp/libtiff on two platforms: the first frame
+  is decoded by Dart and re-encoded as PNG for the same pipeline.
+  Transparency is composited onto white — a WebP sticker's transparent
+  background is "black," and black text on it would otherwise disappear.
+  HEIC isn't decoded by either Leptonica or `package:image` — there, it's
+  still metadata only.
+- **`archive` 3 → 4** — together with `image` 4.12, which requires
+  `archive` 4. Version 4 doesn't throw on a corrupt zip, it returns an
+  empty archive instead, so `decodeZip` (`zip_family.dart`) treats an
+  empty archive as corrupt whenever the file doesn't start with the
+  end-of-central-directory signature (`PK\x05\x06`).
 
-### Решения 0.9: ссылки
+### 0.9 decisions: links
 
-Запрос автора — «всё, что умеет markitdown, … можно с подключением к
-интернету»; ответ на вопрос «как пустить сеть» — «только по явной ссылке».
+The author's request — "everything markitdown can do, … allowed with an
+internet connection"; the answer to "how do we let networking in" was
+"only via an explicit link."
 
-- **Как `convert_uri` у markitdown: ссылка → байты → тот же реестр.** Тип
-  — по `Content-Type` и содержимому, имя — из `Content-Disposition`
-  (`filename*` по RFC 5987 тоже) или из пути, если он похож на файл
-  (`report.pdf`, но не `1706.03762` у arXiv). Адрес — в `StreamInfo.url`:
-  по нему YouTube и Wikipedia узнают свои страницы, HTML и ленты
-  разрешают относительные ссылки. В приложении ссылка сначала скачивается
-  (`downloadUrl`), а дальше идёт через `accept`, как файл, — поэтому у
-  аудио по ссылке тот же прогресс распознавания и «Остановить».
-- **`dart:io`, а не пакет `http`.** Сеть в одном модуле (`core/lib/src/web/`),
-  и проверка «нет сетевых пакетов» остаётся в силе: пакет означал бы сеть
-  мимо модуля.
-- **Честный `User-Agent`** (`MarkItDownUI (+ссылка на репозиторий)`), а не
-  «Chrome»: поддельный браузер без остальных заголовков w3.org отсекает с
-  403 как бота, Wikipedia по своим правилам просит описательный UA, а
-  YouTube страницу отдаёт и так (проверено 15.10.2026).
-- **HTML — только `<body>`, без `script`/`style`** — как `HtmlConverter`
-  markitdown. До 0.9 текст `<title>` из `<head>` попадал в результат лишней
-  строкой, а на страницах из сети — ещё и CSS; эталоны `html/article` и
-  `epub/simple` потеряли эти дубли. Относительные ссылки и картинки — от
-  адреса страницы, кириллица в них раскодируется (`/wiki/Грубер`, не
-  `%D0%93…`), служебные ASCII-символы остаются закодированными. Якоря
-  (`#cite_note-1`) — как есть. Кодировка — из `charset` ответа.
-- **YouTube — тот же вид, что у markitdown** (`# YouTube`, `## название`,
-  `### Video Metadata`, `### Description`, `### Transcript`). Просмотры —
-  из `videoDetails.viewCount`, если на странице нет `interactionCount`
-  (сейчас нет). Субтитры markitdown берёт `youtube_transcript_api`; здесь —
-  тот же путь руками: `INNERTUBE_API_KEY` со страницы → `POST
-  /youtubei/v1/player` от клиента ANDROID (у веб-клиента ссылки на
-  субтитры без токена не работают) → XML дорожки, сущности в нём
-  экранированы дважды. Дорожка: ручная на языке видео (язык — у
-  автоматической, YouTube распознаёт речь оригинала), затем ручная
-  русская, английская, затем автоматическая — markitdown берёт английскую.
-  Cookie `SOCS=CAI` — согласие «отказ от необязательных», иначе в Европе
-  вместо страницы видео приходит страница согласия. Сбой субтитров —
-  предупреждение, описание остаётся.
-- **Wikipedia — `#mw-content-text` под заголовком статьи**, как у
-  markitdown, плюс без кнопок «[править | править код]».
-- **Предел скачивания — 1 ГБ** (как у распакованного архива), таймаут — 30 с
-  на соединение и на каждый следующий кусок ответа: бесконечный поток иначе
-  съел бы память.
-- **Проверено вживую** (15.10.2026, с машины разработчика): YouTube с
-  английскими и с русскими автоматическими субтитрами, `ru.wikipedia.org`,
-  PDF по прямой ссылке, RSS Хабра, `example.com`, страница arXiv. В тестах
-  сеть — локальный сервер и подменённый `WebFetcher` (`web_test.dart`).
+- **Like markitdown's `convert_uri`: link → bytes → the same registry.**
+  The type comes from `Content-Type` and the content itself, the name from
+  `Content-Disposition` (`filename*` per RFC 5987 too) or from the path if
+  it looks like a file (`report.pdf`, but not arXiv's `1706.03762`). The
+  address is kept in `StreamInfo.url`: YouTube and Wikipedia use it to
+  recognize their own pages, and HTML and feeds resolve relative links
+  against it. In the app, a link is downloaded first (`downloadUrl`), then
+  goes through `accept` just like a file — so audio by link gets the same
+  recognition progress and "Stop" button.
+- **`dart:io`, not the `http` package.** Networking lives in a single
+  module (`core/lib/src/web/`), keeping the "no networking packages" check
+  intact — a package would mean networking bypassing that module.
+- **An honest `User-Agent`** (`MarkItDownUI (+link to the repository)`),
+  not a fake "Chrome": a spoofed browser missing the rest of a real
+  browser's headers gets a 403 from w3.org as a bot, Wikipedia's own rules
+  ask for a descriptive UA, and YouTube serves the page either way
+  (verified 2026-10-15).
+- **HTML — only `<body>`, no `script`/`style`** — same as markitdown's
+  `HtmlConverter`. Before 0.9, text from `<title>` inside `<head>` leaked
+  into the result as an extra line, and on pages fetched from the network,
+  CSS leaked in too; the `html/article` and `epub/simple` reference files
+  had these duplicates removed. Relative links and images are resolved
+  against the page's own address, Cyrillic in them is decoded
+  (`/wiki/Грубер`, not `%D0%93…`), while structural ASCII characters stay
+  encoded. Anchors (`#cite_note-1`) are left as is. Encoding comes from the
+  response's `charset`.
+- **YouTube — the same layout as markitdown's** (`# YouTube`, `##
+  <title>`, `### Video Metadata`, `### Description`, `### Transcript`).
+  View count comes from `videoDetails.viewCount` when the page has no
+  `interactionCount` (currently it doesn't). markitdown gets captions via
+  `youtube_transcript_api`; here it's the same path done by hand:
+  `INNERTUBE_API_KEY` from the page → `POST /youtubei/v1/player` from the
+  ANDROID client (the web client's caption links don't work without a
+  token) → an XML track, with entities double-escaped inside it. Track
+  priority: a manual track in the video's own language (the language used
+  for the automatic track — YouTube recognizes speech in the original
+  language), then a manual Russian track, then English, then the automatic
+  track — markitdown picks the English one. The `SOCS=CAI` cookie means
+  "decline non-essential," needed because otherwise a consent page shows
+  up instead of the video page in Europe. A caption failure is a warning;
+  the description is still returned.
+- **Wikipedia — `#mw-content-text` under the article title**, same as
+  markitdown, plus removal of the "[edit | edit source]" buttons.
+- **Download limit — 1 GB** (same as for an unpacked archive), timeout —
+  30 s for the connection and for each subsequent chunk of the response:
+  otherwise an infinite stream would eat up memory.
+- **Verified live** (2026-10-15, from the developer's machine): YouTube
+  with English and with Russian automatic captions, `ru.wikipedia.org`, a
+  PDF via a direct link, a Habr RSS feed, `example.com`, an arXiv page. In
+  tests, the network is a local server plus a stubbed `WebFetcher`
+  (`web_test.dart`).
 
-## Открытые места
+## Open items
 
-### OCR: что осталось
+### OCR: what's left
 
-Решено на Этапе 6 (см. «Решения Этапа 6» выше): Tesseract на обеих
-платформах. Открыто:
+Resolved at Stage 6 (see "Stage 6 decisions" above): Tesseract on both
+platforms. Still open:
 
-- **скорость на телефоне не измерена** — на Mac (Intel, 2019) картинка
-  1400 × 420 распознаётся за 0,3 с после загрузки моделей (≈2 с на первый
-  вызов), страница A4 при 300 dpi — около секунды; телефон автора — нужна
-  ручная проверка;
-- **рукописный текст и плохие фото** Tesseract читает плохо — это
-  ограничение движка, предупреждение о низкой уверенности его не исправит;
-- **HEIC** без OCR (GIF, WebP и TIFF — с 0.9, см. «Решения 0.9»); HEIC —
-  самый частый формат фото с iPhone, но на Android и Windows не основной.
+- **phone speed hasn't been measured** — on a Mac (Intel, 2019), a 1400 ×
+  420 image is recognized in 0.3 s once models are loaded (≈2 s on the
+  first call), an A4 page at 300 dpi takes about a second — a manual check
+  is needed on the author's phone;
+- **handwriting and poor-quality photos** are read poorly by Tesseract —
+  this is an engine limitation, and a low-confidence warning won't fix it;
+- **HEIC** has no OCR (GIF, WebP and TIFF got it in 0.9, see "0.9
+  decisions"); HEIC is the most common photo format from an iPhone, but
+  isn't the primary one on Android or Windows.
 
-### Транскрипция: что осталось
+### Transcription: what's left
 
-Решено в 0.8 (см. «Решения транскрипции» выше). Открыто:
+Resolved in 0.8 (see "Transcription decisions" above). Still open:
 
-- **скорость на телефоне и на Windows не измерена** — нужна ручная
-  проверка автора; на Mac (Intel i7-6567U, 2 ядра, AVX2) фраза в 6 секунд —
-  ≈15 с вместе с загрузкой модели, длинная запись — ≈0,4–0,5 реального
-  времени;
-- **один язык на файл** — разговор, где русский перемежается итальянским,
-  распознаётся хуже; выбора языка вручную в интерфейсе нет (в
-  `TranscriptionSettings.language` он есть);
-- **аудио внутри архива** распознаётся без речи (только метаданные):
-  настройки распознавания приложение передаёт только для аудиофайла
-  верхнего уровня — иначе zip с полусотней голосовых — это час работы
-  без индикатора;
-- **размер**: APK вырос на ≈270 МБ. Лимит Play (200 МБ) не касается: в
-  Google Play не публикуем, APK — с GitHub Releases.
+- **phone and Windows speed hasn't been measured** — needs a manual check
+  by the author; on a Mac (Intel i7-6567U, 2 cores, AVX2), a 6-second
+  phrase takes ≈15 s including model loading, a long recording runs at
+  ≈0.4–0.5x real time;
+- **one language per file** — a conversation mixing Russian with Italian
+  is recognized worse; there's no manual language selector in the UI
+  (though `TranscriptionSettings.language` supports one);
+- **audio inside an archive** is recognized without speech transcription
+  (metadata only): the app only passes recognition settings for a
+  top-level audio file — otherwise a zip full of fifty voice notes would
+  mean an hour of work with no progress indicator;
+- **size**: the APK grew by ≈270 MB. The Play Store's 200 MB limit doesn't
+  apply: we don't publish to Google Play, the APK ships via GitHub
+  Releases.
 
 ---
 
-## Эталонные файлы
+## Reference files
 
-Каждый формат, объявленный поддержанным, обязан иметь в `test/fixtures/` пару
-«исходник + ожидаемый Markdown». Это не ритуал: у нас **две реализации**
-(Dart-ядро и сайдкар), и единственный способ заметить их расхождение — гонять
-обе по одному набору. Правило и порядок — в «Конвенциях работы»
-[../AGENTS.md](../AGENTS.md).
+Every format declared supported must have a "source + expected Markdown"
+pair under `test/fixtures/`. This isn't a ritual: we have **two
+implementations** (the Dart core and the sidecar), and the only way to
+notice them diverging is to run both against the same set. The rule and the
+process are in "Working conventions" in [../AGENTS.md](../AGENTS.md).
 
-Отдельно нужен набор **злых** файлов, и он важнее красивых: zip внутри zip,
-`.docx`, переименованный в `.pdf`, текст в Windows-1251 без BOM, `xlsx` с
-объединёнными ячейками, PDF из сканов, файл нулевой длины, файл без
-расширения. Каждая из этих строк — поведение, которое кто-то должен был
-выбрать заранее.
+A set of **malicious** files is also needed, separately, and it matters
+more than the well-behaved ones: a zip inside a zip, a `.docx` renamed to
+`.pdf`, Windows-1251 text with no BOM, an `xlsx` with merged cells, a PDF
+made of scans, a zero-length file, a file with no extension. Each of these
+rows is a piece of behavior that someone had to decide on ahead of time.

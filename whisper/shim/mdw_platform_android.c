@@ -1,8 +1,9 @@
 /*
- * Android: декодер платформы (NDK MediaExtractor + MediaCodec, API 21+) —
- * ради AAC в M4A/MP4/3GP: так пишут диктофоны и мессенджеры, а свободного
- * декодера AAC под нашу лицензию нет. Умеет и всё остальное, что умеет
- * телефон, — на случай, если переносимый декодер файл не взял.
+ * Android: the platform decoder (NDK MediaExtractor + MediaCodec, API
+ * 21+) — for AAC in M4A/MP4/3GP: that's what voice recorders and
+ * messaging apps write, and there's no free AAC decoder under our
+ * license. It also handles everything else the phone can, in case the
+ * portable decoder didn't take the file.
  */
 #ifdef __ANDROID__
 
@@ -19,7 +20,7 @@
 #include "mdw_internal.h"
 
 /* android.media.AudioFormat: ENCODING_PCM_16BIT = 2, ENCODING_PCM_FLOAT = 4.
- * Ключ строкой: AMEDIAFORMAT_KEY_PCM_ENCODING объявлен только с API 28. */
+ * A string key: AMEDIAFORMAT_KEY_PCM_ENCODING is only declared from API 28. */
 #define MDW_PCM_FLOAT 4
 
 static void mdw_read_format(AMediaFormat *format, int32_t *rate,
@@ -52,7 +53,7 @@ int mdw_platform_decode_file(const char *path, mdw_sink *sink) {
     goto done;
   }
 
-  /* Первая звуковая дорожка; у видео — его звук. */
+  /* The first audio track; for video, that's its audio. */
   size_t tracks = AMediaExtractor_getTrackCount(extractor);
   const char *mime = NULL;
   for (size_t i = 0; i < tracks; i++) {
@@ -89,7 +90,7 @@ int mdw_platform_decode_file(const char *path, mdw_sink *sink) {
   if (rate > 0) mdw_sink_set_rate(sink, (uint32_t)rate);
 
   int input_done = 0;
-  int idle = 0; /* циклы без ввода и вывода: кодек завис */
+  int idle = 0; /* cycles with no input and no output: the codec is stuck */
   while (status == MDW_OK && !mdw_sink_full(sink)) {
     int progressed = 0;
     if (!input_done) {
@@ -135,8 +136,8 @@ int mdw_platform_decode_file(const char *path, mdw_sink *sink) {
       if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) break;
     } else if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
       progressed = 1;
-      /* Настоящие частота и каналы — здесь: у HE-AAC, например, выход
-       * вдвое чаще, чем в заголовке дорожки. */
+      /* The real rate and channels are here: with HE-AAC, for instance,
+       * the output is twice as frequent as the track header says. */
       AMediaFormat *output = AMediaCodec_getOutputFormat(codec);
       if (output != NULL) {
         mdw_read_format(output, &rate, &channels, &encoding);
@@ -149,7 +150,7 @@ int mdw_platform_decode_file(const char *path, mdw_sink *sink) {
     }
 
     idle = progressed ? 0 : idle + 1;
-    if (idle > 500) status = MDW_ERR_DECODE; /* ~5 с тишины от кодека */
+    if (idle > 500) status = MDW_ERR_DECODE; /* ~5 s of silence from the codec */
   }
 
 done:

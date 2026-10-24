@@ -87,10 +87,10 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
-# PDFium (Этап 3/5): pdfium.dll — рядом с .exe, где её первой ищет
-# LoadLibrary (см. loadPdfiumLibrary в core/). Качает pdfium/fetch.sh, в
-# репозиторий не коммитится. Без неё сборка падает здесь, а не выходит
-# приложением, у которого молча не открывается ни один PDF.
+# PDFium (Stage 3/5): pdfium.dll — next to the .exe, where LoadLibrary looks
+# for it first (see loadPdfiumLibrary in core/). Fetched by pdfium/fetch.sh,
+# not committed to the repository. Without it the build fails here, instead
+# of shipping an app where no PDF would silently open.
 set(PDFIUM_DLL "${CMAKE_CURRENT_SOURCE_DIR}/../../pdfium/native/host/pdfium.dll")
 if(NOT EXISTS "${PDFIUM_DLL}")
   message(FATAL_ERROR "Нет ${PDFIUM_DLL} — сначала ./pdfium/fetch.sh (Git Bash)")
@@ -98,11 +98,11 @@ endif()
 install(FILES "${PDFIUM_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
-# Tesseract (Этап 6, OCR): leptonica-*.dll и tesseract*.dll — рядом с .exe,
-# где их ищет loadTesseractLibraries в core/. Собирает tesseract/build.sh
-# (в CI — с кэшем), в репозиторий не коммитится. Обязательны, как PDFium:
-# без них OCR молча пропал бы из сборки. Модели (*.traineddata) едут
-# ассетами Flutter, а не отсюда.
+# Tesseract (Stage 6, OCR): leptonica-*.dll and tesseract*.dll — next to the
+# .exe, where loadTesseractLibraries in core/ looks for them. Built by
+# tesseract/build.sh (cached in CI), not committed to the repository.
+# Mandatory, like PDFium: without them OCR would silently disappear from the
+# build. Models (*.traineddata) travel as Flutter assets, not from here.
 file(GLOB TESSERACT_DLLS
   "${CMAKE_CURRENT_SOURCE_DIR}/../../tesseract/native/host/leptonica*.dll"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../tesseract/native/host/tesseract*.dll")
@@ -113,15 +113,16 @@ endif()
 install(FILES ${TESSERACT_DLLS} DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
-# Распознавание речи (0.8): markitdown_whisper.dll (наша прослойка), whisper,
-# ggml, ggml-base и варианты CPU-бэкенда ggml-cpu-*.dll — рядом с .exe, где
-# их ищет loadWhisperLibrary в core/ и откуда ggml выбирает вариант под
-# процессор. Собирает whisper/build.sh (в CI — с кэшем), в репозиторий не
-# коммитится. Обязательны, как Tesseract: без них распознавание молча
-# пропало бы из сборки. Модели едут ассетами Flutter (whisper/fetch.sh).
-# Каждая обязательная DLL проверяется по имени, а не общим счётом: одних
-# вариантов ggml-cpu-*.dll (GGML_CPU_ALL_VARIANTS) около десятка, и счёт
-# прошёл бы и без прослойки.
+# Speech recognition (0.8): markitdown_whisper.dll (our shim), whisper,
+# ggml, ggml-base, and the CPU-backend variants ggml-cpu-*.dll — next to the
+# .exe, where loadWhisperLibrary in core/ looks for them and from where ggml
+# picks the variant for the CPU. Built by whisper/build.sh (cached in CI),
+# not committed to the repository. Mandatory, like Tesseract: without them
+# recognition would silently disappear from the build. Models travel as
+# Flutter assets (whisper/fetch.sh). Each mandatory DLL is checked by name
+# rather than by total count: there are about a dozen ggml-cpu-*.dll
+# variants alone (GGML_CPU_ALL_VARIANTS), and the count would pass even
+# without the shim.
 set(WHISPER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../whisper/native/host")
 set(WHISPER_DLLS)
 foreach(WHISPER_DLL markitdown_whisper whisper ggml ggml-base)
@@ -137,10 +138,10 @@ endif()
 install(FILES ${WHISPER_DLLS} ${WHISPER_CPU_DLLS}
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 
-# Python-сайдкар (Этап 5, п. 4): sidecar/ рядом с .exe, где его ищет
-# SidecarConverter.discover(). Необязателен: без собранного
-# sidecar/dist/windows-x86_64 выходит Dart-only сборка — штатная, а не
-# сломанная (xls/msg тогда честно «не поддерживается»).
+# Python sidecar (Stage 5, item 4): sidecar/ next to the .exe, where
+# SidecarConverter.discover() looks for it. Optional: without a built
+# sidecar/dist/windows-x86_64 you get a Dart-only build — a normal state,
+# not a broken one (xls/msg then honestly say "unsupported").
 set(SIDECAR_DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../sidecar/dist/windows-x86_64")
 if(EXISTS "${SIDECAR_DIST_DIR}/manifest.json")
   install(DIRECTORY "${SIDECAR_DIST_DIR}/" DESTINATION "${CMAKE_INSTALL_PREFIX}/sidecar"

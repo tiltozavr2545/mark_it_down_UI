@@ -1,223 +1,255 @@
-# Отложенные фичи и открытые вопросы
+# Deferred features and open questions
 
-Всё, что сознательно отложено за пределы плана
-([implementation-plan.md](implementation-plan.md)), и вопросы, на которые
-ответа пока нет. Готовое сюда не попадает — история версий в
-[../CHANGELOG.md](../CHANGELOG.md).
-
----
-
-## Открытые вопросы
-
-### Большие аудио и видео
-
-Метаданным нужны начало и конец файла, а конвейер читает файл в память
-целиком: предела на размер больше нет, но видео с телефона на несколько
-гигабайт честно прочитается в память, хотя разобрать его можно за
-миллисекунды, а на телефоне может и не влезть. Лечится чтением `head`/`tail` для медиа вместо всего файла — это правка
-приёма файла (`StreamInfo`, `PickedFile`), а не конвертера.
-
-### Название
-
-Рабочее — «MarkItDown UI», и для публикации оно не годится: MarkItDown — имя
-проекта Microsoft, под которым живёт библиотека, вокруг которой всё и
-построено. Называться так — и путать людей, и напрашиваться на претензию.
-
-Нужно своё имя, не повторяющее чужое, но объясняющее, что приложение делает.
-Магазина не будет (только GitHub Releases, решение автора), так что
-переименование не упирается в карточку стора — но у Android-приложения
-меняется ещё и `applicationId`, а с ним «обновление» становится новой
-установкой. Решать до 1.0.
-
-### Распознавание речи: что дальше
-
-**Решено автором в 0.8:** транскрипция есть — whisper.cpp, модель small в
-основном бандле, Windows и Android; все «почему» — в
-[format-coverage.md](format-coverage.md#решения-транскрипции-08). Раньше
-здесь стоял продуктовый вопрос «стоит ли аудио того, чтобы приложение
-весило в десять раз больше» — ответ «да», APK и zip выросли на ≈270 МБ.
-
-**Что осталось открытым:**
-
-- ~~**Play.**~~ Снято: в Google Play не публикуем (решение автора,
-  14.10.2026), а у APK с GitHub Releases предела в 200 МБ нет — модель
-  остаётся ассетом Flutter, Play Asset Delivery не нужен.
-- **Двойное место на Android.** Модель лежит в APK и в копии на диске
-  (≈530 МБ). Убрать копию можно только чтением прямо из APK через
-  `AAssetManager` — то есть Java/JNI-кодом.
-- **Скорость.** Замеров на телефоне и на Windows нет — первая же ручная
-  проверка. Если на телефоне выйдет сильно медленнее реального времени:
-  base вместо small для Android (качество русского хуже), `audio_ctx` для
-  коротких голосовых, beam search — наоборот, только на десктопе.
-- **Выбор языка вручную** — для записей, где автоопределение по первым 30
-  секундам ошибается (в `TranscriptionSettings.language` он уже есть, нет
-  только настройки в интерфейсе — к Этапу 7, п. 3).
-- **Аудио внутри архивов** — сейчас без распознавания (см.
-  [format-coverage.md](format-coverage.md#транскрипция-что-осталось)).
-
-### Насколько близко держаться вывода markitdown
-
-У нас две реализации (Dart-ядро и сайдкар), и они будут расходиться. Вопрос:
-считать вывод markitdown эталоном и подгонять Dart под него, или считать
-эталоном свой и расхождения просто документировать. Первое дороже, второе
-честнее. Сейчас выбрано второе — расхождения фиксируются в
-[format-coverage.md](format-coverage.md), — но если их станет много, решение
-стоит пересмотреть.
-
-### Производительность сайдкара на больших файлах
-
-**Решено автором в [Этапе 5, п. 5](implementation-plan.md#этап-5--windows-05):**
-в приложении сайдкар идёт первым только на `pdf`/`xls`/`msg`, PDF — только до
-50 страниц; `docx`/`xlsx`/`pptx` сразу уходят в Dart. Как это устроено —
-[conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер).
-
-Повод был такой (замер Этапа 4, Intel, macOS 12, холодный процесс;
-подробности — [format-coverage.md](format-coverage.md#сверка-с-эталоном-этап-4)):
-PDF на 300 страниц — **111,6 с** у сайдкара против **1,2 с** у Dart; xlsx на
-50 тысяч строк — **54,7 с** и ~860 МБ ОЗУ против 4,4 с. Пока сайдкар стоял
-первым на всём, большой PDF ждал до двух минут (потолок — таймаут 120 с), и
-только потом откат на Dart отдавал результат за секунду.
-
-**Что осталось открытым:**
-
-- **большие `xls`/`msg`** — отката на Dart у них нет, порог неприменим;
-  долгий файл упирается в таймаут 120 с и получает отказ. Варианты — таймаут
-  от размера файла или индикация «может занять минуты» в интерфейсе;
-- **таблицы в PDF длиннее 50 страниц** теряются (Dart отдаёт их текстом, в
-  `warnings` об этом сказано). Закрыть это может только своё распознавание
-  таблиц в Dart-ядре — см. [format-coverage.md](format-coverage.md).
-- **порог проверен на замерах с Mac**, не с Windows: цифры для Windows — из
-  ручной проверки Этапа 5, п. 8; если они сильно другие, порог пересмотреть.
-
-### Размер Windows-сайдкара
-
-308 МБ против 242 на macOS. `python/DLLs/` — ≈70 МБ: больше, чем ждёшь от
-стандартных `.pyd`. Не разобрано, что там (отладочные символы? лишние
-библиотеки?) и что можно срезать, не сломав самопроверку `build.sh`.
-Раздачу это не блокирует; к Этапу 7 (упаковка, размер в README) стоит
-разобраться.
-
-### Незакрытое после Этапа 4 (macOS-сайдкар) — вторичная платформа, не в приоритете
-
-Не решения, а непроверенное: нужны Developer ID и/или рабочий Xcode. После
-смены приоритетов (Windows и Android) этим не занимаемся без отдельного
-запроса; список оставлен, чтобы не терять, а не как очередь.
-
-- **Developer ID, нотаризация, встраивание в Xcode-сборку.** Команды записаны
-  в [operations.md](operations.md#подпись-и-нотаризация-команды), проверена
-  только ad-hoc подпись. Build Phase, кладущая сайдкар в
-  `Contents/Resources/sidecar`, описана там же, но не написана. Заодно
-  проверить, нужен ли `disable-library-validation` с настоящим сертификатом —
-  по документации нет, ключ ослабляет Hardened Runtime.
-- **Lock-файлы для других хостов.** Есть только `macos-x86_64`; для
-  `macos-arm64` и `linux-*` колёса numpy/onnxruntime другие, lock
-  пересоздаётся на каждом хосте (`make sidecar-lock`). Windows — не здесь, а
-  в [Этапе 5](implementation-plan.md#этап-5--windows-05), п. 4.
-- **Поведение сайдкара под песочницей живого `.app`.** Проверяли ad-hoc
-  подписью вне песочницы; как подпроцесс ведёт себя под App Sandbox (доступ
-  к временной папке контейнера, запуск интерпретатора из `Resources`) —
-  проверить на первой же сборке `.app`.
-
-### История конвертаций
-
-Хранить ли что-нибудь, кроме путей. Сейчас — нет, и это скорее свойство
-продукта, чем ограничение (см.
-[offline-and-privacy.md](offline-and-privacy.md)). Но «я конвертировал этот
-PDF вчера, дай тот же результат» — настоящий запрос, и в какой-то момент он
-прозвучит.
+Everything deliberately deferred beyond the plan
+([implementation-plan.md](implementation-plan.md)), and questions that
+don't have an answer yet. Finished work doesn't go here — the version
+history is in [../CHANGELOG.md](../CHANGELOG.md).
 
 ---
 
-## Отложено
+## Open questions
 
-### Таблицы из PDF
+### Large audio and video
 
-`pdfplumber` умеет находить таблицы в PDF, PDFium сам — нет (решение engine на
-этапе 3, см. [format-coverage.md](format-coverage.md#решения-этапа-3)). Задача
-уровня отдельного этапа, и до тех пор отдавать текст честнее, чем сломанную
-сетку.
+Metadata only needs the beginning and end of a file, yet the pipeline
+reads the whole file into memory: there's no longer a size limit, but a
+multi-gigabyte video from a phone will be read into memory in full even
+though parsing it could take milliseconds, and it might not even fit on
+the phone. This is fixed by reading `head`/`tail` for media instead of the
+whole file — a change to file intake (`StreamInfo`, `PickedFile`), not to
+the converter.
 
-### macOS (сборка)
+### Name
 
-**Вторичная платформа, не в приоритете.** Целевые платформы плана — Windows
-(Этап 5) и Android; macOS остаётся целевой, но второй очереди.
+The working title is "MarkItDown UI," and it won't do for publication:
+MarkItDown is the name of Microsoft's project, the one the library
+everything is built around lives under. Using that name would both
+confuse people and invite a complaint.
 
-С Этапа 0: Xcode.app на машине автора не ставится, есть только Command Line
-Tools 14.2, а `flutter build macos`/`flutter run -d macos` требуют полный
-Xcode. Код и `flutter create --platforms=macos,android` под macOS никуда не
-делись, конвейер пишется платформонезависимо. Повторно устанавливать Xcode на
-этой машине уже пробовали — не встаёт. macOS (и iOS, см. ниже) соберут позже
-на Маке друга, где ставится Xcode — туда переносится сборка, а не продукт
-теряет платформу. Что при этом остаётся нерешённым — Developer ID,
-нотаризация, встраивание сайдкара в Xcode-сборку — перечислено выше, в
-«Незакрытое после Этапа 4»; без отдельного запроса этим не занимаемся.
+A name of our own is needed, one that doesn't repeat someone else's but
+still explains what the app does. There won't be a store listing (only
+GitHub Releases, the author's decision), so renaming doesn't run into a
+store-listing wall — but an Android app's `applicationId` would also
+change, and with it an "update" becomes a fresh install. To be decided
+before 1.0.
+
+### Speech recognition: what's next
+
+**Decided by the author in 0.8:** transcription exists — whisper.cpp, the
+small model in the main bundle, on Windows and Android; all the "whys" are
+in
+[format-coverage.md](format-coverage.md#transcription-decisions-08). There
+used to be a product question here, "is audio worth the app weighing ten
+times as much" — the answer is "yes," the APK and the zip grew by
+≈270 MB.
+
+**What's still open:**
+
+- ~~**Play.**~~ Resolved: we're not publishing to Google Play (the
+  author's decision, 2026-10-14), and an APK from GitHub Releases has no
+  200 MB limit — the model stays a Flutter asset, Play Asset Delivery
+  isn't needed.
+- **Double storage on Android.** The model lives both in the APK and in a
+  copy on disk (≈530 MB). The copy can only be removed by reading straight
+  from the APK via `AAssetManager` — meaning Java/JNI code.
+- **Speed.** There are no measurements on a phone or on Windows yet —
+  that's the first manual check to do. If it turns out to run much slower
+  than real time on a phone: use base instead of small for Android (worse
+  Russian quality), `audio_ctx` for short voice notes, beam search — the
+  opposite, desktop only.
+- **Manual language selection** — for recordings where auto-detection from
+  the first 30 seconds gets it wrong (it already exists in
+  `TranscriptionSettings.language`, only the UI setting is missing — for
+  Stage 7, item 3).
+- **Audio inside archives** — currently without recognition (see
+  [format-coverage.md](format-coverage.md#transcription-whats-left)).
+
+### How closely to stick to markitdown's output
+
+We have two implementations (the Dart core and the sidecar), and they will
+diverge. The question is: treat markitdown's output as the reference and
+make Dart match it, or treat our own as the reference and just document
+the differences. The first option is more expensive, the second more
+honest. The second is what's chosen right now — divergences are recorded
+in [format-coverage.md](format-coverage.md) — but if there get to be a lot
+of them, the decision is worth revisiting.
+
+### Sidecar performance on large files
+
+**Decided by the author in [Stage 5, item 5](implementation-plan.md#stage-5--windows-05):**
+in the app, the sidecar only goes first for `pdf`/`xls`/`msg`, and for PDF
+only up to 50 pages; `docx`/`xlsx`/`pptx` go straight to Dart. How this
+works is in
+[conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter).
+
+The reason was this (a Stage 4 measurement, Intel, macOS 12, cold
+process; details in
+[format-coverage.md](format-coverage.md#reconciliation-with-the-reference-stage-4)): a
+300-page PDF — **111.6 s** on the sidecar versus **1.2 s** on Dart; an
+xlsx with 50,000 rows — **54.7 s** and ~860 MB of RAM versus 4.4 s. While
+the sidecar went first for everything, a large PDF could wait up to two
+minutes (the ceiling being the 120 s timeout), and only then would it fall
+back to Dart and return a result in a second.
+
+**What's still open:**
+
+- **Large `xls`/`msg`** — there's no fallback to Dart for these, so the
+  threshold doesn't apply; a slow file runs into the 120 s timeout and
+  gets rejected. Options are a timeout based on file size, or a "this may
+  take minutes" indicator in the UI.
+- **Tables in PDFs longer than 50 pages** get lost (Dart returns them as
+  text, and says so in `warnings`). Only building our own table
+  recognition into the Dart core could close this gap — see
+  [format-coverage.md](format-coverage.md).
+- **The threshold is based on Mac measurements**, not Windows ones: the
+  Windows numbers come from the manual check in Stage 5, item 8; if they
+  turn out to be very different, the threshold should be revisited.
+
+### Size of the Windows sidecar
+
+308 MB versus 242 on macOS. `python/DLLs/` is ≈70 MB — more than you'd
+expect from standard `.pyd` files. It hasn't been looked into what's in
+there (debug symbols? extra libraries?) or what can be trimmed without
+breaking `build.sh`'s self-check. This doesn't block distribution; it's
+worth digging into by Stage 7 (packaging, size in the README).
+
+### Unfinished after Stage 4 (macOS sidecar) — secondary platform, not a priority
+
+Not decisions, just unverified items: given the shift in priorities
+(Windows and Android), these aren't being worked on without a separate
+request; the list is kept so it isn't lost, not as a queue.
+
+- **Developer ID, notarization, embedding into the Xcode build.** The
+  commands are recorded in
+  [operations.md](operations.md#signing-and-notarization-commands), only the
+  ad-hoc signature has been verified. The Build Phase that places the
+  sidecar into `Contents/Resources/sidecar` is described there too, but
+  hasn't been written. Also worth checking whether
+  `disable-library-validation` is still needed with a real certificate —
+  the docs don't say, and the key weakens Hardened Runtime.
+- **Lock files for other hosts.** Only `macos-x86_64` exists; for
+  `macos-arm64` and `linux-*` the numpy/onnxruntime wheels are different,
+  and the lock gets recreated on each host (`make sidecar-lock`). Windows
+  isn't here, it's in [Stage 5](implementation-plan.md#stage-5--windows-05),
+  item 4.
+- **How the sidecar behaves under the sandbox of a live `.app`.** Tested
+  with an ad-hoc signature outside the sandbox; how it behaves as a
+  subprocess under App Sandbox (access to the container's temp folder,
+  launching the interpreter from `Resources`) needs checking on the first
+  `.app` build.
+
+### Conversion history
+
+Whether to store anything beyond paths. Right now the answer is no, and
+that's more a property of the product than a limitation (see
+[offline-and-privacy.md](offline-and-privacy.md)). But "I converted this
+PDF yesterday, give me the same result" is a real request, and at some
+point it will come up.
+
+---
+
+## Deferred
+
+### Tables from PDF
+
+`pdfplumber` can find tables in a PDF, PDFium on its own can't (the
+engine decision from Stage 3, see
+[format-coverage.md](format-coverage.md#stage-3-decisions)). This is a
+task on the scale of its own stage, and until then, returning text is more
+honest than a broken grid.
+
+### macOS (build)
+
+**Secondary platform, not a priority.** The plan's target platforms are
+Windows (Stage 5) and Android; macOS stays a target, but second in line.
+
+Since Stage 0: Xcode.app won't install on the author's machine, only
+Command Line Tools 14.2 is available, and `flutter build
+macos`/`flutter run -d macos` require the full Xcode. The code and
+`flutter create --platforms=macos,android` for macOS haven't gone
+anywhere, and the pipeline is written platform-independently.
+Reinstalling Xcode on this machine has already been tried — it won't go
+on. macOS (and iOS, see below) will be built later on a friend's Mac,
+where Xcode does install — the build moves there, the product doesn't
+lose the platform. What remains unresolved as a result — Developer ID,
+notarization, embedding the sidecar into the Xcode build — is listed
+above, under "Unfinished after Stage 4"; it's not being worked on without
+a separate request.
 
 ### Linux
 
-Flutter его поддерживает, Python-сайдкар под него собирается (ветка в
-`sidecar/common.sh` есть, но не прогонялась). Не в приоритете: ни одного
-запроса, и собирать пока негде, кроме образа CI. Windows раньше стоял здесь
-же как «собирать не на чем» — теперь это [Этап 5](implementation-plan.md#этап-5--windows-05):
-сборка идёт на `windows-latest`, проверка — на Windows-компьютере автора.
+Flutter supports it, the Python sidecar builds for it (there's a branch
+in `sidecar/common.sh`, but it hasn't been run). Not a priority: not a
+single request for it, and there's nowhere to build it yet besides the CI
+image. Windows used to sit here too as "nowhere to build it" — now that's
+[Stage 5](implementation-plan.md#stage-5--windows-05): the build runs on
+`windows-latest`, and verification happens on the author's Windows
+machine.
 
 ### iOS
 
-Тоже упирается в машину, и жёстче остальных. На macOS 12.7.6 ставится
-максимум Xcode 14.2, а App Store Connect отклоняет бинарник, собранный таким
-SDK (`ITMS-90111`): в него зашивается версия хостовой ОС сборочной машины, а
-не только версия Xcode. То есть запустить на симуляторе и собрать локально
-можно, подать — нет.
+This also runs into the machine problem, more harshly than the rest. On
+macOS 12.7.6, the most that will install is Xcode 14.2, and App Store
+Connect rejects a binary built with that SDK (`ITMS-90111`): the host OS
+version of the build machine gets baked in, not just the Xcode version.
+So running it on the simulator and building it locally works, but
+submitting it doesn't.
 
-Обход известен и уже проверен на Amicus — **Xcode Cloud**: он собирает на
-стабильном образе Apple, независимо от локальной macOS. Это и есть путь, если
-iOS понадобится, и он не требует новой машины — только аккаунт разработчика и
-настроенный workflow. Второй вариант проще: собрать macOS- и iOS-таргеты на
-компьютере друга с рабочим Xcode — туда переносится сборка, Xcode Cloud тогда
-не нужен.
+A workaround is known and already proven on Amicus — **Xcode Cloud**: it
+builds on a stable Apple-provided image, independent of the local macOS.
+This is the path to take if iOS is ever needed, and it doesn't require a
+new machine — just a developer account and a configured workflow. A
+second option is simpler: build the macOS and iOS targets on a friend's
+computer with a working Xcode — the build moves there, and Xcode Cloud
+isn't needed then.
 
-Отдельно к iOS прицеплен Share Extension (основной способ передать туда файл) —
-отдельный таргет со своим лимитом памяти, в котором конвертировать нельзя, см.
-[client-architecture.md](client-architecture.md#приём-файла-четыре-входа-одна-точка).
+Separately attached to iOS is the Share Extension (the main way to hand a
+file to it) — a separate target with its own memory limit, inside which
+conversion can't happen, see
+[client-architecture.md](client-architecture.md#file-intake-four-inputs-one-entry-point).
 
 ### Mac App Store
 
-Бандл с интерпретатором не запрещён, но требует sandbox и аккуратной подписи
-вложенных бинарников — см.
-[python-sidecar.md](python-sidecar.md#про-app-store). Пока распространение
-через DMG и GitHub Releases, этого достаточно.
+A bundle with the interpreter isn't forbidden, but it requires a sandbox
+and careful signing of the nested binaries — see
+[python-sidecar.md](python-sidecar.md#about-the-app-store). For now,
+distribution via DMG and GitHub Releases is enough.
 
 ### CLI
 
-`core/` намеренно не зависит от Flutter, значит консольная утилита собирается
-из него без правок: `md-it file.docx | pbcopy`. Делать — когда появится
-запрос; закладка уже стоит.
+`core/` deliberately doesn't depend on Flutter, which means a console
+utility can be built from it without changes: `md-it file.docx | pbcopy`.
+To be done once there's a request for it; the groundwork is already in
+place.
 
-### Собственные правила конвертации
+### Custom conversion rules
 
-Профили вывода: «для LLM» (минимум разметки, без заглушек изображений), «для
-Obsidian» (wiki-ссылки, frontmatter), «как есть». Технически это параметр
-`markdown_writer`, то есть недорого — но до того, как базовый вывод обкатан,
-настраивать нечего.
+Output profiles: "for LLM" (minimal markup, no image placeholders), "for
+Obsidian" (wiki-links, frontmatter), "as-is." Technically this is just the
+`markdown_writer` parameter, so it's cheap — but there's nothing to
+configure until the baseline output has been proven out.
 
-### Плагины
+### Plugins
 
-У markitdown есть плагинная система (сторонние конвертеры с тегом
-`#markitdown-plugin`). Любопытно, но в приложении без сети устанавливать их
-неоткуда, а плагин, едущий в бандле, — это просто ещё один встроенный
-конвертер.
+markitdown has a plugin system (third-party converters tagged
+`#markitdown-plugin`). Interesting, but in an app with no network there's
+nowhere to install them from, and a plugin shipped in the bundle is just
+another built-in converter.
 
-### Watch-папка
+### Watch folder
 
-Положил файл в папку — рядом появился `.md`. Естественное продолжение для
-десктопа, и ровно то, для чего пригодится CLI.
+Drop a file in a folder — an `.md` shows up next to it. A natural
+extension for desktop, and exactly what the CLI would come in handy for.
 
-### Идеи без приоритета
+### Unprioritized ideas
 
-- Предпросмотр с подсветкой синтаксиса Markdown (сейчас — моноширинный без подсветки).
-- Diff двух документов после конвертации в Markdown — неожиданно удобный
-  способ сравнить две версии договора.
-- Выбор листа/диапазона в `xlsx` перед конвертацией, вместо «все листы
-  целиком».
-- Обрезка результата по токенам с показом счётчика — если основной сценарий
-  действительно «вставить в чат с моделью».
-- Пункт в контекстном меню Проводника (Windows) и Quick Action в Finder (macOS).
+- Preview with Markdown syntax highlighting (currently monospace, no
+  highlighting).
+- Diffing two documents after converting them to Markdown — a surprisingly
+  handy way to compare two versions of a contract.
+- Choosing a sheet/range in `xlsx` before conversion, instead of "all
+  sheets, in full."
+- Trimming the result by token count with a counter shown — if the main
+  use case really is "paste into a chat with a model."
+- A context-menu item in Explorer (Windows) and a Quick Action in Finder
+  (macOS).

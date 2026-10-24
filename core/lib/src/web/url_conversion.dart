@@ -5,8 +5,8 @@ import '../conversion/converter_registry.dart';
 import '../stream_info.dart';
 import 'web_fetcher.dart';
 
-/// Итог режима «ссылка»: что скачалось ([info] — `null`, если скачать не
-/// удалось) и результат конвейера.
+/// The outcome of "link" mode: what got downloaded ([info] is `null` if
+/// the download failed) and the pipeline's result.
 class UrlConversion {
   final StreamInfo? info;
   final ConversionOutcome outcome;
@@ -14,17 +14,19 @@ class UrlConversion {
   const UrlConversion(this.info, this.outcome);
 }
 
-/// Скачанное по ссылке: байты и то, что о них сказал сервер.
+/// What was downloaded from a link: the bytes and what the server said
+/// about them.
 class DownloadedUrl {
   final Uint8List bytes;
 
-  /// Из `Content-Disposition` или из пути, если он похож на файл.
+  /// From `Content-Disposition`, or from the path if it looks like a
+  /// file.
   final String? filename;
 
-  /// `Content-Type` целиком, с `charset`.
+  /// The whole `Content-Type`, with `charset`.
   final String? mimeType;
 
-  /// Адрес после перенаправлений.
+  /// The address after redirects.
   final String url;
 
   const DownloadedUrl({
@@ -42,8 +44,8 @@ class DownloadedUrl {
   );
 }
 
-/// Ссылка → байты. Бросает [WebFetchException] с причиной для человека:
-/// не ссылка, нет сети, сервер ответил ошибкой.
+/// A link → bytes. Throws [WebFetchException] with a human-readable
+/// reason: not a link, no network, the server returned an error.
 Future<DownloadedUrl> downloadUrl(
   String input, {
   WebFetcher fetcher = const WebFetcher(),
@@ -64,15 +66,16 @@ Future<DownloadedUrl> downloadUrl(
   );
 }
 
-/// Ссылка → скачать → тот же конвейер, что и для файла. Как `convert_uri`
-/// у markitdown: тип берётся из ответа (`Content-Type`, имя из
-/// `Content-Disposition` или из пути), содержимое распознаётся по байтам,
-/// а адрес попадает в [StreamInfo.url] — по нему конвертеры YouTube и
-/// Wikipedia узнают свои страницы, а HTML и ленты разрешают относительные
-/// ссылки. Ссылка на PDF или docx даёт тот же результат, что и файл.
+/// A link → download → the same pipeline as for a file. Like
+/// markitdown's `convert_uri`: the type comes from the response
+/// (`Content-Type`, the name from `Content-Disposition` or from the
+/// path), the content is detected from the bytes, and the address lands
+/// in [StreamInfo.url] — the YouTube and Wikipedia converters recognize
+/// their own pages by it, and HTML and feeds resolve relative links by
+/// it. A link to a PDF or docx gives the same result as the file would.
 ///
-/// [registry] должен знать [fetcher] (`defaultRegistry(web: …)`) — иначе
-/// YouTube отдаст описание без субтитров.
+/// [registry] must know about [fetcher] (`defaultRegistry(web: …)`) —
+/// otherwise YouTube returns the description without captions.
 Future<UrlConversion> convertUrl(
   String input,
   ConverterRegistry registry, {
@@ -88,15 +91,16 @@ Future<UrlConversion> convertUrl(
   return UrlConversion(info, await registry.convert(downloaded.bytes, info));
 }
 
-/// Ссылка из того, что вставил человек или чем поделилось приложение:
-/// «Смотри https://youtu.be/… » — первая ссылка в тексте; `example.com/a`
-/// без схемы — `https://`. `null` — ссылки нет.
+/// A link out of whatever the person pasted or an app shared: "Check out
+/// https://youtu.be/…" — the first link in the text; `example.com/a`
+/// with no scheme gets `https://`. `null` means there's no link.
 Uri? parseUserUrl(String input) {
   final text = input.trim();
   final match = RegExp(r'https?://\S+', caseSensitive: false).firstMatch(text);
   var candidate = match?.group(0);
   if (candidate == null) {
-    // Без схемы — только если весь ввод похож на один адрес: «домен.зона…».
+    // No scheme — only if the whole input looks like a single address:
+    // "domain.tld...".
     if (!RegExp(
       r'^[\w.-]+\.[a-z]{2,}(?:[/?#]\S*)?$',
       caseSensitive: false,
@@ -105,7 +109,7 @@ Uri? parseUserUrl(String input) {
     }
     candidate = 'https://$text';
   }
-  // Знаки препинания, которыми ссылка кончается в тексте, — не её часть.
+  // Punctuation the link ends with in the text isn't part of it.
   candidate = candidate.replaceFirst(RegExp(r'[.,;:!?)»"\]]+$'), '');
   final uri = Uri.tryParse(candidate);
   if (uri == null || uri.host.isEmpty) return null;
@@ -113,9 +117,9 @@ Uri? parseUserUrl(String input) {
   return uri;
 }
 
-/// YouTube в Европе вместо страницы видео отдаёт страницу согласия на
-/// cookie; этот cookie означает «отказался от необязательных» — то, что
-/// и нужно приложению без аккаунта.
+/// In Europe, YouTube returns a cookie-consent page instead of the video
+/// page; this cookie means "declined the optional ones" — exactly what an
+/// app with no account needs.
 Map<String, String> youtubeConsentHeaders(Uri url) {
   final host = url.host.toLowerCase();
   final youtube =
@@ -136,7 +140,7 @@ String? _filenameOf(WebResponse response) {
       try {
         return Uri.decodeComponent(encoded.group(2)!.trim());
       } on ArgumentError {
-        // битое %-кодирование — пробуем простое имя
+        // broken %-encoding — fall back to the plain name
       }
     }
     final plain = RegExp(
@@ -145,13 +149,13 @@ String? _filenameOf(WebResponse response) {
     ).firstMatch(disposition);
     if (plain != null) return plain.group(1)!.trim();
   }
-  // Имя из пути — только если похоже на файл (`/report.pdf`), а не на
-  // страницу (`/wiki/Markdown`): иначе «Markdown» без расширения сбил бы
-  // подсказку типа.
+  // A name from the path only if it looks like a file (`/report.pdf`),
+  // not a page (`/wiki/Markdown`): otherwise "Markdown" with no
+  // extension would throw off the type hint.
   final segments = response.url.pathSegments.where((s) => s.isNotEmpty);
   if (segments.isEmpty) return null;
   final last = segments.last;
-  // Расширение начинается с буквы: `1706.03762` (arXiv) — не файл.
+  // An extension starts with a letter: `1706.03762` (arXiv) isn't a file.
   return RegExp(r'\.[A-Za-z][A-Za-z0-9]{0,4}$').hasMatch(last) ? last : null;
 }
 

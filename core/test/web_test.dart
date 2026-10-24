@@ -7,41 +7,41 @@ import 'package:markitdown_core/src/conversion/converters/youtube_converter.dart
     show youtubeVideoId;
 import 'package:test/test.dart';
 
-/// Режим «ссылка» без настоящего интернета: локальный HTTP-сервер вместо
-/// сайтов и подменённый [WebFetcher] вместо YouTube. Живые проверки
-/// (YouTube, Wikipedia, PDF по ссылке) — ручные, см.
+/// "Link" mode without real internet access: a local HTTP server instead
+/// of websites and a swapped-in [WebFetcher] instead of YouTube. Live
+/// checks (YouTube, Wikipedia, PDF by link) are manual, see
 /// `docs/format-coverage.md#решения-09-ссылки`.
 void main() {
   group('parseUserUrl', () {
-    test('ссылка как есть', () {
+    test('link as-is', () {
       expect(
         parseUserUrl(' https://example.com/a?b=1 ').toString(),
         'https://example.com/a?b=1',
       );
     });
 
-    test('ссылка внутри текста «Поделиться» — первая, без точки в конце', () {
+    test('link inside "Share" text — the first one, without a trailing period', () {
       expect(
         parseUserUrl('Смотри: https://youtu.be/abc123. Классно!').toString(),
         'https://youtu.be/abc123',
       );
     });
 
-    test('без схемы — https', () {
+    test('no scheme — https', () {
       expect(
         parseUserUrl('ru.wikipedia.org/wiki/Markdown').toString(),
         'https://ru.wikipedia.org/wiki/Markdown',
       );
     });
 
-    test('не ссылка — null', () {
+    test('not a link — null', () {
       expect(parseUserUrl('просто текст'), isNull);
       expect(parseUserUrl(''), isNull);
       expect(parseUserUrl('ftp://example.com/file'), isNull);
     });
   });
 
-  group('convertUrl через локальный сервер', () {
+  group('convertUrl via a local server', () {
     late HttpServer server;
     late String base;
     final registry = ConverterRegistry.defaultRegistry();
@@ -76,7 +76,7 @@ void main() {
               );
             response.write('a,b\n1,2\n');
           case '/feed':
-            // Без charset `write` кодирует в Latin-1 — байты пишутся сами.
+            // Without a charset `write` encodes as Latin-1 — the bytes are written as-is.
             response.headers.set('Content-Type', 'application/rss+xml');
             response.add(
               utf8.encode(
@@ -102,7 +102,7 @@ void main() {
     ConversionResult success(UrlConversion c) =>
         (c.outcome as ConversionSuccess).result;
 
-    test('HTML: без script/style, ссылки — от адреса страницы', () async {
+    test('HTML: no script/style, links are relative to the page address', () async {
       final c = await convert('/page');
       final result = success(c);
       expect(result.converterId, 'html');
@@ -114,36 +114,36 @@ void main() {
       expect(c.info!.url, '$base/page');
     });
 
-    test('перенаправление: ссылки — от конечного адреса', () async {
+    test('redirect: links are relative to the final address', () async {
       final c = await convert('/old');
       expect(c.info!.url, '$base/page');
       expect(success(c).markdown, contains('($base/wiki/Ссылка)'));
     });
 
-    test('кодировка из Content-Type', () async {
+    test('encoding from Content-Type', () async {
       expect(success(await convert('/cp1251')).markdown, 'Привет');
     });
 
-    test('имя файла из Content-Disposition (RFC 5987) — тип по нему', () async {
+    test('filename from Content-Disposition (RFC 5987) — type follows it', () async {
       final c = await convert('/download');
       expect(c.info!.filename, 'данные.csv');
       expect(success(c).converterId, 'csv');
     });
 
-    test('лента по типу ответа, ссылки — от адреса ленты', () async {
+    test('feed by response type, links are relative to the feed address', () async {
       final result = success(await convert('/feed'));
       expect(result.converterId, 'rss');
       expect(result.markdown, contains('[пост]($base/post)'));
     });
 
-    test('404 — понятный сетевой отказ', () async {
+    test('404 — a clear network failure', () async {
       final c = await convert('/missing');
       expect(c.info, isNull);
       final failure = (c.outcome as ConversionError).failure;
       expect((failure as NetworkFailure).description, contains('HTTP 404'));
     });
 
-    test('сервер недоступен — отказ, а не исключение', () async {
+    test('server unreachable — a failure, not an exception', () async {
       final closed = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       final port = closed.port;
       await closed.close();
@@ -154,7 +154,7 @@ void main() {
       );
     });
 
-    test('не ссылка — отказ без запроса', () async {
+    test('not a link — failure with no request', () async {
       final c = await convertUrl('просто текст', registry);
       expect((c.outcome as ConversionError).failure, isA<NetworkFailure>());
     });
@@ -175,7 +175,7 @@ void main() {
       return (outcome as ConversionSuccess).result;
     }
 
-    test('метаданные и описание — как у markitdown', () async {
+    test('metadata and description — same as markitdown', () async {
       final result = await convert(null);
       expect(result.converterId, 'youtube');
       expect(
@@ -196,7 +196,7 @@ void main() {
       expect(result.title, 'Лекция 1');
     });
 
-    test('субтитры: ручные на языке видео лучше автоматических', () async {
+    test('subtitles: manual in the video language beats automatic', () async {
       final web = _FakeYouTube();
       final result = await convert(web);
       expect(
@@ -211,13 +211,13 @@ void main() {
       );
     });
 
-    test('у видео нет субтитров — предупреждение, не отказ', () async {
+    test('the video has no subtitles — a warning, not a failure', () async {
       final result = await convert(_FakeYouTube(tracks: const []));
       expect(result.markdown, isNot(contains('Transcript')));
       expect(result.warnings.single.message, 'у видео нет субтитров');
     });
 
-    test('сеть упала на субтитрах — описание остаётся', () async {
+    test('network fails on subtitles — the description still stays', () async {
       final result = await convert(_FakeYouTube(fail: true));
       expect(result.markdown, contains('### Description'));
       expect(
@@ -226,7 +226,7 @@ void main() {
       );
     });
 
-    test('та же страница с диска (без url) — обычный HTML', () async {
+    test('the same page from disk (no url) — plain HTML', () async {
       final info = StreamInfo.fromHead(page, filename: 'watch.html');
       final outcome = await ConverterRegistry.defaultRegistry().convert(
         page,
@@ -235,7 +235,7 @@ void main() {
       expect((outcome as ConversionSuccess).result.converterId, 'html');
     });
 
-    test('номер видео из разных видов ссылок', () {
+    test('video id from various kinds of links', () {
       expect(youtubeVideoId('https://youtu.be/abc?t=5'), 'abc');
       expect(youtubeVideoId('https://m.youtube.com/watch?v=abc&list=x'), 'abc');
       expect(youtubeVideoId('https://www.youtube.com/shorts/abc'), 'abc');
@@ -245,7 +245,7 @@ void main() {
     });
   });
 
-  test('Wikipedia: только статья, без кнопок «править»', () async {
+  test('Wikipedia: article only, no "edit" buttons', () async {
     final page = Uint8List.fromList(
       utf8.encode(
         '<html><head><title>Markdown — Википедия</title></head><body>'
@@ -288,7 +288,7 @@ Uint8List _cp1251(String text) => Uint8List.fromList([
       0x3F,
 ]);
 
-/// Страница видео в том виде, в каком её отдаёт YouTube, — только нужное.
+/// The video page the way YouTube serves it — only what's needed.
 const _youtubePage = '''
 <html><head><title>Лекция 1 - YouTube</title>
 <meta name="title" content="Лекция 1">

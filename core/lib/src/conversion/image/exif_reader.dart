@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import '../../text_decoding.dart';
 
-/// Одна запись IFD: тип TIFF и сырые байты значения в порядке байтов
-/// файла. Толкование — по запросу, через геттеры: тегов в файле десятки, а
-/// нужны из них единицы.
+/// One IFD entry: the TIFF type and the raw value bytes in the file's
+/// byte order. Interpretation is on demand, via getters: a file has dozens
+/// of tags, and only a handful of them are ever needed.
 class ExifEntry {
   final int type;
   final int count;
@@ -16,10 +16,11 @@ class ExifEntry {
 
   ByteData get _data => ByteData.sublistView(raw);
 
-  /// Строка из `ASCII` (тип 2) или `UNDEFINED`/`BYTE`. Стандарт обещает
-  /// ASCII, но телефоны и Windows пишут туда UTF-8, а старые программы —
-  /// Windows-1251; поэтому через [decodeTextBytes], как обычный текст.
-  /// Пустая строка и строка из одних пробелов — `null`.
+  /// A string from `ASCII` (type 2) or `UNDEFINED`/`BYTE`. The standard
+  /// promises ASCII, but phones and Windows write UTF-8 there, and older
+  /// programs write Windows-1251; hence decoding via [decodeTextBytes],
+  /// like ordinary text. An empty string or one made of only spaces
+  /// becomes `null`.
   String? get text {
     var end = raw.indexOf(0);
     if (end < 0) end = raw.length;
@@ -29,7 +30,7 @@ class ExifEntry {
     return value.isEmpty ? null : value;
   }
 
-  /// Целые `BYTE`/`SHORT`/`LONG` и их знаковые варианты.
+  /// Integer `BYTE`/`SHORT`/`LONG` values and their signed variants.
   List<int> get ints {
     final int Function(int at)? read = switch (type) {
       1 || 7 => (at) => raw[at],
@@ -48,8 +49,8 @@ class ExifEntry {
     ];
   }
 
-  /// `RATIONAL`/`SRATIONAL` как пары числитель/знаменатель — дробь
-  /// выдержки `1/250` нужна как дробь, а не как `0.004`.
+  /// `RATIONAL`/`SRATIONAL` as numerator/denominator pairs — an exposure
+  /// time of `1/250` is needed as a fraction, not as `0.004`.
   List<(int, int)> get rationals {
     if (type != 5 && type != 10) return const [];
     final result = <(int, int)>[];
@@ -64,8 +65,8 @@ class ExifEntry {
     return result;
   }
 
-  /// Строка UTF-16LE с нулём в конце — так Windows («Свойства» → «Подробно»)
-  /// хранит `XPTitle`, `XPComment`, `XPAuthor`, `XPKeywords`.
+  /// A null-terminated UTF-16LE string — this is how Windows ("Properties" →
+  /// "Details") stores `XPTitle`, `XPComment`, `XPAuthor`, `XPKeywords`.
   String? get utf16LeText {
     final units = <int>[];
     for (var i = 0; i + 1 < raw.length; i += 2) {
@@ -77,10 +78,10 @@ class ExifEntry {
     return value.isEmpty ? null : value;
   }
 
-  /// `UserComment`: первые 8 байт — кодировка (`ASCII`, `UNICODE`, `JIS`
-  /// или нули — «не указана»), дальше текст. `UNICODE` — UTF-16 в порядке
-  /// байтов файла; `JIS` встречается только у японских камер, читаем как
-  /// есть.
+  /// `UserComment`: the first 8 bytes are the encoding (`ASCII`, `UNICODE`,
+  /// `JIS`, or all zeros meaning "unspecified"), followed by the text.
+  /// `UNICODE` is UTF-16 in the file's byte order; `JIS` is only seen from
+  /// Japanese cameras and is read as-is.
   String? get userComment {
     if (raw.length <= 8) return null;
     final code = ascii.decode(raw.sublist(0, 8), allowInvalid: true);
@@ -100,15 +101,15 @@ class ExifEntry {
   }
 }
 
-/// Три IFD, из которых берутся метаданные снимка: основной (`IFD0`), `Exif`
-/// (параметры съёмки) и `GPS`. Ключ — номер тега.
+/// The three IFDs the photo's metadata is drawn from: the main one
+/// (`IFD0`), `Exif` (capture parameters), and `GPS`. Keyed by tag number.
 class ExifData {
   final Map<int, ExifEntry> image;
   final Map<int, ExifEntry> exif;
   final Map<int, ExifEntry> gps;
 
-  /// Что-то в структуре указывало за пределы блока или было
-  /// неправдоподобным — прочитано то, что удалось.
+  /// Something in the structure pointed outside the block or was
+  /// implausible — whatever could be read was read.
   final bool damaged;
 
   const ExifData({
@@ -137,19 +138,21 @@ const _typeSizes = {
 const _exifIfdPointer = 0x8769;
 const _gpsIfdPointer = 0x8825;
 
-/// Записей в одном IFD больше этого не бывает у живых файлов; больше —
-/// значит счётчик битый, и читать дальше — гонять цикл по мусору.
+/// Real-world files never have more entries than this in a single IFD;
+/// more means the counter is corrupt, and reading on would just be
+/// looping over garbage.
 const _maxEntriesPerIfd = 1000;
 
-/// Значения длиннее не нужны ни одному из читаемых тегов (самое длинное —
-/// комментарий); `MakerNote` в сотни КБ пропускается, не копируясь.
+/// No tag being read needs values longer than this (the longest is a
+/// comment); a `MakerNote` of hundreds of KB is skipped instead of copied.
 const _maxValueBytes = 64 * 1024;
 
-/// Разбирает TIFF-структуру блока EXIF ([tiff] начинается с `II*\0` или
-/// `MM\0*`). `null` — если это вообще не TIFF. Свой разбор, а не пакет
-/// `exif`: тот идёт по цепочке IFD без защиты от петли, а файл, где IFD
-/// указывает сам на себя, — ровно та злая фикстура, которую надо выдержать.
-/// См. `docs/format-coverage.md#решения-этапа-6`.
+/// Parses the TIFF structure of an EXIF block ([tiff] starts with `II*\0`
+/// or `MM\0*`). Returns `null` if it isn't TIFF at all. A hand-rolled
+/// parser rather than the `exif` package: that one walks the IFD chain
+/// with no loop protection, and a file where an IFD points at itself is
+/// exactly the malicious fixture this needs to withstand.
+/// See `docs/format-coverage.md#решения-этапа-6`.
 ExifData? readExif(Uint8List tiff) {
   if (tiff.length < 8) return null;
   final Endian endian;

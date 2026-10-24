@@ -12,15 +12,17 @@ import '../conversion_result.dart';
 import '../document_converter.dart';
 import '../ole2/compound_file.dart';
 
-/// Письмо Outlook (`.msg`): свойства MAPI из OLE2-контейнера. Вывод
-/// повторяет `OutlookMsgConverter` markitdown символ в символ — те же
-/// заголовки (From — адрес отправителя, To — строка получателей, Subject),
-/// те же правила кодировок, — чтобы письмо читалось одинаково на десктопе,
-/// где первым идёт сайдкар, и на Android, где есть только этот конвертер.
+/// An Outlook message (`.msg`): MAPI properties from the OLE2 container.
+/// The output matches markitdown's `OutlookMsgConverter` character for
+/// character — the same headers (From — sender address, To — recipient
+/// string, Subject), the same encoding rules — so the message reads the
+/// same on desktop, where the sidecar runs first, and on Android, where
+/// this converter is the only one.
 ///
-/// Сверх markitdown — одно: письмо без текстового тела (только HTML)
-/// отдаёт HTML-тело, переведённое в Markdown, а не пустой раздел.
-/// Тело в RTF (`PR_RTF_COMPRESSED`) не читается — как и у markitdown.
+/// One thing goes beyond markitdown: a message with no text body (HTML
+/// only) returns the HTML body converted to Markdown instead of an empty
+/// section. The RTF body (`PR_RTF_COMPRESSED`) is not read — same as
+/// markitdown.
 class MsgConverter implements DocumentConverter {
   const MsgConverter();
 
@@ -122,9 +124,9 @@ class _Message {
       '__substg1.0_${tag.toRadixString(16).toUpperCase().padLeft(4, '0')}'
       '$type';
 
-  /// Свойства фиксированной длины (PT_LONG) лежат не отдельными потоками, а
-  /// записями по 16 байт в `__properties_version1.0` — после заголовка в
-  /// 32 байта у письма верхнего уровня.
+  /// Fixed-length properties (PT_LONG) aren't stored as separate streams
+  /// but as 16-byte records in `__properties_version1.0` — after a 32-byte
+  /// header for a top-level message.
   Map<int, int> longProperties() {
     final data = _stream('__properties_version1.0');
     final result = <int, int>{};
@@ -139,9 +141,9 @@ class _Message {
     return result;
   }
 
-  /// Строковое свойство: сначала PT_UNICODE (UTF-16LE), иначе PT_STRING8 в
-  /// кодовой странице письма — письмо хранит одно из двух, в зависимости от
-  /// того, сохранено оно в Unicode или в старом формате.
+  /// String property: PT_UNICODE (UTF-16LE) first, otherwise PT_STRING8 in
+  /// the message's codepage — a message stores one or the other, depending
+  /// on whether it was saved in Unicode or the old format.
   String? string(int tag, int? codepage) {
     final unicode = _stream(_streamName(tag, _ptUnicode));
     if (unicode != null) {
@@ -158,7 +160,8 @@ class _Message {
     return decodeCodepage(Uint8List.sublistView(ansi, 0, end), codepage).trim();
   }
 
-  /// HTML-тело: обычно PT_BINARY в кодировке письма, иногда строка.
+  /// HTML body: usually PT_BINARY in the message's encoding, sometimes a
+  /// string.
   String? htmlBody(int? codepage) {
     final binary = _stream(_streamName(_prHtml, _ptBinary));
     if (binary != null && binary.isNotEmpty) {
@@ -170,8 +173,9 @@ class _Message {
   }
 }
 
-/// UTF-16LE, как `bytes.decode('utf-16-le')` у markitdown: нечётный хвост и
-/// одинокие суррогаты — повод не падать, а заменить символ.
+/// UTF-16LE, like markitdown's `bytes.decode('utf-16-le')`: an odd trailing
+/// byte or a lone surrogate is a reason to substitute a character, not to
+/// throw.
 String _decodeUtf16(Uint8List bytes) {
   final units = <int>[];
   for (var i = 0; i + 1 < bytes.length; i += 2) {

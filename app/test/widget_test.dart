@@ -9,7 +9,7 @@ import 'package:markitdown_ui/src/file_intake/file_intake_controller.dart';
 const _ru = Locale('ru');
 
 void main() {
-  testWidgets('пустой экран предлагает выбрать файл', (tester) async {
+  testWidgets('empty screen offers to pick a file', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: MarkItDownApp(locale: _ru)),
     );
@@ -18,7 +18,7 @@ void main() {
     expect(find.text('Выбрать файл'), findsOneWidget);
   });
 
-  testWidgets('во время конвертации показан спиннер и файл', (tester) async {
+  testWidgets('spinner and file are shown during conversion', (tester) async {
     final fakeInfo = StreamInfo(
       filename: 'отчёт.docx',
       extension: 'docx',
@@ -44,7 +44,7 @@ void main() {
     expect(find.text('Конвертируется…'), findsOneWidget);
   });
 
-  testWidgets('распознавание речи — процент и «Остановить»', (tester) async {
+  testWidgets('speech recognition — percentage and "Stop"', (tester) async {
     final controller = _FakeFileIntakeController(
       FileIntakeState.converting(
         _voiceInfo,
@@ -72,7 +72,7 @@ void main() {
     expect(controller.stopped, isTrue);
   });
 
-  testWidgets('после «Остановить» — ждём фрагмент, кнопка неактивна', (
+  testWidgets('after "Stop" — waiting for the chunk, button is disabled', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -103,7 +103,7 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('успешная конвертация показывает markdown-превью', (
+  testWidgets('successful conversion shows markdown preview', (
     tester,
   ) async {
     final fakeInfo = StreamInfo(
@@ -138,12 +138,12 @@ void main() {
     expect(find.text('Сохранить как .md'), findsOneWidget);
   });
 
-  testWidgets('неподдерживаемый формат показывает экран ошибки', (
+  testWidgets('unsupported format shows the error screen', (
     tester,
   ) async {
-    // `.sketch` — тот же пример, что в
-    // docs/conversion-pipeline.md#ошибки: сигнатуры не совпадают, и это
-    // честно «не поддерживается», а не PDF, который с Этапа 3 умеем.
+    // `.sketch` — same example as in
+    // docs/conversion-pipeline.md#errors: signatures don't match, and it's
+    // genuinely "unsupported", not PDF, which we've handled since Stage 3.
     final fakeInfo = StreamInfo(
       filename: 'макет.sketch',
       extension: 'sketch',
@@ -178,7 +178,7 @@ void main() {
     expect(find.text('Выбрать другой файл'), findsOneWidget);
   });
 
-  testWidgets('«Вставить ссылку»: диалог отдаёт ссылку контроллеру', (
+  testWidgets('"Paste link": dialog passes the link to the controller', (
     tester,
   ) async {
     final controller = _FakeFileIntakeController(const FileIntakeState.idle());
@@ -191,7 +191,7 @@ void main() {
       ),
     );
 
-    // Буфер обмена в тестах пуст — поле тоже.
+    // The clipboard is empty in tests — so is the field.
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async => null,
@@ -206,7 +206,7 @@ void main() {
     expect(controller.acceptedUrl, 'youtu.be/abc');
   });
 
-  testWidgets('ссылка скачивается — адрес и «Скачивается…»', (tester) async {
+  testWidgets('link is downloading — address and "Downloading…"', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -224,7 +224,7 @@ void main() {
     expect(find.text('Скачивается…'), findsOneWidget);
   });
 
-  testWidgets('ссылка не скачалась — понятная сетевая ошибка', (tester) async {
+  testWidgets('link failed to download — clear network error', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [

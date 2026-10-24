@@ -1,25 +1,54 @@
-Приложение превращает файл в Markdown прямо на устройстве: открыли файл — получили текст, одной кнопкой скопировали в чат или редактор. А по ссылке — страницу, статью Wikipedia или видео YouTube с субтитрами. Что нового в этой версии — в [CHANGELOG](https://github.com/tiltozavr2545/mark_it_down_UI/blob/main/CHANGELOG.md), что умеет каждая платформа — в [README](https://github.com/tiltozavr2545/mark_it_down_UI#что-умеет-конвертировать).
+The app turns a file into Markdown right on the device: open a file, get
+the text, copy it to a chat or editor with one button. Or, given a link —
+a page, a Wikipedia article, or a YouTube video with subtitles. What's new
+in this version — see the
+[CHANGELOG](https://github.com/tiltozavr2545/mark_it_down_UI/blob/main/CHANGELOG.md);
+what each platform can do — see the
+[README](https://github.com/tiltozavr2545/mark_it_down_UI#what-it-can-convert).
 
 ### Windows — `markitdown_ui-…-windows-x64.zip`
 
-1. Скачать zip и распаковать в любую папку. Ничего ставить не нужно, Python тоже — он уже внутри (папка `sidecar`).
-2. Запустить `markitdown_ui.exe`.
-3. При первом запуске SmartScreen покажет «Windows защитила ваш компьютер»: **«Подробнее» → «Выполнить в любом случае»**. Сборка не подписана (сертификата пока нет) — это причина предупреждения.
+1. Download the zip and unpack it into any folder. Nothing needs to be
+   installed, not even Python — it's already inside (the `sidecar`
+   folder).
+2. Run `markitdown_ui.exe`.
+3. On first launch SmartScreen will show "Windows protected your PC":
+   **"More info" → "Run anyway"**. The build isn't signed (there's no
+   certificate yet) — that's the reason for the warning.
 
-Первая конвертация `xls`/`msg`/`pdf` может занять несколько секунд: Windows Defender проверяет встроенный Python.
+The first `xls`/`msg`/`pdf` conversion may take a few seconds: Windows
+Defender scans the bundled Python.
 
-Речь в аудио (голосовые, записи диктофона, MP3) распознаётся прямо на компьютере — модель Whisper уже внутри (≈265 МБ из размера архива). Длинная запись — это минуты; процент виден, остановить можно в любой момент.
+Speech in audio (voice messages, voice-recorder recordings, MP3) is
+transcribed right on the computer — the Whisper model is already inside
+(≈265 MB of the archive's size). A long recording takes minutes; a
+percentage is shown, and it can be stopped at any time.
 
 ### Android — `markitdown_ui-…-android-arm64.apk`
 
-1. Скачать APK на телефон и открыть его; разрешить установку из этого источника, если Android спросит.
-2. Нужен Android 6.0+ и процессор arm64 (практически любой телефон последних лет).
-3. Если приложение уже стояло, собранное не из этого релиза, — сначала удалить его: сборки подписаны разными ключами, и поверх друг друга не встают.
+1. Download the APK to the phone and open it; allow installation from
+   this source if Android asks.
+2. Requires Android 6.0+ and an arm64 processor (practically any phone
+   from recent years).
+3. If the app was already installed from a build that isn't this release,
+   uninstall it first — builds are signed with different keys and can't
+   be installed over one another.
 
-Файл в приложение можно открыть кнопкой «Выбрать файл» или через «Поделиться» из любого другого приложения; ссылкой можно поделиться из YouTube или браузера.
+A file can be opened in the app with the "Choose file" button or via
+"Share" from any other app; a link can be shared from YouTube or a
+browser.
 
-APK весит ≈300 МБ — почти всё это модель распознавания речи. При первом аудиофайле она один раз копируется из APK на диск (нужно ещё ≈265 МБ свободного места), это несколько секунд.
+The APK weighs ≈300 MB — almost all of that is the speech-recognition
+model. On the first audio file, it's copied from the APK to disk once
+(needs another ≈265 MB of free space), which takes a few seconds.
 
-### Файлы не уходят с устройства
+### Files never leave the device
 
-Файлы конвертируются на устройстве; OCR и распознавание речи — тоже, модели внутри приложения. В интернет приложение ходит только в режиме «Вставить ссылку» (или когда ссылкой поделились из YouTube или браузера) — за той страницей или тем файлом, на которые она указывает. Поэтому у Android-сборки есть разрешение `INTERNET`; что весь сетевой код живёт в одном модуле и не трогает ваши файлы, проверяется в CI на каждом коммите. Подробно — [offline-and-privacy.md](https://github.com/tiltozavr2545/mark_it_down_UI/blob/main/docs/offline-and-privacy.md).
+Files are converted on-device; OCR and speech recognition are too, with
+the models shipped inside the app. The app reaches the internet only in
+"Paste link" mode (or when a link is shared from YouTube or a browser) —
+for the page or file that link points to. That's why the Android build
+has the `INTERNET` permission; that all networking code lives in a single
+module and never touches your files is checked by CI on every commit.
+Details —
+[offline-and-privacy.md](https://github.com/tiltozavr2545/mark_it_down_UI/blob/main/docs/offline-and-privacy.md).

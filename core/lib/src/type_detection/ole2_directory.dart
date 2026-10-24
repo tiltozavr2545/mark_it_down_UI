@@ -1,23 +1,24 @@
 import 'dart:typed_data';
 
-/// Минимальный разбор OLE Compound File (CFB, MS-CFB): только каталог —
-/// имена записей. Ничего не извлекает из потоков и не разбирает mini-FAT:
-/// для различения `.xls` / `.msg` / `.doc` / `.ppt` достаточно знать, какие
-/// потоки лежат внутри (`Workbook`, `__properties_version1.0`,
-/// `WordDocument`, …), а каталог целиком хранится в обычных секторах.
+/// Minimal parsing of an OLE Compound File (CFB, MS-CFB): only the
+/// directory — entry names. Extracts nothing from streams and does not
+/// parse the mini-FAT: to distinguish `.xls` / `.msg` / `.doc` / `.ppt` it
+/// is enough to know which streams live inside (`Workbook`,
+/// `__properties_version1.0`, `WordDocument`, …), and the directory itself
+/// is stored entirely in regular sectors.
 ///
-/// Возвращает `null`, если файл не разбирается как CFB или нужные сектора
-/// лежат за пределами [bytes] (например, передан не весь файл) — вызывающий
-/// тогда откатывается на подсказку по расширению. Разбор защищён от
-/// зацикленных цепочек секторов и от раздутых заголовков: сколько секторов
-/// можно пройти, ограничено длиной самих байтов.
+/// Returns `null` if the file does not parse as a CFB, or the needed
+/// sectors lie outside [bytes] (e.g. not the whole file was passed) — the
+/// caller then falls back to the extension hint. Parsing is guarded
+/// against looping sector chains and inflated headers: how many sectors
+/// can be traversed is bounded by the length of the bytes themselves.
 List<String>? readOle2EntryNames(Uint8List bytes) {
   const headerSize = 512;
   if (bytes.length < headerSize) return null;
   final data = ByteData.sublistView(bytes);
 
   final sectorShift = data.getUint16(0x1E, Endian.little);
-  // Версия 3 — сектор 512 байт (shift 9), версия 4 — 4096 байт (shift 12).
+  // Version 3 — 512-byte sectors (shift 9), version 4 — 4096 bytes (shift 12).
   if (sectorShift != 9 && sectorShift != 12) return null;
   final sectorSize = 1 << sectorShift;
 
@@ -26,8 +27,8 @@ List<String>? readOle2EntryNames(Uint8List bytes) {
   final firstDifatSector = data.getUint32(0x44, Endian.little);
   final difatSectorCount = data.getUint32(0x48, Endian.little);
 
-  // Сектор N лежит со смещением (N + 1) * sectorSize: «нулевой» сектор
-  // файла — это заголовок.
+  // Sector N lies at offset (N + 1) * sectorSize: the file's "zeroth"
+  // sector is the header.
   final maxSectors = bytes.length ~/ sectorSize;
   int? sectorOffset(int id) {
     if (id >= maxSectors) return null;
@@ -40,7 +41,7 @@ List<String>? readOle2EntryNames(Uint8List bytes) {
   const freeSector = 0xFFFFFFFF;
   bool isRegular(int id) => id < 0xFFFFFFFA;
 
-  // Секторы FAT: сначала до 109 из заголовка, дальше цепочка DIFAT.
+  // FAT sectors: first up to 109 from the header, then the DIFAT chain.
   final fatSectorIds = <int>[];
   for (var i = 0; i < 109 && fatSectorIds.length < fatSectorCount; i++) {
     final id = data.getUint32(0x4C + i * 4, Endian.little);
@@ -78,17 +79,17 @@ List<String>? readOle2EntryNames(Uint8List bytes) {
   var sector = firstDirectorySector;
   var steps = 0;
   while (isRegular(sector)) {
-    if (++steps > maxSectors) return null; // цикл в цепочке
+    if (++steps > maxSectors) return null; // loop in the chain
     final offset = sectorOffset(sector);
     if (offset == null) return null;
 
     for (var entry = 0; entry < sectorSize ~/ 128; entry++) {
       final base = offset + entry * 128;
-      final type = bytes[base + 66]; // 0 пусто, 1 каталог, 2 поток, 5 корень
+      final type = bytes[base + 66]; // 0 empty, 1 directory, 2 stream, 5 root
       if (type == 0) continue;
       final nameLength = data.getUint16(base + 64, Endian.little);
       if (nameLength < 2 || nameLength > 64) continue;
-      // Длина включает завершающий нулевой символ UTF-16.
+      // Length includes the trailing UTF-16 null terminator.
       final nameBytes = bytes.sublist(base, base + nameLength - 2);
       names.add(_decodeUtf16le(nameBytes));
     }

@@ -11,9 +11,10 @@ import '../document_converter.dart';
 
 const _prettyEncoder = JsonEncoder.withIndent('  ');
 
-/// `JSON` отдаётся фенс-блоком кода, а не превращается в markdown-структуру —
-/// так теряется меньше, и это читаемо и для человека, и для LLM. Решение
-/// записано в `docs/format-coverage.md`.
+/// `JSON` is emitted as a fenced code block rather than turned into a
+/// markdown structure — this loses less information, and it is readable by
+/// both a human and an LLM. The decision is recorded in
+/// `docs/format-coverage.md`.
 class JsonConverter implements DocumentConverter {
   const JsonConverter();
 

@@ -3,8 +3,8 @@ import 'dart:typed_data';
 
 import 'audio_info.dart';
 
-/// Ключи Vorbis comment → поля [AudioTags]. Ключи регистронезависимы, а
-/// имена гуляют между программами (`DATE`/`YEAR`, `COMMENT`/`DESCRIPTION`).
+/// Vorbis comment keys → [AudioTags] fields. Keys are case-insensitive,
+/// and names vary between programs (`DATE`/`YEAR`, `COMMENT`/`DESCRIPTION`).
 const _vorbisFields = {
   'TITLE': 'title',
   'ARTIST': 'artist',
@@ -22,12 +22,13 @@ const _vorbisFields = {
   'UNSYNCEDLYRICS': 'lyrics',
 };
 
-/// Записей больше этого в живых файлах не бывает; больше — битый счётчик.
+/// Real files never have more entries than this; more means a corrupt
+/// counter.
 const _maxComments = 10000;
 
-/// Vorbis comment (FLAC, Ogg Vorbis, Opus): little endian, длина
-/// производителя, производитель, число записей, записи `КЛЮЧ=значение` в
-/// UTF-8. Несколько значений одного ключа склеиваются через запятую;
+/// Vorbis comment (FLAC, Ogg Vorbis, Opus): little endian, vendor string
+/// length, vendor string, entry count, `KEY=value` entries in UTF-8.
+/// Multiple values for the same key are joined with a comma;
 /// `TRACKNUMBER` + `TRACKTOTAL` → `3/12`.
 void readVorbisComment(Uint8List data, AudioInfo info) {
   final view = ByteData.sublistView(data);
@@ -84,9 +85,9 @@ void readVorbisComment(Uint8List data, AudioInfo info) {
   }
 }
 
-/// FLAC: `fLaC` (возможно, после ID3v2 — [start]) и блоки метаданных.
-/// `STREAMINFO` — частота, каналы, общее число сэмплов (отсюда точная
-/// длительность); `VORBIS_COMMENT` — теги.
+/// FLAC: `fLaC` (possibly after an ID3v2 tag — [start]) and metadata
+/// blocks. `STREAMINFO` — sample rate, channels, total sample count
+/// (hence an exact duration); `VORBIS_COMMENT` — tags.
 void readFlac(Uint8List bytes, int start, AudioInfo info) {
   var offset = start + 4;
   info.codec = 'FLAC';
@@ -131,15 +132,16 @@ void readFlac(Uint8List bytes, int start, AudioInfo info) {
   }
 }
 
-/// Сколько байт пакетов собирать из страниц Ogg. Пакет комментариев может
-/// нести обложку (`METADATA_BLOCK_PICTURE`) — дальше нее читать незачем.
+/// How many packet bytes to collect from Ogg pages. The comment packet
+/// can carry cover art (`METADATA_BLOCK_PICTURE`) — there's no point
+/// reading past that.
 const _maxPacketBytes = 8 * 1024 * 1024;
 
-/// Ogg: страницы `OggS`, из сегментов которых склеиваются пакеты первого
-/// логического потока. Первый пакет — заголовок кодека (Vorbis или Opus),
-/// второй — Vorbis comment. Длительность — по granule position последней
-/// страницы того же потока: в сэмплах, у Opus — всегда в 48 кГц и с
-/// поправкой на pre-skip.
+/// Ogg: `OggS` pages, whose segments are joined into packets of the
+/// first logical stream. The first packet is the codec header (Vorbis or
+/// Opus), the second is the Vorbis comment. Duration comes from the
+/// granule position of the same stream's last page: in samples, and for
+/// Opus always at 48 kHz with a pre-skip correction.
 void readOgg(Uint8List bytes, AudioInfo info) {
   final view = ByteData.sublistView(bytes);
   final packets = <Uint8List>[];
@@ -210,7 +212,7 @@ void _finishOgg(
       ..sampleRate = inputRate > 0 ? inputRate : 48000;
     granuleRate = 48000;
   } else {
-    return; // Ogg FLAC, Speex, Theora — не разбираем
+    return; // Ogg FLAC, Speex, Theora — not parsed
   }
   info.hasAudio = true;
 
@@ -232,8 +234,8 @@ void _finishOgg(
   }
 }
 
-/// Granule position последней страницы потока [serial]: ищем `OggS` с
-/// конца файла.
+/// The granule position of the last page of stream [serial]: search for
+/// `OggS` from the end of the file.
 int? _lastGranule(Uint8List bytes, int serial) {
   final view = ByteData.sublistView(bytes);
   for (var i = bytes.length - 27; i >= 0; i--) {

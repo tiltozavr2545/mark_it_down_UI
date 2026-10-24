@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Только для debug/profile. network.server и allow-jit нужны инструментам
-  Flutter (hot reload, VM service) и в релиз НЕ попадают: Release.entitlements
-  их не содержит, и CI следит, чтобы не появились.
+  Debug/profile only. network.server and allow-jit are needed by Flutter
+  tooling (hot reload, VM service) and do NOT make it into release:
+  Release.entitlements doesn't contain them, and CI makes sure they don't
+  appear there.
 -->
 <plist version="1.0">
 <dict>

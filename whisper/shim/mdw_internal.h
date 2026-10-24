@@ -1,8 +1,8 @@
 /*
- * Общее для декодеров (mdw_decode.c и mdw_platform_*): «приёмник» звука,
- * который сводит каналы, передискретизирует в 16 кГц и либо копит
- * результат не дальше предела длительности, либо отдаёт его кусками на
- * распознавание.
+ * Shared by the decoders (mdw_decode.c and mdw_platform_*): an audio
+ * "sink" that mixes channels down, resamples to 16 kHz, and either
+ * accumulates the result up to a duration limit or hands it off in chunks
+ * for transcription.
  */
 #ifndef MDW_INTERNAL_H
 #define MDW_INTERNAL_H
@@ -15,55 +15,59 @@ extern "C" {
 
 typedef struct mdw_sink mdw_sink;
 
-/* NULL — не хватило памяти. max — предел в отсчётах 16 кГц. */
+/* NULL means out of memory. max is the limit in 16 kHz samples. */
 mdw_sink *mdw_sink_new(int64_t max);
 
-/* Кусок звука на распознавание; не MDW_OK — остановить декодирование. */
+/* A chunk of audio to transcribe; not MDW_OK means stop decoding. */
 typedef int (*mdw_chunk_fn)(void *user, const float *samples, int64_t n);
 
 /*
- * Приёмник без предела: каждые MDW_CHUNK_SAMPLES отсчётов отдаёт кусок в
- * on_chunk (граница — в самом тихом месте конца куска), хвост — по
- * mdw_sink_flush. cancel != NULL и *cancel != 0 — приёмник останавливается
- * с MDW_ERR_CANCELLED, не дожидаясь конца куска.
+ * An unlimited sink: every MDW_CHUNK_SAMPLES samples it hands a chunk to
+ * on_chunk (the boundary is at the quietest point at the end of the
+ * chunk), the tail via mdw_sink_flush. cancel != NULL and *cancel != 0 —
+ * the sink stops with MDW_ERR_CANCELLED, without waiting for the chunk to
+ * end.
  */
 mdw_sink *mdw_sink_new_chunked(mdw_chunk_fn on_chunk, void *user,
                                const volatile int32_t *cancel);
 
-/* Отдать в on_chunk то, что накоплено. */
+/* Hand whatever is accumulated so far to on_chunk. */
 int mdw_sink_flush(mdw_sink *sink);
 
-/* MDW_OK или код, которым остановил приёмник on_chunk либо cancel. */
+/* MDW_OK, or the code that on_chunk or cancel stopped the sink with. */
 int mdw_sink_status(const mdw_sink *sink);
 
-/* Частота входа. Можно звать повторно: декодер платформы узнаёт настоящую
- * частоту только из первого выходного буфера. */
+/* Input sample rate. Can be called again: the platform decoder only learns
+ * the real rate from the first output buffer. */
 int mdw_sink_set_rate(mdw_sink *sink, uint32_t sample_rate);
 
-/* Кадры в float, каналы чередуются; сводятся в моно средним. */
+/* Frames in float, channels interleaved; mixed down to mono by averaging. */
 int mdw_sink_push(mdw_sink *sink, const float *frames, uint64_t count,
                   uint32_t channels);
 
-/* То же для 16-битного PCM (так отдаёт MediaCodec на Android). */
+/* The same for 16-bit PCM (what MediaCodec on Android produces). */
 int mdw_sink_push_s16(mdw_sink *sink, const int16_t *frames, uint64_t count,
                       uint32_t channels);
 
-/* Набран предел или приёмник остановлен — дальше декодировать незачем. */
+/* The limit has been reached, or the sink has stopped — no point decoding
+ * further. */
 int mdw_sink_full(const mdw_sink *sink);
 
-/* Сколько отсчётов принято всего, включая отданные кусками. */
+/* Total number of samples received, including ones already handed off in
+ * chunks. */
 int64_t mdw_sink_count(const mdw_sink *sink);
 
-/* Отдаёт накопленное (освобождать mdw_free_samples) и уничтожает sink. */
+/* Hands back what's accumulated (free with mdw_free_samples) and destroys
+ * the sink. */
 void mdw_sink_finish(mdw_sink *sink, float **out, int64_t *n_out);
 
 void mdw_sink_free(mdw_sink *sink);
 
-/* Переносимые декодеры (mdw_decode.c): Ogg Opus или miniaudio. */
+/* Portable decoders (mdw_decode.c): Ogg Opus or miniaudio. */
 int mdw_decode_memory_to(const uint8_t *data, int64_t size, mdw_sink *sink);
 
-/* Декодер платформы: mdw_platform_android.c, mdw_platform_windows.cpp или
- * заглушка в mdw_decode.c. */
+/* Platform decoder: mdw_platform_android.c, mdw_platform_windows.cpp, or
+ * the stub in mdw_decode.c. */
 int mdw_platform_decode_file(const char *path, mdw_sink *sink);
 
 #ifdef __cplusplus

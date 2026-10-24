@@ -1,380 +1,410 @@
-# Эксплуатация
+# Operations
 
-Что собирается чем, где лежат ключи подписи и что делать руками при релизе.
-Отдельно от [client-architecture.md](client-architecture.md), потому что это не
-устройство приложения: тот файл отвечает «как работает», этот — «что нажать».
+What gets built by what, where the signing keys live, and what to do by hand
+at release time. Kept separate from
+[client-architecture.md](client-architecture.md), because this isn't about
+how the app is built: that file answers "how it works," this one answers
+"what to click."
 
-Целевые платформы — Windows и Android; macOS вторична (разделы про неё
-рабочие, но в приоритете не стоят). Windows собирается только в CI на
-`windows-latest` — на машине разработки (Mac) Flutter его собрать не может.
+Target platforms are Windows and Android; macOS is secondary (the sections
+about it are maintained, but it's not a priority). Windows only builds in
+CI on `windows-latest` — on the development machine (a Mac), Flutter can't
+build it.
 
-Пока проект на нуле, большая часть разделов — **заготовки**: они размечены
-так, чтобы рабочие команды вписывались в них по ходу этапов, а не искались
-заново. Где команды ещё не проверены, это сказано прямо.
+While the project is still at zero, most sections are **placeholders**: they
+are laid out so that working commands can be filled in as the stages
+progress, rather than having to be hunted for from scratch. Wherever commands
+haven't been verified yet, that is stated outright.
 
 ---
 
-## Одна команда перед сдачей
+## One command before shipping
 
 ```bash
 make verify
 ```
 
-Прогоняет для `app/` и `core/`: `pub get`, `dart format
---set-exit-if-changed`, `flutter analyze`, `flutter test`, `dart test`. То же
-самое гоняет CI — локальная команда существует, чтобы не узнавать о сломанном
-формате из пайплайна.
+Runs, for both `app/` and `core/`: `pub get`, `dart format
+--set-exit-if-changed`, `flutter analyze`, `flutter test`, `dart test`. CI
+runs exactly the same thing — the local command exists so you don't find out
+about a formatting break from the pipeline.
 
-`make test` сам качает PDFium и модели OCR (`tesseract/fetch.sh`). Тестам OCR
-(`core/test/ocr_test.dart`) нужен собранный Tesseract: один раз `make
-tesseract` (≈10 минут, cmake + компилятор C/C++), дальше `make test` находит
-его в `tesseract/native/host/` сам. Без него эти тесты пропускаются, а не
-падают. CI Linux берёт Tesseract из пакетов Ubuntu, CI Windows собирает
-`build.sh` с кэшем.
+`make test` downloads PDFium and the OCR models itself (`tesseract/fetch.sh`).
+The OCR tests (`core/test/ocr_test.dart`) need a built Tesseract: run `make
+tesseract` once (≈10 minutes, cmake plus a C/C++ compiler), and after that
+`make test` finds it in `tesseract/native/host/` on its own. Without it,
+those tests are skipped, not failed. CI on Linux takes Tesseract from Ubuntu
+packages, CI on Windows builds it via `build.sh` with caching.
 
-Распознавание речи (0.8) — так же, но тяжелее: `make whisper` собирает
-whisper.cpp с прослойкой (`whisper/build.sh` → `whisper/native/host/`,
-≈10 минут на Intel Mac — десяток вариантов CPU-бэкенда) и качает модели
-(`whisper/fetch.sh`, 265 МБ → `whisper/models/` и
-`app/assets/whisper/`). В `make test` модели не качаются: дальше `make
-test` сам находит библиотеки и гоняет `core/test/speech_test.dart`, без
-них — пропускает. CI и Linux, и Windows собирают и качают с кэшем по хешу
-рецепта.
+Speech recognition (0.8) works the same way, but is heavier: `make whisper`
+builds whisper.cpp with its wrapper layer (`whisper/build.sh` →
+`whisper/native/host/`, ≈10 minutes on an Intel Mac — a dozen CPU-backend
+variants) and downloads models (`whisper/fetch.sh`, 265 MB → into
+`whisper/models/` and `app/assets/whisper/`). `make test` doesn't download
+the models: beyond that, `make test` itself finds the libraries and runs
+`core/test/speech_test.dart`, skipping it if they're absent. Both Linux and
+Windows CI build and download with caching keyed on the recipe hash.
 
 ## CI
 
 GitHub Actions
-([репозиторий](https://github.com/tiltozavr2545/mark_it_down_UI)), два
-workflow:
+([repository](https://github.com/tiltozavr2545/mark_it_down_UI)), two
+workflows:
 
-| workflow | когда | что делает |
+| workflow | when | what it does |
 |---|---|---|
-| `ci.yml` | push в ветку, PR; вызывается из `release.yml` | джоб `verify` (ubuntu): `make verify` + проверка «сеть только по ссылке» + проверка бампа версии в PR; джоб `windows` (`windows-latest`): те же проверки, `flutter build windows --release`, артефакт `markitdown_ui-windows-x64` (zip каталога `Release/`) |
-| `release.yml` | тег `v*` | весь `ci.yml` (через `workflow_call`) + APK для arm64 с проверкой сетевых разрешений на собранном файле → GitHub Release с `markitdown_ui-X.Y.Z-windows-x64.zip` (с сайдкаром) и `markitdown_ui-X.Y.Z-android-arm64.apk`; macOS — только по отдельному запросу |
+| `ci.yml` | push to a branch, PR; also invoked from `release.yml` | `verify` job (ubuntu): `make verify` + "network only via a link" check + version-bump check on the PR; `windows` job (`windows-latest`): the same checks, `flutter build windows --release`, artifact `markitdown_ui-windows-x64` (a zip of the `Release/` directory) |
+| `release.yml` | tag `v*` | the whole of `ci.yml` (via `workflow_call`) + an arm64 APK with a network-permissions check on the built file → a GitHub Release with `markitdown_ui-X.Y.Z-windows-x64.zip` (with the sidecar) and `markitdown_ui-X.Y.Z-android-arm64.apk`; macOS — only on separate request |
 
-**Windows-джоб** (план — [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
-п. 2): шаги идут в `shell: bash` (Git Bash), потому что `run:` на Windows по
-умолчанию PowerShell. Это **отдельные шаги, а не `make`**: в Git Bash раннера
-`make` нет, а в Makefile ветки только Darwin/Linux. Цена — список проверок
-живёт в двух местах; при правке `make verify` править и джоб (напоминание
-стоит у цели `verify` в Makefile). `pdfium/fetch.sh` Git Bash знает
-(`MINGW*|MSYS*` → `pdfium.dll`). Первый шаг джоба проверяет, что чекаут
-выписан с LF (`.gitattributes`), иначе `dart format` и побайтные фикстуры
-упали бы по причине, к коду не относящейся. Артефакт из этого джоба и есть
-то, что автор скачивает и проверяет руками на своём Windows-компьютере
-(Actions → запуск → Artifacts → распаковать → `markitdown_ui.exe`). Ручная
-проверка — чек-лист в п. 8 Этапа 5.
+**Windows job** (plan — [implementation-plan.md](implementation-plan.md#stage-5--windows-05),
+item 2): steps run under `shell: bash` (Git Bash), because `run:` on
+Windows defaults to PowerShell. These are **separate steps, not `make`**:
+the runner's Git Bash has no `make`, and the Makefile only has Darwin/Linux
+branches. The cost is that the list of checks lives in two places; when
+`make verify` is edited, the job must be edited too (a reminder for this
+sits next to the `verify` target in the Makefile). Git Bash knows about
+`pdfium/fetch.sh` (`MINGW*|MSYS*` → `pdfium.dll`). The job's first step
+checks that the checkout came out with LF line endings (`.gitattributes`),
+otherwise `dart format` and the byte-for-byte fixtures would fail for a
+reason unrelated to the code. The artifact from this job is exactly what the
+author downloads and checks by hand on their own Windows machine (Actions →
+run → Artifacts → unzip → `markitdown_ui.exe`). The manual check is the
+checklist in item 8 of Stage 5.
 
-**Проверка «сеть только по ссылке»** — не формальность, а главная гарантия
-продукта (см. [offline-and-privacy.md](offline-and-privacy.md)). До 0.9 это
-была проверка «нет сети» (нет `INTERNET` в APK); с режимом «ссылка» гарантия
-держится на коде. Шаги, все падающие:
+**The "network only via a link" check** is not a formality but the
+product's main guarantee (see
+[offline-and-privacy.md](offline-and-privacy.md)). Before 0.9 this was a
+"no network" check (no `INTERNET` in the APK); with "link" mode, the
+guarantee is held up by the code. Steps, each of which fails the build:
 
 ```bash
-# 1. сетевой пакет в дереве зависимостей — сеть мимо core/lib/src/web/
+# 1. A networking package in the dependency tree — network access bypassing core/lib/src/web/
 dart pub deps --style=list | grep -E '^- (http|dio|grpc|sentry|firebase)[^a-zA-Z0-9_]' && exit 1
 
-# 2. сокеты и HTTP-клиент — только в core/lib/src/web/
+# 2. Sockets and an HTTP client — only allowed in core/lib/src/web/
 grep -rnE '\b(HttpClient|HttpServer|Socket|RawSocket|SecureSocket|ServerSocket|WebSocket|InternetAddress)\b' \
   app/lib core/lib --include='*.dart' | grep -v '^core/lib/src/web/' && exit 1
 
-# 3. в собранном APK из сетевых разрешений — только INTERNET
+# 3. Among the network permissions in the built APK — only INTERNET
 aapt dump permissions build/app/outputs/flutter-apk/app-release.apk \
   | grep -qE 'ACCESS_NETWORK_STATE|ACCESS_WIFI_STATE|CHANGE_NETWORK_STATE|CHANGE_WIFI_STATE' && exit 1
 ```
 
-Третий шаг гоняется на сборке, то есть в `release.yml` (с `aapt` из
-Android SDK раннера); первые два — на каждом PR,
-потому что именно там сетевая зависимость и приезжает транзитивно. Для
-Windows разрешений нет вовсе: упаковка пока zip, а zip о них не знает. Шаг
-`нет сетевых библиотек в app/windows/` ловит только то, что мы добавили сами
-(`ws2_32`, `winhttp`, `wininet`, `internetClient`); если в Этапе 7 выберут
-MSIX — добавится grep по его манифесту. См. Этап 5, п. 7, и
+The third step runs at build time, i.e. in `release.yml` (using `aapt` from
+the runner's Android SDK); the first two run on every PR, because that's
+exactly where a transitive network dependency would sneak in. For Windows
+there are no permissions at all: packaging is still a zip, and a zip knows
+nothing about them. The step "no networking libraries in `app/windows/`"
+only catches what we added ourselves (`ws2_32`, `winhttp`, `wininet`,
+`internetClient`); if MSIX is chosen at Stage 7, a grep over its manifest
+will be added. See Stage 5, item 7, and
 [offline-and-privacy.md](offline-and-privacy.md).
 
-## Версия
+## Version
 
-Формат `name+build` в `pubspec.yaml`, бампается **в каждом PR** — тот же
-порядок, что в Amicus:
+The `name+build` format in `pubspec.yaml`, bumped **on every PR** — the same
+convention as in Amicus:
 
 ```bash
 make verify-version BASE_REF=origin/main
 ```
 
-Цель зовёт `tool/verify_version.sh`: версия `app/pubspec.yaml` в рабочем дереве
-сравнивается с `git show $BASE_REF:app/pubspec.yaml`. Падает, если формат не
-`MAJOR.MINOR.PATCH+BUILD`, версия не изменилась или `build` не вырос строго.
-`name` расти не обязан: допустим бамп одного `build`. `core/pubspec.yaml`
-считается отдельно (версия без `build`) и здесь не проверяется. В `make verify`
-цель не входит: локально сравнивать с `origin/main` незачем. В CI она идёт
-отдельным шагом только на `pull_request` (базовая ветка подтягивается
+The target calls `tool/verify_version.sh`: the version in the working
+tree's `app/pubspec.yaml` is compared against `git show
+$BASE_REF:app/pubspec.yaml`. It fails if the format isn't
+`MAJOR.MINOR.PATCH+BUILD`, the version hasn't changed, or `build` hasn't
+strictly increased. `name` isn't required to grow: bumping just the `build`
+is fine. `core/pubspec.yaml` is counted separately (a version without
+`build`) and isn't checked here. The target is not part of `make verify`:
+there's no point comparing against `origin/main` locally. In CI it runs as
+a separate step only on `pull_request` (the base branch is fetched via
 `git fetch`).
 
-`build` обязан расти монотонно: Google Play и App Store Connect не принимают
-повторный номер, и обнаруживается это в самый неподходящий момент.
+`build` must grow monotonically: Google Play and App Store Connect won't
+accept a repeated number, and that's discovered at the most inconvenient
+moment.
 
-## Ключи и секреты
+## Keys and secrets
 
-Ничего из этого не лежит в репозитории, и ничего из этого не нужно самому
-приложению в рантайме — у него нет ни одного ключа, потому что ему некуда
-ходить. Всё перечисленное нужно только для подписи сборок.
+None of this lives in the repository, and none of it is needed by the
+application itself at runtime — it has not a single key, because it has
+nowhere to call. Everything listed below is only needed for signing builds.
 
-| что | где лежит | для чего |
+| what | where it lives | what for |
 |---|---|---|
-| Android keystore | **нет** — Этап 7; будет вне репозитория (`android/key.properties` в `.gitignore`) и в GitHub Secrets | подпись APK; без постоянного ключа новая версия не ставится поверх старой |
-| Сертификат Authenticode (Windows) | **нет** — открытый вопрос (Этап 5, п. 6 → Этап 7) | подпись `.exe`/MSIX; без него SmartScreen предупреждает при первом запуске |
-| Apple Developer ID cert | Keychain сборочной машины | подпись macOS-бандла |
-| App-specific password / notarytool profile | Keychain (`xcrun notarytool store-credentials`) | нотаризация |
-| те же в CI | GitHub Secrets | `release.yml` |
+| Android keystore | **none yet** — Stage 7; will live outside the repo (`android/key.properties` in `.gitignore`) and in GitHub Secrets | APK signing; without a stable key a new version can't install over an old one |
+| Authenticode certificate (Windows) | **none yet** — open question (Stage 5, item 6 → Stage 7) | signing the `.exe`/MSIX; without it, SmartScreen warns on first run |
+| Apple Developer ID cert | the build machine's Keychain | signing the macOS bundle |
+| App-specific password / notarytool profile | Keychain (`xcrun notarytool store-credentials`) | notarization |
+| the same, in CI | GitHub Secrets | `release.yml` |
 
-## Сборка
+## Build
 
 ### Windows
 
-Собирается **только в CI** на `windows-latest` (на Mac Flutter Windows не
-собирает):
+Only builds **in CI**, on `windows-latest` (Flutter can't build Windows on a
+Mac):
 
 ```bash
 cd app && flutter build windows --release
-# → app/build/windows/x64/runner/Release/  (markitdown_ui.exe + DLL + data/)
+# → app/build/windows/x64/runner/Release/  (markitdown_ui.exe + DLLs + data/)
 ```
 
-Рядом с `.exe` кладутся `pdfium.dll`, DLL Tesseract (`leptonica-*.dll`,
-`tesseract*.dll`) и `sidecar/` — правилами `install(...)` в
-`app/windows/CMakeLists.txt`; модели OCR (`*.traineddata`) едут ассетами
-Flutter в `data/flutter_assets/assets/tessdata/`. DLL Tesseract обязательны,
-как `pdfium.dll`: их собирает `./tesseract/build.sh` (Git Bash + Visual
-Studio 2022, ≈10 минут; в CI — с кэшем по хешу рецепта), модели и
-Android-`.so` качает `./tesseract/fetch.sh`. Так же обязательны DLL
-распознавания речи (`markitdown_whisper.dll`, `whisper.dll`, `ggml*.dll`,
-варианты `ggml-cpu-*.dll`) — `./whisper/build.sh`; модели едут ассетами в
-`data/flutter_assets/assets/whisper/` (`./whisper/fetch.sh`, +265 МБ к
-zip). `pdfium.dll` обязательна: без
-`pdfium/native/host/pdfium.dll` (её качает `./pdfium/fetch.sh` в Git Bash)
-CMake падает с понятной ошибкой, а не собирает приложение без PDF. Сайдкар
-необязателен: без `sidecar/dist/windows-x86_64/manifest.json` выходит
-Dart-only сборка (п. 4 плана — сайдкар под Windows — собирается отдельным
-джобом).
+Next to the `.exe` go `pdfium.dll`, the Tesseract DLLs (`leptonica-*.dll`,
+`tesseract*.dll`) and `sidecar/` — via `install(...)` rules in
+`app/windows/CMakeLists.txt`; the OCR models (`*.traineddata`) travel as
+Flutter assets, into `data/flutter_assets/assets/tessdata/`. The Tesseract
+DLLs are mandatory, just like `pdfium.dll`: they're built by
+`./tesseract/build.sh` (Git Bash + Visual Studio 2022, ≈10 minutes; cached
+by recipe hash in CI), and the models plus Android `.so` files are
+downloaded by `./tesseract/fetch.sh`. The speech-recognition DLLs are
+equally mandatory (`markitdown_whisper.dll`, `whisper.dll`, `ggml*.dll`, the
+various `ggml-cpu-*.dll` variants) — via `./whisper/build.sh`; the models
+travel as assets into `data/flutter_assets/assets/whisper/`
+(`./whisper/fetch.sh`, +265 MB to the zip). `pdfium.dll` is mandatory: without
+`pdfium/native/host/pdfium.dll` (downloaded by `./pdfium/fetch.sh` in Git
+Bash), CMake fails with a clear error rather than building an app without
+PDF support. The sidecar is optional: without
+`sidecar/dist/windows-x86_64/manifest.json`, you get a Dart-only build
+(item 4 of the plan — the sidecar for Windows is built as a separate job).
 
-**Упаковка — zip** (решение автора, Этап 5, п. 6: «zip сейчас, решить
-позже»; Inno Setup или MSIX — вопрос Этапа 7). Сейчас zip — это сам
-артефакт CI: `actions/upload-artifact` отдаёт каталог `Release/` архивом.
-Подписи Authenticode нет (сертификата нет): SmartScreen при первом запуске
-покажет «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом
-случае».
+**Packaging is a zip** (the author's decision, Stage 5, item 6: "zip for
+now, decide later"; Inno Setup or MSIX is a Stage 7 question). Right now the
+zip is simply the CI artifact itself:
+`actions/upload-artifact` hands back the `Release/` directory as an
+archive. There's no Authenticode signature (no certificate yet): on first
+run, SmartScreen will show "Windows protected your PC" → "More info" → "Run
+anyway."
 
-### macOS (вторичная платформа)
+### macOS (secondary platform)
 
 ```bash
 cd app && flutter build macos --release
 ```
 
-С этапа 4 перед этим собирается сайдкар (`make sidecar`, см.
-[python-sidecar.md](python-sidecar.md#сборка)), и дальше — **подпись изнутри
-наружу**: сначала каждый Mach-O внутри сайдкара, потом фреймворки Flutter,
-потом `.app`, потом DMG. Один неподписанный `.so` в зависимостях — отказ
-нотаризации, и в отчёте он будет одной строкой среди многих.
+Since Stage 4, the sidecar is built first (`make sidecar`, see
+[python-sidecar.md](python-sidecar.md#build)), and after that comes
+**signing from the inside out**: first every Mach-O inside the sidecar, then
+the Flutter frameworks, then the `.app`, then the DMG. A single unsigned
+`.so` among the dependencies means notarization is refused, and in the
+report it will be just one line among many.
 
-#### Подпись и нотаризация: команды
+#### Signing and notarization: commands
 
-**Статус проверки.** Проверено на этой машине: всё, что относится к
-**ad-hoc подписи с Hardened Runtime** (`--options runtime`, идентичность `-`):
-скрипт подписи, проверка `codesign --verify --strict --deep`, запуск `run.py`
-по всем шести форматам из подписанного дерева, вложение подписанного сайдкара
-в тестовый `.app` и подпись этого `.app` с `Release.entitlements`. **Не
-проверено** (на машине нет Developer ID — `security find-identity -v -p
-codesigning` пуст): подпись настоящей идентичностью, `--timestamp` с сервером
-Apple, нотаризация, `stapler`, `spctl`, поведение под настоящей песочницей
-`.app` и сборка самого Runner (нет Xcode). Команды ниже для этой части
-написаны по документации и должны быть пройдены один раз вручную с реальным
-сертификатом; что сломается — поправить здесь же.
+**Verification status.** Verified on this machine: everything related to
+**ad hoc signing with Hardened Runtime** (`--options runtime`, identity
+`-`): the signing script, `codesign --verify --strict --deep` verification,
+running `run.py` across all six formats from the signed tree, embedding the
+signed sidecar in a test `.app` and signing that `.app` with
+`Release.entitlements`. **Not verified** (there's no Developer ID on this
+machine — `security find-identity -v -p codesigning` is empty): signing
+with a real identity, `--timestamp` against Apple's server, notarization,
+`stapler`, `spctl`, behavior under a real `.app` sandbox, and building
+Runner itself (no Xcode). The commands below for that part are written from
+the documentation and need to be run through once by hand with a real
+certificate; whatever breaks should be fixed right here.
 
-Порядок строгий, потому что подпись хеширует содержимое: любая правка файла
-после подписи её ломает.
+The order is strict, because signing hashes the content: any edit to a file
+after signing breaks it.
 
 ```bash
-ID="Developer ID Application: Имя Фамилия (TEAMID)"
+ID="Developer ID Application: First Last (TEAMID)"
 
-# 1. Сайдкар — целиком, до подписи чего-либо ещё. Подпись только ПОСЛЕ
-#    compileall и всех чисток, которые делает build.sh.
+# 1. The sidecar — in full, before signing anything else. Sign only AFTER
+#    compileall and all the cleanup steps that build.sh performs.
 make sidecar
 make sign-sidecar IDENTITY="$ID"        # = sidecar/sign.sh sidecar/dist/<host> "$ID"
-#    Что делает: каждый Mach-O по магическим байтам (.so/.dylib — первыми,
-#    python/bin/python3.12 — последним, с sidecar/sidecar.entitlements),
-#    --options runtime --timestamp, затем codesign --verify --strict по каждому
-#    файлу и --deep --strict по интерпретатору, затем run.py --self-check.
+#    What it does: every Mach-O, found by magic bytes (.so/.dylib first,
+#    python/bin/python3.12 last, with sidecar/sidecar.entitlements),
+#    --options runtime --timestamp, then codesign --verify --strict on each
+#    file and --deep --strict on the interpreter, then run.py --self-check.
 
-# 2. Собрать приложение и положить сайдкар в Contents/Resources/sidecar
-#    (шаг Xcode-сборки не написан — см. «Встраивание» ниже). rsync -a сохраняет
-#    подписи: они лежат внутри самих файлов.
+# 2. Build the app and place the sidecar into Contents/Resources/sidecar
+#    (the Xcode build step isn't written yet — see "Embedding" below). rsync -a
+#    preserves signatures: they live inside the files themselves.
 cd app && flutter build macos --release
 APP=build/macos/Build/Products/Release/MarkItDown.app
 rsync -a --delete ../sidecar/dist/macos-$(uname -m)/ "$APP/Contents/Resources/sidecar/"
 
-# 3. Фреймворки и dylib самого Flutter-приложения — изнутри наружу.
-#    --deep НЕ использовать: он перезапишет подписи вложенного сайдкара без
-#    entitlements интерпретатора.
+# 3. The Flutter app's own frameworks and dylibs — inside out.
+#    Do NOT use --deep: it would overwrite the nested sidecar's signatures
+#    without the interpreter's entitlements.
 find "$APP/Contents/Frameworks" -depth \( -name '*.framework' -o -name '*.dylib' \) -print0 |
   xargs -0 -n1 codesign --force --sign "$ID" --options runtime --timestamp
 
-# 4. Само приложение — с Release.entitlements (песочница, без сети).
+# 4. The application itself — with Release.entitlements (sandboxed, no network).
 codesign --force --sign "$ID" --options runtime --timestamp \
   --entitlements macos/Runner/Release.entitlements "$APP"
 
-# 5. Проверки до отправки.
+# 5. Checks before submission.
 codesign --verify --deep --strict --verbose=2 "$APP"
-codesign -d --entitlements - "$APP"      # app-sandbox есть, network.server нет
+codesign -d --entitlements - "$APP"      # app-sandbox present, network.server absent
 codesign -d --entitlements - "$APP/Contents/Resources/sidecar/python/bin/python3.12"
-spctl -a -vv -t exec "$APP"              # до нотаризации: "rejected (Unnotarized Developer ID)" — это норма
+spctl -a -vv -t exec "$APP"              # before notarization: "rejected (Unnotarized Developer ID)" is expected
 
-# 6. DMG и нотаризация. Ключи notarytool — один раз:
+# 6. DMG and notarization. notarytool credentials — once:
 #    xcrun notarytool store-credentials markitdown-notary \
 #        --apple-id <id> --team-id <TEAMID> --password <app-specific-password>
 hdiutil create -volname MarkItDown -srcfolder "$APP" -ov -format UDZO MarkItDown.dmg
 codesign --sign "$ID" --timestamp MarkItDown.dmg
 xcrun notarytool submit MarkItDown.dmg --keychain-profile markitdown-notary --wait
-#    Если Invalid — причины построчно (обычно: неподписанный/без runtime Mach-O):
+#    If Invalid — the reasons line by line (usually: an unsigned/no-runtime Mach-O):
 #    xcrun notarytool log <submission-id> --keychain-profile markitdown-notary
 
-# 7. Степлинг и финальная проверка (нормальный результат: "accepted",
+# 7. Stapling and final check (a normal result is "accepted",
 #    "source=Notarized Developer ID").
 xcrun stapler staple MarkItDown.dmg
 xcrun stapler validate MarkItDown.dmg
 spctl -a -vv -t open --context context:primary-signature MarkItDown.dmg
 ```
 
-Почему шаг 1 стоит особняком: сайдкар нужен также без приложения (сверка с
-Dart-ядром, разработка), а скрипт подписи сам проверяет всё дерево и
-отказывается, если нашёл Mach-O без подписи. Хуки в Xcode для того же —
-вопрос будущей Build Phase (см. ниже), на команды это не влияет.
+Why step 1 stands apart: the sidecar is also needed without the app (for
+cross-checking against the Dart core, and for development), and the signing
+script itself verifies the whole tree and refuses if it finds an unsigned
+Mach-O. Hooks in Xcode for the same purpose are a question for a future
+Build Phase (see below) and don't affect the commands.
 
-#### Entitlements: что и почему
+#### Entitlements: what and why
 
-| где | что | зачем |
+| where | what | why |
 |---|---|---|
-| `Release.entitlements` (Runner) | `app-sandbox`, `files.user-selected.read-only`, `network.client` (с 0.9) | **песочница включена намеренно**; `network.client` — исходящие соединения режима «ссылка» ([offline-and-privacy.md](offline-and-privacy.md)) |
-| `DebugProfile.entitlements` | то же + `allow-jit`, `network.server` | инструменты Flutter (hot reload, VM service); только debug/profile, в релиз не попадает |
-| `sidecar/sidecar.entitlements` (интерпретатор) | `cs.disable-library-validation` | см. [python-sidecar.md](python-sidecar.md#подпись-проверено-ad-hoc-с-hardened-runtime) |
-| нигде | `network.server` в Release, любой `network.*` у сайдкара | CI-шаг «в Release.entitlements нет network.server, у сайдкара нет сети» |
+| `Release.entitlements` (Runner) | `app-sandbox`, `files.user-selected.read-only`, `network.client` (since 0.9) | **the sandbox is enabled deliberately**; `network.client` is for the "link" mode's outbound connections ([offline-and-privacy.md](offline-and-privacy.md)) |
+| `DebugProfile.entitlements` | the same plus `allow-jit`, `network.server` | Flutter tooling (hot reload, VM service); debug/profile only, never shipped in release |
+| `sidecar/sidecar.entitlements` (interpreter) | `cs.disable-library-validation` | see [python-sidecar.md](python-sidecar.md#signing-verified-ad-hoc-with-hardened-runtime) |
+| nowhere | `network.server` in Release, any `network.*` for the sidecar | CI step "no network.server in Release.entitlements, no network for the sidecar" |
 
-Решение по Runner (Этап 4, пересмотрено в 0.9): **песочницу оставить**;
-из сетевых ключей в Release — только `network.client`. Ниже — исходные
-аргументы Этапа 4; пункт (б) с 0.9 не действует: сайдкар наследует и
-`network.client`, без сети его держит отсутствие сетевых конвертеров. Аргументы: (а) распространение — DMG, не MAS, так что sandbox
-формально не обязателен, но он единственное, что делает гарантию «нет сети»
-проверяемой операционной системой; (б) сайдкар как подпроцесс наследует
-песочницу родителя и потому тоже без сети — Python-зависимости не смогут
-позвонить наружу, даже если очень захотят; (в) приложению хватает
-`files.user-selected.read-only`: файл приходит через диалог или drag-and-drop
-(в песочнице это выдаёт доступ), на запись пользователь ничего не просил, а
-сайдкар читает копию из временной папки контейнера. Цена: подпроцесс в
-песочнице нельзя проверить здесь — нужен живой `.app` (см. «Статус проверки» выше).
+The decision on Runner (Stage 4, revisited at 0.9): **keep the sandbox**;
+the only network key in Release is `network.client`. Below are the original
+Stage 4 arguments; point (b) no longer holds as of 0.9: the sidecar inherits
+`network.client` too, and what keeps it offline is the absence of network
+converters, not the sandbox. The arguments: (a) distribution is a DMG, not
+the MAS, so a sandbox isn't formally required, but it's the only thing that
+makes the "no network" guarantee verifiable by the operating system itself;
+(b) the sidecar, as a subprocess, inherits the parent's sandbox and is
+therefore also without network access — the Python dependencies couldn't
+phone out even if they really wanted to; (c) the application only needs
+`files.user-selected.read-only`: the file arrives via a dialog or
+drag-and-drop (which grants access inside the sandbox), the user never asked
+for write access, and the sidecar reads a copy from the container's temp
+folder. The cost: a sandboxed subprocess can't be verified here — it needs a
+live `.app` (see "Verification status" above).
 
-#### Встраивание сайдкара в macOS-бандл — открыто
+#### Embedding the sidecar into the macOS bundle — open
 
-Приложение ищет сайдкар в `<App>.app/Contents/Resources/sidecar`
-(`SidecarConverter.discover`, см.
-[conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер)),
-а нужного шага сборки в `app/macos/` **нет**: Xcode на машине автора не
-ставится (см. [../AGENTS.md](../AGENTS.md)), и править
-`Runner.xcodeproj/project.pbxproj` вслепую, без возможности собрать и
-проверить, не стали. Что нужно сделать, когда macOS-сборка заработает:
+The app looks for the sidecar at
+`<App>.app/Contents/Resources/sidecar`
+(`SidecarConverter.discover`, see
+[conversion-pipeline.md](conversion-pipeline.md#sidecar--just-another-converter)),
+and the build step needed for that **doesn't exist** in `app/macos/`: Xcode
+isn't installed on the author's machine (see [../AGENTS.md](../AGENTS.md)),
+and editing `Runner.xcodeproj/project.pbxproj` blind, without being able to
+build and verify it, wasn't an option. What needs to be done once the macOS
+build works:
 
-1. Build Phase типа Run Script в таргете `Runner`, после «Copy Bundle
-   Resources»: скопировать результат `make sidecar` (каталог с `python/`,
-   `lib/`, `run.py`, `manifest.json`) в
+1. A Run Script Build Phase on the `Runner` target, after "Copy Bundle
+   Resources": copy the output of `make sidecar` (the directory with
+   `python/`, `lib/`, `run.py`, `manifest.json`) into
    `"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources/sidecar"` (`rsync -a
-   --delete`, симлинки внутри `python/` сохранять — `-a` это делает).
-2. Входные/выходные файлы фазы указать явно (иначе Xcode будет пересобирать
-   её каждый раз или, наоборот, не запускать), `ENABLE_USER_SCRIPT_SANDBOXING`
-   для этой фазы выключить — скрипт читает каталог вне проекта.
-3. Подпись вложенных `.so`/исполняемых файлов — отдельным шагом после
-   копирования, см. выше; сам `Contents/Resources/sidecar` должен попасть в
-   подпись бандла.
-4. Без собранного сайдкара фаза не должна падать: приложение умеет работать
-   без него (нет каталога — сайдкар не регистрируется), а `flutter build
-   macos` для разработки Dart-части не обязан его требовать.
-5. Проверить на машине с Xcode: «бросили `.xls` — получили Markdown», в
-   `warnings` есть `converterId: sidecar`.
+   --delete`, keeping the symlinks inside `python/` — `-a` does that).
+2. Declare the phase's input/output files explicitly (otherwise Xcode will
+   either rebuild it every time or, conversely, never run it), and disable
+   `ENABLE_USER_SCRIPT_SANDBOXING` for this phase — the script reads a
+   directory outside the project.
+3. Sign the nested `.so`/executable files in a separate step after copying,
+   see above; `Contents/Resources/sidecar` itself must be covered by the
+   bundle's signature.
+4. The phase shouldn't fail without a built sidecar: the app can run without
+   it (no directory means the sidecar just doesn't register), and `flutter
+   build macos` for developing the Dart side shouldn't require it.
+5. Verify on a machine with Xcode: "dropped an `.xls`, got Markdown," and
+   `warnings` contains `converterId: sidecar`.
 
-На Android ничего из этого не делается: сайдкар в APK не попадает — проверено
-замером (APK 25,1 → 25,3 МБ, рост целиком из Dart-кода, см.
-[format-coverage.md](format-coverage.md#android-не-потолстел-этап-4)).
+None of this happens on Android: the sidecar doesn't end up in the APK —
+verified by measurement (APK 25.1 → 25.3 MB, the growth entirely from Dart
+code, see
+[format-coverage.md](format-coverage.md#android-didnt-get-fatter-stage-4)).
 
 ### Android
 
 ```bash
-make fetch-pdfium     # libpdfium.so в jniLibs/arm64-v8a — один раз
-make fetch-tesseract  # libtesseract/libleptonica/libjpeg/libpngx.so туда же
-                      # + модели rus/eng в app/assets/tessdata/
+make fetch-pdfium     # libpdfium.so into jniLibs/arm64-v8a — once
+make fetch-tesseract  # libtesseract/libleptonica/libjpeg/libpngx.so into the same place
+                      # + rus/eng models in app/assets/tessdata/
 ./whisper/build.sh --android  # libmarkitdown_whisper/libwhisper/libggml*.so
-                              # туда же — NDK 27.0.12077973, ≈10 минут
-./whisper/fetch.sh    # модели Whisper в app/assets/whisper/ (265 МБ)
+                              # into the same place — NDK 27.0.12077973, ≈10 minutes
+./whisper/fetch.sh    # Whisper models into app/assets/whisper/ (265 MB)
 cd app && flutter build apk --release --target-platform android-arm64
 ```
 
-Без `fetch-tesseract` APK собирается (в `assets/tessdata/` лежит только
-`.gitkeep`), но OCR в нём недоступен — приложение так и пишет в
-предупреждении. То же с распознаванием речи без `whisper/`-шагов. Релизный
-джоб проверяет, что `.so` и модели в APK есть. С моделью Whisper APK весит
-≈300 МБ. Лимит Play (200 МБ базового модуля) нас не касается: в Google
-Play не публикуем, APK раздаётся через GitHub Releases.
+Without `fetch-tesseract` the APK still builds (only a `.gitkeep` sits in
+`assets/tessdata/`), but OCR is unavailable in it — the app says so
+directly in a warning. The same applies to speech recognition without the
+`whisper/` steps. The release job checks that the `.so` files and the
+models are actually present in the APK. With the Whisper model, the APK
+weighs ≈300 MB. Play's limit (200 MB for the base module) doesn't affect
+us: we don't publish on Google Play, the APK is distributed via GitHub
+Releases.
 
-Без этого шага приложение всё равно собирается, но PDF падает в рантайме с
-«не удалось прочитать файл»: `DynamicLibrary.open('libpdfium.so')` просто не
-находит библиотеку. `make verify`/`make test` фетчат её сами для тестов
-`core/`, но тестовый `.so` для хоста (macOS/Linux; для Windows — `pdfium.dll`)
-не тот же файл, что нужен
-в APK (Android-библиотека — `arm64`, кладётся туда же скриптом) — см.
+Without this step the app still builds, but PDF fails at runtime with
+"could not read the file": `DynamicLibrary.open('libpdfium.so')` simply
+can't find the library. `make verify`/`make test` fetch it themselves for
+`core/`'s tests, but the test `.so` for the host (macOS/Linux; for Windows —
+`pdfium.dll`) isn't the same file needed in the APK (the Android library is
+`arm64`, fetched into the same place by the script) — see
 `pdfium/fetch.sh`.
 
-`compileSdk`/`targetSdk` прибивать числом в `android/app/build.gradle.kts`,
-а не через переменные — чтобы при обновлении Flutter они не поехали молча.
-Требования Play к `targetSdk` нам не указ (в Play не публикуем), но совсем
-старый `targetSdk` Android ставит с предупреждением Play Protect или не
-ставит вовсе (Android 14+ отказывает при `targetSdk` < 23).
+`compileSdk`/`targetSdk` are pinned as plain numbers in
+`android/app/build.gradle.kts`, rather than via variables — so they don't
+drift silently on a Flutter upgrade. Play's `targetSdk` requirements don't
+apply to us (we don't publish on Play), but a very old `targetSdk` makes
+Android itself install with a Play Protect warning, or refuse to install at
+all (Android 14+ refuses below `targetSdk` 23).
 
 ### iOS
 
-В плане нет: собрать локально можно, подать в App Store — нельзя (Xcode на
-macOS 12 слишком стар, `ITMS-90111`). Путь, если понадобится, — Xcode Cloud;
-подробности и что к нему прицеплено — в
+Not in the plan: it can be built locally, but can't be submitted to the App
+Store (Xcode on macOS 12 is too old, `ITMS-90111`). The path, if it's ever
+needed, is Xcode Cloud; details and what that would entail are in
 [future-development.md](future-development.md#ios).
 
-## Релиз
+## Release
 
-1. `make verify` зелёный, изменения в main.
-2. Версия бампнута, `CHANGELOG.md` дописан.
-3. Тег на коммит в main — `release.yml` собирает всё сам и публикует релиз:
+1. `make verify` is green, changes are on main.
+2. Version bumped, `CHANGELOG.md` updated.
+3. Tag the commit on main — `release.yml` builds everything itself and
+   publishes the release:
 
    ```bash
    git tag v0.5.0 && git push origin v0.5.0
    ```
 
-   Падает, если версия в `app/pubspec.yaml` не совпадает с тегом, если в
-   APK оказалось сетевое разрешение сверх `INTERNET` или в Windows-сборке
-   нет сайдкара — урезанный релиз не публикуется. Текст релиза —
-   `.github/release-notes.md` (установка на каждой платформе), что нового —
-   ссылкой на `CHANGELOG.md`.
+   It fails if the version in `app/pubspec.yaml` doesn't match the tag, if
+   the APK ended up with a network permission beyond `INTERNET`, or if the
+   Windows build is missing the sidecar — a crippled release doesn't get
+   published. The release text comes from
+   `.github/release-notes.md` (install instructions for each platform),
+   with what's new linked from `CHANGELOG.md`.
 
-   **Подпись пока временная.** APK подписан debug-ключом раннера (своего
-   ключа нет) — для установки из файла хватает, но ключ у каждого релиза
-   свой, поэтому новую версию поверх старой не поставить — сначала
-   удалить. Лечится постоянным ключом в GitHub Secrets (Play для этого не
-   нужен). Windows-сборка не подписана вовсе — SmartScreen
-   предупреждает. Оба вопроса — Этап 7.
-4. **Размер бандла по платформам записать в README.** Он — честная цена
-   офлайна, и пользователь имеет право увидеть её до скачивания, а не после.
-5. Обе платформы — только в GitHub Releases (Windows — zip, решение
-   Этапа 5; в Google Play не публикуем — решение автора, 14.10.2026);
-   macOS (вторичная) — DMG в GitHub Releases, только по отдельному
-   запросу (Mac App Store — отдельное решение, см.
-   [python-sidecar.md](python-sidecar.md#про-app-store)).
+   **Signing is still temporary.** The APK is signed with the runner's debug
+   key (there's no own key yet) — enough for installing from a file, but
+   the key is different for every release, so a new version can't be
+   installed over an old one — the old one has to be removed first. This is
+   fixed by a permanent key in GitHub Secrets (Play isn't needed for that).
+   The Windows build isn't signed at all — SmartScreen warns. Both issues
+   are Stage 7.
+4. **Record the bundle size per platform in the README.** It's the honest
+   price of being offline, and the user has the right to see it before
+   downloading, not after.
+5. Both platforms are distributed only via GitHub Releases (Windows — a
+   zip, a Stage 5 decision; we don't publish on Google Play — the author's
+   decision, 2026-10-14); macOS (secondary) — a DMG on GitHub Releases, only
+   on separate request (the Mac App Store is a separate decision, see
+   [python-sidecar.md](python-sidecar.md#about-the-app-store)).
 
-## Чего здесь нет
+## What's not here
 
-Ни расписаний, ни серверов, ни миграций, ни рассылок — в проекте нет
-серверной части вообще. Если в этом файле однажды появится раздел про
-бэкенд, значит продукт перестал быть тем, чем задумывался, и это повод
-перечитать [offline-and-privacy.md](offline-and-privacy.md), а не дописать
-раздел.
+No schedules, no servers, no migrations, no mailing lists — the project has
+no backend at all. If a backend section ever shows up in this file, it means
+the product has stopped being what it was meant to be, and that's a reason
+to re-read [offline-and-privacy.md](offline-and-privacy.md), not to finish
+writing the section.

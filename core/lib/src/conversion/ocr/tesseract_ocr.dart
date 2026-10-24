@@ -6,21 +6,23 @@ import 'package:ffi/ffi.dart';
 
 import 'tesseract_bindings.dart';
 
-/// Настройки OCR, которые приложение передаёт в изолят конвертации: только
-/// строки и числа — библиотеки открываются уже внутри изолята.
+/// OCR settings that the app passes into the conversion isolate: only
+/// strings and numbers — the libraries themselves are opened inside the isolate.
 class OcrSettings {
-  /// Каталог с `<язык>.traineddata`. На Windows — ассеты рядом с `.exe`, на
-  /// Android — копия ассетов в каталоге приложения (Tesseract читает модели
-  /// с диска, а не из APK), см. `app/lib/src/conversion/ocr_data.dart`.
+  /// Directory with `<language>.traineddata`. On Windows — assets next to
+  /// `.exe`; on Android — a copy of the assets in the app's directory
+  /// (Tesseract reads models from disk, not from the APK), see
+  /// `app/lib/src/conversion/ocr_data.dart`.
   final String tessdataDir;
 
-  /// Языки Tesseract через `+`. Русский первым: он основной у автора, а на
-  /// смешанном тексте порядок влияет на то, какой словарь спрашивается раньше.
+  /// Tesseract languages joined by `+`. Russian first: it's the author's
+  /// primary language, and on mixed text the order affects which dictionary
+  /// gets consulted first.
   final String languages;
 
-  /// Сколько страниц-сканов PDF распознавать. OCR страницы — секунды (на
-  /// телефоне — больше), отменить конвертацию нельзя (`Isolate.run`), поэтому
-  /// предел, а остальные страницы — в `warnings`.
+  /// How many scanned PDF pages to run OCR on. OCR per page takes seconds (on
+  /// a phone — more), and the conversion can't be cancelled (`Isolate.run`),
+  /// hence the limit, with the remaining pages reported in `warnings`.
   final int maxPdfPages;
 
   const OcrSettings({
@@ -30,23 +32,23 @@ class OcrSettings {
   });
 }
 
-/// Есть ли рабочий OCR с этими настройками: библиотеки грузятся и модели
-/// инициализируются. Для тестов и диагностики — конвертерам проверять
-/// заранее не нужно, они сами пишут предупреждение.
+/// Whether OCR works with these settings: the libraries load and the models
+/// initialize. For tests and diagnostics — converters don't need to check
+/// ahead of time, they write their own warning instead.
 bool ocrAvailable(OcrSettings settings) {
   final engine = TesseractOcr.open(settings);
   engine?.dispose();
   return engine != null;
 }
 
-/// Путь к моделям в том виде, в каком его поймёт `fopen` внутри Tesseract.
-/// На macOS, Linux и Android — UTF-8. На Windows `fopen` из MSVC читает путь
-/// в ANSI-кодировке системы, а не в UTF-8, — и приложение, распакованное в
-/// `C:\Users\Тимофей\Downloads\…`, молча осталось бы без OCR. Поэтому
-/// там: ASCII как есть → короткое имя 8.3 (`GetShortPathNameW`, оно ASCII)
-/// → перекодировка в ANSI-кодировку (`WideCharToMultiByte`, на русской
-/// Windows — cp1251); если и она теряет символы — `null`, OCR недоступен.
-/// Память под результат освобождает вызывающий (`calloc.free`).
+/// Path to the models in the form `fopen` inside Tesseract will understand.
+/// On macOS, Linux and Android — UTF-8. On Windows, MSVC's `fopen` reads the
+/// path in the system's ANSI codepage, not UTF-8 — so an app unpacked into
+/// `C:\Users\Тимофей\Downloads\…` would silently end up without OCR. Hence,
+/// on Windows: ASCII as-is → short 8.3 name (`GetShortPathNameW`, which is
+/// ASCII) → re-encode into the ANSI codepage (`WideCharToMultiByte`; cp1251
+/// on a Russian-locale Windows); if that still loses characters — `null`,
+/// OCR is unavailable. The caller frees the result's memory (`calloc.free`).
 Pointer<Uint8>? _pathForFopen(String path) {
   final isAscii = path.codeUnits.every((c) => c < 0x80);
   if (!Platform.isWindows || isAscii) return path.toNativeUtf8().cast();
@@ -93,8 +95,8 @@ Pointer<Uint8>? _pathForFopen(String path) {
       }
     }
 
-    const cpAcp = 0; // ANSI-кодировка системы
-    const wcNoBestFitChars = 0x400; // не подменять «похожими» символами
+    const cpAcp = 0; // system ANSI codepage
+    const wcNoBestFitChars = 0x400; // don't substitute "similar" characters
     final ansi = calloc<Uint8>(capacity);
     final usedDefault = calloc<Int32>();
     try {
@@ -123,7 +125,7 @@ Pointer<Uint8>? _pathForFopen(String path) {
   }
 }
 
-/// Распознанный текст и средняя уверенность Tesseract (0–100).
+/// Recognized text and Tesseract's mean confidence (0–100).
 class OcrText {
   final String text;
   final int confidence;
@@ -131,22 +133,23 @@ class OcrText {
   const OcrText(this.text, this.confidence);
 }
 
-/// Средняя уверенность Tesseract ниже этого — повод сказать человеку
-/// «проверьте текст»: на чистой печати бывает 85–95, на фото под углом — 40–60.
+/// Below this, Tesseract's mean confidence is a reason to tell the user
+/// "check the text": clean print scores 85–95, an angled photo — 40–60.
 const lowOcrConfidence = 60;
 
-/// Длинная сторона, выше которой картинка уменьшается перед OCR. Снимок
-/// документа с телефона — около 4000 px, этого хватает с запасом; панорама на
-/// 15 000 px распознавалась бы минутами без прироста качества.
+/// Long side above which an image is downscaled before OCR. A phone photo of
+/// a document is around 4000 px, which is plenty; a 15,000 px panorama would
+/// take minutes to recognize with no quality gain.
 const _maxSide = 5000;
 
-/// Предполагаемое разрешение для картинок без своего: Tesseract с «0 dpi»
-/// подставляет 70 и хуже отсекает шум. Для снимка документа 300 — разумно.
+/// Assumed resolution for images that don't carry their own: Tesseract
+/// defaults to 70 for "0 dpi" and filters noise worse at that value. 300 is
+/// reasonable for a document photo.
 const _assumedDpi = 300;
 
-/// Один экземпляр движка на конвертацию: модели загружаются в [open]
-/// (полсекунды–секунда на `rus+eng`), [dispose] освобождает память. Внутри
-/// изолята — синхронно, как и PDFium.
+/// One engine instance per conversion: models load in [open] (half a
+/// second to a second for `rus+eng`), [dispose] frees the memory. Inside the
+/// isolate it runs synchronously, same as PDFium.
 class TesseractOcr {
   final TesseractBindings _api;
   final Pointer<Void> _handle;
@@ -157,9 +160,9 @@ class TesseractOcr {
   static TesseractBindings? _bindings;
   static bool _loadFailed = false;
 
-  /// `null`, если библиотек нет или моделей нужных языков нет в
-  /// [OcrSettings.tessdataDir] — OCR необязателен, вызывающий пишет
-  /// предупреждение и отдаёт то, что есть без него.
+  /// `null` if the libraries are missing, or the models for the requested
+  /// languages aren't in [OcrSettings.tessdataDir] — OCR is optional, the
+  /// caller writes a warning and returns what it has without it.
   static TesseractOcr? open(OcrSettings settings) {
     for (final language in settings.languages.split('+')) {
       final model = File('${settings.tessdataDir}/$language.traineddata');
@@ -184,8 +187,8 @@ class TesseractOcr {
         ..free(languages);
     }
     final ocr = TesseractOcr._(api, handle, settings.languages);
-    // Диагностика Tesseract («Estimating resolution as …») идёт в stderr
-    // процесса приложения — гасим её в нулевое устройство.
+    // Tesseract's diagnostics ("Estimating resolution as …") go to the
+    // app process's stderr — silence it to the null device.
     ocr._setVariable('debug_file', Platform.isWindows ? 'NUL' : '/dev/null');
     api.setPageSegMode(handle, tessPsmAuto);
     return ocr;
@@ -201,14 +204,14 @@ class TesseractOcr {
     try {
       return TesseractBindings(libs);
     } on ArgumentError {
-      // В библиотеке нет нужного символа — не та сборка.
+      // The library is missing the required symbol — wrong build.
       _loadFailed = true;
       return null;
     }
   }
 
-  /// `Tesseract 5.5.1 (rus+eng)` — пишется в `warnings`: на разных
-  /// платформах и версиях результат разный, и это не надо скрывать.
+  /// `Tesseract 5.5.1 (rus+eng)` — written into `warnings`: the result
+  /// differs across platforms and versions, and that shouldn't be hidden.
   String get engine => 'Tesseract ${_api.version} ($languages)';
 
   void _setVariable(String name, String value) {
@@ -223,10 +226,11 @@ class TesseractOcr {
     }
   }
 
-  /// Картинка в исходном формате (JPEG, PNG, BMP — что умеет Leptonica этой
-  /// сборки). [quarterTurns] — поворот по часовой из EXIF `Orientation`:
-  /// снимок документа «боком» Tesseract без поворота не прочтёт. `null` —
-  /// Leptonica картинку не декодировала.
+  /// The image in its original format (JPEG, PNG, BMP — whatever this
+  /// build's Leptonica supports). [quarterTurns] — clockwise rotation from
+  /// the EXIF `Orientation`: a document photo shot "sideways" Tesseract
+  /// won't read without rotating it first. `null` — Leptonica failed to
+  /// decode the image.
   OcrText? recognizeEncoded(Uint8List bytes, {int quarterTurns = 0}) {
     final buffer = calloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
     final pixes = <Pointer<Void>>[];
@@ -265,10 +269,11 @@ class TesseractOcr {
     }
   }
 
-  /// Готовый растр в памяти — так PDFium отдаёт отрендеренную страницу-скан
-  /// (BGRx, 4 байта на пиксель). Порядок каналов Tesseract считает RGBA;
-  /// перепутанные R и B на чёрном тексте по белому не влияют, а лишней копии
-  /// страницы на десятки мегабайт не будет. [dpi] — разрешение рендера.
+  /// A ready-made bitmap already in memory — this is how PDFium hands back
+  /// a rendered scanned page (BGRx, 4 bytes per pixel). Tesseract treats the
+  /// channel order as RGBA; swapped R and B don't matter for black text on
+  /// white, and this avoids an extra tens-of-megabytes page copy. [dpi] —
+  /// the render resolution.
   OcrText recognizePixels(
     Pointer<Uint8> pixels,
     int width,
@@ -294,12 +299,14 @@ class TesseractOcr {
   void dispose() => _api.delete(_handle);
 }
 
-/// Текст Tesseract → абзацы Markdown-текста. Tesseract отдаёт строки, как они
-/// стоят на картинке; абзацы разделены пустой строкой. Строки внутри абзаца
-/// склеиваются — то же правило «текст не переносится по ширине», что и у PDF.
-/// Перенос по слогам (`пере-` + `нос` со строчной буквы) склеивается без
-/// дефиса. Цена — слово через дефис ровно на стыке строк (`кто-` / `то`)
-/// станет `ктото`; переносы по слогам в сканах встречаются несравнимо чаще.
+/// Tesseract's text → Markdown paragraphs. Tesseract outputs lines as they
+/// appear on the image; paragraphs are separated by a blank line. Lines
+/// within a paragraph are joined — the same "text doesn't wrap at a fixed
+/// width" rule as for PDF. A syllable hyphenation (`pere-` + `nos` starting
+/// with a lowercase letter) is joined without the hyphen. The cost: a
+/// hyphenated word that happens to break exactly at a line boundary
+/// (`who-` / `ever`) becomes `whoever`; syllable hyphenation in scans is
+/// incomparably more common.
 List<String> ocrParagraphs(String text) {
   final paragraphs = <String>[];
   for (final block in text.replaceAll('\r', '').split(RegExp(r'\n\s*\n'))) {

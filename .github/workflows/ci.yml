@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    # Только ветки: теги v* собирает release.yml, который зовёт этот же
-    # workflow через workflow_call — без фильтра тег гонял бы всё дважды.
+    # Branches only: tags v* are built by release.yml, which calls this same
+    # workflow via workflow_call — without the filter the tag would run it all twice.
     branches: ['**']
   pull_request:
   workflow_call:
@@ -13,9 +13,9 @@ env:
 
 jobs:
   verify:
-    # Не ubuntu-latest: с 19.10.2026 он переезжает на Ubuntu 26, а отсюда
-    # берётся Tesseract из пакетов дистрибутива — его версия попадает в
-    # ожидания OCR-тестов. Поднимать осознанно, как windows-2022 ниже.
+    # Not ubuntu-latest: on 19.10.2026 it moves to Ubuntu 26, and that is where
+    # Tesseract comes from as a distro package — its version feeds the OCR
+    # test expectations. Bump it deliberately, like windows-2022 below.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -25,18 +25,18 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
-      # OCR-тесты (core/test/ocr_test.dart) — на Tesseract из пакетов Ubuntu:
-      # Linux не целевая платформа, и собирать его здесь из исходников
-      # (tesseract/build.sh, минуты) незачем. Модели — свои, закреплённые,
-      # их качает make test (tesseract/fetch.sh).
+      # OCR tests (core/test/ocr_test.dart) run against Tesseract from Ubuntu
+      # packages: Linux isn't a target platform, so there's no point building
+      # it from source here (tesseract/build.sh, minutes). The models are our
+      # own, pinned, and make test downloads them (tesseract/fetch.sh).
       - name: Tesseract (пакет дистрибутива)
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libtesseract5
 
-      # Распознавание речи (0.8): whisper.cpp собирается из исходников
-      # (whisper/build.sh, минуты — десяток вариантов CPU-бэкенда), модели
-      # качает fetch.sh (265 МБ). И то и другое кэшируется по хешу рецепта;
-      # с ними make test гоняет core/test/speech_test.dart, без них —
-      # пропускает.
+      # Speech recognition (0.8): whisper.cpp is built from source
+      # (whisper/build.sh, minutes — a dozen CPU-backend variants), the models
+      # are downloaded by fetch.sh (265 MB). Both are cached by recipe hash;
+      # with them make test runs core/test/speech_test.dart, without them it
+      # skips it.
       - uses: actions/cache@v6
         with:
           path: |
@@ -57,9 +57,10 @@ jobs:
       - name: make verify
         run: make verify
 
-      # Бамп версии обязателен в каждом PR (docs/operations.md#версия). Только
-      # на pull_request: на push в main сравнивать не с чем. checkout берёт один
-      # коммит, поэтому базовую ветку подтягиваем явно.
+      # A version bump is required in every PR (docs/operations.md#version).
+      # Only on pull_request: there's nothing to compare against on push to
+      # main. checkout takes a single commit, so we fetch the base branch
+      # explicitly.
       - name: бамп версии (app/pubspec.yaml)
         if: github.event_name == 'pull_request'
         env:
@@ -68,15 +69,15 @@ jobs:
           git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
           make verify-version BASE_REF="origin/$BASE_BRANCH"
 
-      # Сеть в приложении — только режим «ссылка», и только через dart:io в
-      # core/lib/src/web/ (docs/offline-and-privacy.md). Сетевой пакет —
-      # это сеть мимо этого модуля: ловим его, как только он приезжает
-      # транзитивно, а не когда их наберётся тридцать.
+      # Networking in the app is "link" mode only, and only through dart:io
+      # in core/lib/src/web/ (docs/offline-and-privacy.md). A networking
+      # package is network access bypassing that module: catch it as soon as
+      # it arrives transitively, not once there are thirty of them.
       #
-      # web_socket_channel/http_parser/http_multi_server/shelf* сюда не
-      # попадают намеренно: это внутренняя инфраструктура package:test,
-      # которую тянет riverpod (прямая, не dev-зависимость, см. его
-      # pubspec.yaml) — тестовый раннер, а не сетевой клиент приложения.
+      # web_socket_channel/http_parser/http_multi_server/shelf* are
+      # deliberately excluded: they're internal infrastructure for
+      # package:test, pulled in by riverpod (a direct, non-dev dependency,
+      # see its pubspec.yaml) — a test runner, not the app's network client.
       - name: нет сетевых пакетов в зависимостях app/
         working-directory: app
         run: |
@@ -93,10 +94,11 @@ jobs:
             exit 1
           fi
 
-      # С 0.9 у APK есть INTERNET (режим «ссылка»), и гарантия держится на
-      # коде: сокеты и HTTP-клиент — только в core/lib/src/web/, где сеть
-      # ходит лишь по ссылке, которую дал человек. Новое место с сетью —
-      # осознанное решение с правкой этого шага, а не мимоходом.
+      # As of 0.9 the APK has INTERNET ("link" mode), and the guarantee rests
+      # on the code: sockets and the HTTP client live only in
+      # core/lib/src/web/, where network access only follows a link the
+      # human gave. A new place with networking is a deliberate decision
+      # with an edit to this step, not something that slips in.
       - name: сеть только в core/lib/src/web/
         run: |
           if grep -rnE '\b(HttpClient|HttpServer|HttpOverrides|Socket|RawSocket|SecureSocket|ServerSocket|RawDatagramSocket|WebSocket|InternetAddress|NetworkInterface)\b' \
@@ -105,9 +107,9 @@ jobs:
             exit 1
           fi
 
-      # macOS: в Release только исходящие соединения (network.client) —
-      # входящих (network.server) нет, песочница включена. Сайдкару сеть не
-      # нужна вовсе: его собственные entitlements без network.*.
+      # macOS: in Release only outgoing connections (network.client) —
+      # no incoming (network.server), sandbox enabled. The sidecar needs no
+      # networking at all: its own entitlements have no network.*.
       - name: в Release.entitlements нет network.server, у сайдкара нет сети
         run: |
           if grep -q '<key>com.apple.security.network.server' app/macos/Runner/Release.entitlements; then
@@ -123,11 +125,12 @@ jobs:
             exit 1
           fi
 
-      # Windows-часть приложения (Этап 5, п. 7). По импортам .exe сеть не
-      # проверить — flutter_windows.dll и Dart VM сами тянут сокеты для
-      # отладочного сервиса, такая проверка всегда красная. Честно проверяемо
-      # только то, что мы сами не добавили сетевых библиотек в runner/CMake:
-      # гарантии уровня ОС у zip-сборки нет (docs/offline-and-privacy.md).
+      # The Windows part of the app (Stage 5, item 7). Networking can't be
+      # checked from the .exe's imports — flutter_windows.dll and the Dart VM
+      # themselves pull in sockets for the debug service, so that check would
+      # always be red. The only thing honestly checkable is that we ourselves
+      # haven't added networking libraries to runner/CMake: a zip build has
+      # no OS-level guarantee (docs/offline-and-privacy.md).
       - name: нет сетевых библиотек в app/windows/
         run: |
           if grep -rniE 'ws2_32|winhttp|wininet|urlmon|winsock|internetClient' app/windows/ --exclude-dir=ephemeral; then
@@ -135,17 +138,19 @@ jobs:
             exit 1
           fi
 
-  # Python-сайдкар под Windows (Этап 5, п. 4). Собирать его, кроме как здесь,
-  # негде. Не часть make verify (как и на Mac): качает сотни МБ, поэтому
-  # результат кэшируется по хешу всего, от чего он зависит.
+  # The Python sidecar for Windows (Stage 5, item 4). There's nowhere else to
+  # build it. Not part of make verify (same as on Mac): it downloads
+  # hundreds of MB, so the result is cached by the hash of everything it
+  # depends on.
   #
-  # Lock-файл генерируется только здесь (хеши колёс win_amd64 свои), а
-  # коммитится руками после чтения: если sidecar/locks/windows-x86_64.txt
-  # в репозитории нет, джоб создаёт его lock.sh, выкладывает артефактом
-  # sidecar-lock-windows-x86_64, собирает по нему и в конце КРАСНЕЕТ — чтобы
-  # незакреплённый эталон не сошёл за нормальное состояние.
+  # The lock file is generated only here (win_amd64 wheel hashes are its
+  # own) and committed by hand after review: if
+  # sidecar/locks/windows-x86_64.txt isn't in the repository, the job
+  # creates it with lock.sh, uploads it as the sidecar-lock-windows-x86_64
+  # artifact, builds against it, and TURNS RED at the end — so an unpinned
+  # reference doesn't pass for a normal state.
   windows-sidecar:
-    runs-on: windows-2022  # тот же образ, что у windows, — см. там
+    runs-on: windows-2022  # same image as windows — see there
     defaults:
       run:
         shell: bash
@@ -184,15 +189,16 @@ jobs:
       - name: сборка сайдкара
         run: ./sidecar/build.sh
 
-      # Лимит 260 символов: самый длинный путь внутри сайдкара плюс запас на
-      # каталог, куда его распакуют (C:\Users\<имя>\Downloads\…\sidecar\ —
-      # берём 100). Не падение, а цифра в логе: длинные пути на машине автора
-      # проверяются в п. 8.
+      # Limit of 260 characters: the longest path inside the sidecar plus
+      # headroom for the directory it gets unpacked into
+      # (C:\Users\<name>\Downloads\…\sidecar\ — we budget 100). Not a
+      # failure, just a number in the log: long paths on the author's own
+      # machine are checked in item 8.
       - name: самый длинный путь в сайдкаре
         run: |
           cd sidecar/dist/windows-x86_64
-          # awk, а не head: head закрывает пайп раньше, sort получает SIGPIPE,
-          # и под pipefail шаг падает с кодом 141.
+          # awk, not head: head closes the pipe early, sort gets SIGPIPE,
+          # and under pipefail the step fails with exit code 141.
           find . -type f | awk '{ print length($0) - 2, $0 }' | sort -rn | awk 'NR <= 3'
 
       - name: PDFium (pdfium.dll)
@@ -227,26 +233,29 @@ jobs:
           echo "::error::sidecar/locks/windows-x86_64.txt нет в репозитории. Скачать артефакт sidecar-lock-windows-x86_64, прочитать и закоммитить."
           exit 1
 
-  # Windows собирается только на Windows (docs/implementation-plan.md, Этап 5):
-  # здесь — и проверка, и сборка, артефакт которой автор запускает руками.
+  # Windows is only built on Windows (docs/implementation-plan.md, Stage 5):
+  # both the check and the build happen here, and the author runs its
+  # artifact by hand.
   #
-  # Ждёт windows-sidecar, но не зависит от его успеха: сайдкар собрался —
-  # кладётся рядом с .exe (install в app/windows/CMakeLists.txt), нет —
-  # выходит Dart-only сборка, а проверки Dart-части всё равно прогоняются.
+  # Waits on windows-sidecar, but doesn't depend on its success: if the
+  # sidecar built, it's placed next to the .exe (install in
+  # app/windows/CMakeLists.txt); if not, it's a Dart-only build, and the
+  # Dart-side checks still run either way.
   #
-  # Шаги — эквивалент `make verify`, расписанный вручную, а не `make`: в Git
-  # Bash раннера make нет, а Makefile знает только Darwin/Linux. Список
-  # проверок поэтому живёт в двух местах — Makefile и этот джоб; при правке
-  # одного держать одинаковым другой (то же сказано у `verify` в Makefile).
+  # The steps are the equivalent of `make verify`, spelled out by hand
+  # rather than via `make`: the runner's Git Bash has no make, and the
+  # Makefile only knows Darwin/Linux. The list of checks therefore lives in
+  # two places — the Makefile and this job; when editing one, keep the
+  # other in sync (the same is said next to `verify` in the Makefile).
   windows:
     needs: windows-sidecar
     if: always()
-    # Не windows-latest и не windows-2025: с осени 2026 оба — образ
-    # windows-2025-vs2026, а Flutter 3.32.8 (закреплён, см. AGENTS.md) знает
-    # Visual Studio только до 2022 и для неизвестной версии подставляет
-    # генератор «Visual Studio 16 2019» — CMake падает с «could not find any
-    # instance of Visual Studio». windows-2022 — образ с VS 2022. Поднимать
-    # вместе с Flutter.
+    # Not windows-latest and not windows-2025: as of fall 2026 both are the
+    # windows-2025-vs2026 image, and Flutter 3.32.8 (pinned, see AGENTS.md)
+    # only knows Visual Studio up to 2022 and falls back to the "Visual
+    # Studio 16 2019" generator for an unknown version — CMake then fails
+    # with "could not find any instance of Visual Studio". windows-2022 is
+    # the image with VS 2022. Bump it together with Flutter.
     runs-on: windows-2022
     defaults:
       run:
@@ -260,8 +269,8 @@ jobs:
           channel: stable
           cache: true
 
-      # Без .gitattributes (eol=lf) этот шаг упал бы на CRLF при чекауте —
-      # проверяем, что правило действительно сработало.
+      # Without .gitattributes (eol=lf) this step would fail on CRLF at
+      # checkout — we're verifying the rule actually took effect.
       - name: переводы строк — LF
         run: |
           if git ls-files --eol | grep -E '^i/lf +w/crlf'; then
@@ -287,10 +296,11 @@ jobs:
       - name: PDFium (pdfium.dll)
         run: ./pdfium/fetch.sh
 
-      # Tesseract для OCR (Этап 6): DLL собираются из исходников
-      # (tesseract/build.sh, ~10 минут) и кэшируются по хешу рецепта; модели
-      # и Android-.so качает fetch.sh — секунды. DLL нужны и тестам, и
-      # flutter build windows (install в app/windows/CMakeLists.txt).
+      # Tesseract for OCR (Stage 6): the DLLs are built from source
+      # (tesseract/build.sh, ~10 minutes) and cached by recipe hash; the
+      # models and Android .so are downloaded by fetch.sh — seconds. The
+      # DLLs are needed by both the tests and flutter build windows (install
+      # in app/windows/CMakeLists.txt).
       - uses: actions/cache@v6
         with:
           path: |
@@ -304,11 +314,11 @@ jobs:
           ./tesseract/fetch.sh
           ls -la tesseract/native/host
 
-      # Распознавание речи (0.8): DLL whisper.cpp — из исходников, как
-      # Tesseract, с кэшем по хешу рецепта; модели — fetch.sh. Нужны и
-      # тестам, и flutter build windows (install в app/windows/CMakeLists.txt).
-      # Здесь же единственная в CI проверка AAC (M4A через Media
-      # Foundation): на Linux декодера платформы нет.
+      # Speech recognition (0.8): the whisper.cpp DLL — from source, like
+      # Tesseract, cached by recipe hash; models via fetch.sh. Needed by both
+      # the tests and flutter build windows (install in
+      # app/windows/CMakeLists.txt). This is also CI's only check of AAC
+      # (M4A via Media Foundation): Linux has no platform decoder for it.
       - uses: actions/cache@v6
         with:
           path: |
@@ -357,9 +367,9 @@ jobs:
           fi
           ls
 
-      # Пока упаковка — zip (Этап 5, п. 6: «zip сейчас, решить позже»):
-      # upload-artifact сам отдаёт каталог zip-архивом. Распаковал и
-      # запустил markitdown_ui.exe — ничего не ставится.
+      # Packaging is a zip for now (Stage 5, item 6: "zip now, decide
+      # later"): upload-artifact hands back the directory as a zip archive
+      # on its own. Unzip and run markitdown_ui.exe — nothing to install.
       - uses: actions/upload-artifact@v7
         with:
           name: markitdown_ui-windows-x64

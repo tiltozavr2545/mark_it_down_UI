@@ -2,9 +2,10 @@ import 'dart:convert';
 
 import '../../type_detection/detected_type.dart';
 
-/// Какие форматы сайдкар знает по id (`--format` в его протоколе) и каким
-/// [FileKind] они соответствуют. Идентификатор из манифеста, которого здесь
-/// нет, игнорируется: приложение не обязано уметь всё, что умеет сайдкар.
+/// Which formats the sidecar knows by id (`--format` in its protocol) and
+/// which [FileKind] they correspond to. An identifier from the manifest
+/// that isn't here is ignored: the app isn't obligated to know everything
+/// the sidecar knows.
 const Map<String, FileKind> sidecarFormatKinds = {
   'pdf': FileKind.pdf,
   'docx': FileKind.docx,
@@ -14,17 +15,18 @@ const Map<String, FileKind> sidecarFormatKinds = {
   'msg': FileKind.msg,
 };
 
-/// `manifest.json` сайдкара — какие форматы он берёт на себя и чем собран.
-/// См. `docs/python-sidecar.md`.
+/// The sidecar's `manifest.json` — which formats it takes on and what it
+/// was built from. See `docs/python-sidecar.md`.
 class SidecarManifest {
-  /// Единственная известная версия схемы. Любая другая — сайдкар из будущего
-  /// (или чужой), и регистрировать то, чей протокол мы не знаем, нельзя.
+  /// The only known schema version. Any other — the sidecar is from the
+  /// future (or a stranger), and registering a protocol we don't know is
+  /// not allowed.
   static const supportedSchema = 1;
 
   final String markitdownVersion;
   final String pythonVersion;
 
-  /// Только форматы, которые приложение знает (см. [sidecarFormatKinds]).
+  /// Only the formats the app knows about (see [sidecarFormatKinds]).
   final Set<String> formats;
 
   const SidecarManifest({
@@ -33,10 +35,10 @@ class SidecarManifest {
     required this.formats,
   });
 
-  /// `null` на всё, что не манифест версии 1: невалидный JSON, не объект,
-  /// другая `schema`, нет списка `formats`, или в нём нет ни одного
-  /// известного формата. Не бросает — «битый манифест» означает «сайдкара
-  /// нет», а не падение приложения.
+  /// `null` for anything that isn't a version-1 manifest: invalid JSON,
+  /// not an object, a different `schema`, no `formats` list, or not a
+  /// single known format in it. Does not throw — a "broken manifest"
+  /// means "there's no sidecar", not an app crash.
   static SidecarManifest? tryParse(String source) {
     final Object? json;
     try {

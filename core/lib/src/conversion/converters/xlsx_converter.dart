@@ -10,10 +10,10 @@ import '../document_converter.dart';
 import '../ooxml/ooxml_package.dart';
 import '../spreadsheet/sheet_markdown.dart';
 
-/// `xl/workbook.xml` + `sharedStrings.xml` + листы → Markdown-таблицы, по
-/// одной под заголовком с именем листа. Формулы отдаются кэшированным
-/// значением `<v>`, а не текстом `<f>`. Объединённые ячейки Markdown не
-/// выражает — такой лист целиком уходит HTML-таблицей, см.
+/// `xl/workbook.xml` + `sharedStrings.xml` + sheets → Markdown tables, one
+/// per sheet under a heading with the sheet name. Formulas are returned as
+/// the cached `<v>` value, not the `<f>` text. Markdown cannot express
+/// merged cells — such a sheet goes out as an HTML table in full, see
 /// `docs/format-coverage.md`.
 class XlsxConverter implements DocumentConverter {
   const XlsxConverter();
@@ -51,7 +51,7 @@ class XlsxConverter implements DocumentConverter {
       final path = sheetRels[sheet.getAttribute('r:id')];
       final sheetXml = path == null ? null : pkg.partXml(path);
       if (sheetXml == null) {
-        // Молча выкинутый лист — потеря данных без следа; лучше сказать.
+        // A silently dropped sheet is data loss with no trace; better to say so.
         warnings.add(ConversionWarning('лист "$name": не удалось прочитать'));
         continue;
       }
@@ -127,8 +127,9 @@ String _cellValue(
       return value == '1' ? 'TRUE' : 'FALSE';
     case null:
     case 'n':
-      // Дата в xlsx — обычное число (дни от эпохи) со стилем «формат даты»;
-      // без этой проверки `2024-03-01` выходит как `45352`.
+      // A date in xlsx is a plain number (days since the epoch) with a
+      // "date format" style; without this check `2024-03-01` comes out as
+      // `45352`.
       final styleIndex = int.tryParse(cell.getAttribute('s') ?? '');
       if (styleIndex != null && dates.isDateStyle(styleIndex)) {
         final serial = double.tryParse(value);
@@ -140,8 +141,8 @@ String _cellValue(
   }
 }
 
-/// Какие стили ячеек (`cellXfs` из `xl/styles.xml`) — даты, и от какой эпохи
-/// считать серийные номера (`date1904` в `workbook.xml`).
+/// Which cell styles (`cellXfs` from `xl/styles.xml`) are dates, and which
+/// epoch to count serial numbers from (`date1904` in `workbook.xml`).
 class _DateStyles {
   final Set<int> _dateXfs;
   final bool date1904;
@@ -180,7 +181,7 @@ class _DateStyles {
   String? format(double serial) => formatExcelDate(serial, date1904: date1904);
 }
 
-/// `A1`-стиль ссылки → индекс столбца с нуля.
+/// `A1`-style reference → zero-based column index.
 int _columnIndex(String ref) {
   final letters = RegExp(r'^[A-Z]+').firstMatch(ref)!.group(0)!;
   var index = 0;
@@ -193,8 +194,8 @@ int _columnIndex(String ref) {
 int _rowFromRef(String ref) =>
     int.parse(RegExp(r'[0-9]+$').firstMatch(ref)!.group(0)!);
 
-/// `A1:B2` → `(startRow, startCol, rowSpan, colSpan)`, индексы с нуля — то,
-/// что принимает `htmlTable`.
+/// `A1:B2` → `(startRow, startCol, rowSpan, colSpan)`, zero-based indices —
+/// what `htmlTable` accepts.
 MergeRange _parseMergeRange(String ref) {
   final parts = ref.split(':');
   final start = parts.first;

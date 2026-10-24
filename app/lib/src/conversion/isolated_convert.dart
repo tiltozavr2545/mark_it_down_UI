@@ -3,22 +3,24 @@ import 'dart:typed_data';
 
 import 'package:markitdown_core/markitdown_core.dart';
 
-/// Конвертация идёт в отдельном изоляте — разбор крупного файла — секунды
-/// сплошного CPU, и на главном изоляте он замораживает окно вместе с
-/// индикатором прогресса. См.
-/// `docs/client-architecture.md#конвертация-в-изоляте`. В изолят уезжают
-/// только байты и [StreamInfo] — ничего платформенного.
+/// Conversion runs in a separate isolate — parsing a large file is seconds
+/// of solid CPU, and on the main isolate it would freeze the window along
+/// with the progress indicator. See
+/// `docs/client-architecture.md#conversion-in-an-isolate`. Only the bytes and
+/// [StreamInfo] travel into the isolate — nothing platform-specific.
 ///
-/// Сайдкар ищется уже внутри изолята ([SidecarConverter.discover]): это
-/// чтение пары файлов, а сам конвертер не нужно пересылать между изолятами.
-/// На Android/iOS `discover` всегда возвращает `null` — там сайдкара нет и не
-/// будет; на десктопе без найденного каталога тоже `null`, и реестр остаётся
-/// чистым Dart-ядром.
+/// The sidecar is discovered already inside the isolate
+/// ([SidecarConverter.discover]): that's reading a couple of files, and the
+/// converter itself doesn't need to be sent between isolates. On
+/// Android/iOS `discover` always returns `null` — there's no sidecar there
+/// and never will be; on desktop, with no directory found, it's also
+/// `null`, and the registry stays pure Dart core.
 ///
-/// [ocr] — где лежат модели Tesseract (см. `ocr_data.dart`): строка пути
-/// пересылается в изолят, а библиотеки OCR открываются уже в нём. То же с
-/// [transcription] (`speech_data.dart`); его прогресс и отмена — через
-/// [TranscriptionControl], адрес которого лежит в настройках.
+/// [ocr] is where the Tesseract models live (see `ocr_data.dart`): the path
+/// string is sent to the isolate, and the OCR libraries are opened inside
+/// it. Same with [transcription] (`speech_data.dart`); its progress and
+/// cancellation go through [TranscriptionControl], whose address lives in
+/// the settings.
 Future<ConversionOutcome> isolatedConvert(
   Uint8List bytes,
   StreamInfo info, {
@@ -26,15 +28,16 @@ Future<ConversionOutcome> isolatedConvert(
   TranscriptionSettings? transcription,
 }) {
   return Isolate.run(() {
-    // С OCR PDF-сканы должны дойти до Dart-ядра: сайдкар отдал бы по ним
-    // пустоту как успех (см. SidecarConverter.scannedPdfToDart).
+    // With OCR, scanned PDFs must reach the Dart core: the sidecar would
+    // return emptiness as success for them (see
+    // SidecarConverter.scannedPdfToDart).
     final sidecar = SidecarConverter.discover(scannedPdfToDart: ocr != null);
     final registry = ConverterRegistry.defaultRegistry(
       extra: [if (sidecar != null) sidecar],
       ocr: ocr,
       transcription: transcription,
-      // Сеть — только для страниц, скачанных по ссылке (субтитры YouTube);
-      // конвертеры файлов с диска её не трогают.
+      // Network access is only for pages downloaded by link (YouTube
+      // subtitles); converters for files from disk don't touch it.
       web: info.url == null ? null : const WebFetcher(),
     );
     return registry.convert(bytes, info);

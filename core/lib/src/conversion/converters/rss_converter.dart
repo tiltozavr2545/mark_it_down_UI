@@ -15,16 +15,17 @@ import '../conversion_result.dart';
 import '../document_converter.dart';
 import 'html_converter.dart' show resolveHtmlLinks, resolveUrl;
 
-/// Лента RSS 2.0 или Atom → Markdown: заголовок канала, по разделу на
-/// запись (заголовок, дата, описание и полный текст). Порт `RssConverter`
-/// markitdown — тот же выбор полей, те же правила для Atom-типов
-/// `text`/`html`/`xhtml` и `xml:base`; HTML внутри записей переводит в
-/// Markdown тот же `html2md`, что и [HtmlConverter], а не markdownify,
-/// поэтому разметка тел может отличаться от markitdown мелочами.
+/// An RSS 2.0 or Atom feed → Markdown: channel title, then a section per
+/// entry (title, date, description and full text). A port of markitdown's
+/// `RssConverter` — the same choice of fields, the same rules for the Atom
+/// types `text`/`html`/`xhtml` and `xml:base`; HTML inside entries is
+/// converted to Markdown by the same `html2md` as [HtmlConverter], not
+/// markdownify, so body markup can differ from markitdown in small ways.
 ///
-/// Берёт `.rss`/`.atom` и XML, у которого корень — `<rss>` или `<feed>`
-/// (в том числе файл без расширения и ответ сервера по ссылке). Если
-/// разбор показал, что это не лента, отказывается в пользу [XmlConverter].
+/// Accepts `.rss`/`.atom` and XML whose root is `<rss>` or `<feed>`
+/// (including a file with no extension, and a server response fetched by
+/// link). If parsing shows it's not a feed, declines in favor of
+/// [XmlConverter].
 class RssConverter implements DocumentConverter {
   const RssConverter();
 
@@ -75,8 +76,8 @@ class RssConverter implements DocumentConverter {
   }
 }
 
-/// Не лента — пусть XML покажет [XmlConverter]; если и он не сможет,
-/// пользователь увидит это.
+/// Not a feed — let [XmlConverter] show it; if it can't either, the user
+/// will see that.
 const _notAFeed = ConversionDeclinedException(
   failure: CorruptedFileFailure(
     converterId: 'rss',
@@ -85,7 +86,7 @@ const _notAFeed = ConversionDeclinedException(
   fallbackWarning: 'файл похож на ленту RSS/Atom, но разобрать её не удалось',
 );
 
-/// Корень документа после объявления XML, комментариев и DOCTYPE.
+/// The document root after the XML declaration, comments and DOCTYPE.
 final _feedRootPattern = RegExp(
   r'^\s*(?:<\?[\s\S]*?\?>\s*|<!--[\s\S]*?-->\s*|<!DOCTYPE[^>]*>\s*)*'
   r'<(?:rss|(?:[\w.-]+:)?feed)[\s/>]',
@@ -106,9 +107,9 @@ const _xhtmlNamespace = 'http://www.w3.org/1999/xhtml';
 const _contentNamespace = 'http://purl.org/rss/1.0/modules/content/';
 const _xmlNamespace = 'http://www.w3.org/XML/1998/namespace';
 
-/// Границы, которые остаются переводами строки, когда разметка сводится к
-/// плоскому тексту (заголовки, даты). Строчные элементы пробелов не дают:
-/// `co<b>op</b>erate` — одно слово.
+/// Boundaries that stay as line breaks when markup is reduced to plain
+/// text (titles, dates). Inline elements don't add whitespace:
+/// `co<b>op</b>erate` is one word.
 const _textBreakElements = {
   'address', 'article', 'aside', 'blockquote', 'br', 'dd', 'div', 'dl', //
   'dt', 'figcaption', 'figure', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', //
@@ -141,7 +142,7 @@ class _Feed {
     final channel = _child(root, 'channel');
     if (channel == null) throw _notAFeed;
     final channelTitle = _flattened(channel, 'title');
-    // Описание канала — текст, а описания записей — HTML.
+    // The channel description is text, while entry descriptions are HTML.
     final channelDescription = _data(channel, 'description', _Kind.text);
     final out = StringBuffer();
     if (channelTitle != null) out.write('# $channelTitle\n');
@@ -195,8 +196,8 @@ class _Feed {
     out.write(body);
   }
 
-  /// Поля выбираются среди прямых потомков в пространстве имён владельца —
-  /// не заимствуя `<title>` у вложенных элементов.
+  /// Fields are picked among direct children in the owner's namespace —
+  /// not borrowing `<title>` from nested elements.
   List<XmlElement> _children(XmlElement element, String tag) {
     final String? namespace;
     final String local;
@@ -222,9 +223,9 @@ class _Feed {
     return text.isEmpty ? null : text;
   }
 
-  /// Значение для заголовка или строки с датой: отступы, которыми ленту
-  /// раскладывают по строкам, убираются — иначе `#` остался бы один, а
-  /// заголовок ушёл бы в текст.
+  /// A value for a title or a date line: indentation the feed was wrapped
+  /// with is stripped — otherwise `#` would end up alone and the heading
+  /// would fall into the body text.
   String? _flattened(XmlElement element, String tag, {bool atomText = false}) {
     String? value;
     if (atomText) {
@@ -242,7 +243,7 @@ class _Feed {
     return parts.isEmpty ? null : parts.join(' ');
   }
 
-  /// Текст Atom (`title`, `summary`) или `content` и флаг «это разметка».
+  /// Atom text (`title`, `summary`) or `content`, plus an "is markup" flag.
   (String?, bool) _atomContent(XmlElement entry, String tag) {
     final node = _child(entry, tag);
     if (node == null) return (null, true);
@@ -253,8 +254,9 @@ class _Feed {
     if (kind == _Kind.binary) return (null, true);
     var text = _readContent(node, kind);
     if (kind != _Kind.text) return (text.isEmpty ? null : text, true);
-    // Простой текст разметки не несёт: снимается только отступ, которым
-    // элемент выложен в ленте, — иначе он прочитался бы как блок кода.
+    // Plain text carries no markup: only the indentation the element was
+    // laid out with in the feed is stripped — otherwise it would read as
+    // a code block.
     final lines = _splitLines(text);
     if (lines.length > 1) {
       text = '${lines.first}\n${_dedent(lines.sublist(1))}';
@@ -262,8 +264,9 @@ class _Feed {
     return (text.trim(), false);
   }
 
-  /// Атрибут `type` по RFC 4287 (3.1 и 4.1.3.1): у текстовых конструкций
-  /// только `text`/`html`/`xhtml`, у `content` — ещё и MIME-тип.
+  /// The `type` attribute per RFC 4287 (3.1 and 4.1.3.1): text constructs
+  /// only get `text`/`html`/`xhtml`, while `content` also gets a MIME
+  /// type.
   _Kind _atomKind(String type, {required bool allowMediaTypes}) {
     type = type.trim().toLowerCase();
     if (type.isEmpty || type == 'text') return _Kind.text;
@@ -277,10 +280,10 @@ class _Feed {
     return _Kind.binary;
   }
 
-  /// Текст, закодированный HTML или встроенный XML — в порядке документа.
-  /// Текст прямо в поле HTML-записи — сама HTML-строка; текст внутри
-  /// настоящих XML-элементов — буквальный и экранируется. Обход — стеком:
-  /// вложенность приходит из файла.
+  /// Text, HTML-encoded text, or embedded XML — in document order. Text
+  /// right inside an HTML-kind field is the HTML string itself; text
+  /// inside real XML elements is literal and gets escaped. The traversal
+  /// uses a stack: nesting comes straight from the file.
   String _readContent(XmlElement element, _Kind kind) {
     final parts = StringBuffer();
     final stack = <Object>[...element.children.reversed];
@@ -325,15 +328,17 @@ class _Feed {
     return parts.toString();
   }
 
-  /// `xml:base` от корня до поля [tag]: относительные переопределения
-  /// разрешаются от базы родителя, начало — адрес самого документа.
+  /// `xml:base` from the root down to field [tag]: relative overrides are
+  /// resolved against the parent's base, with the document's own address
+  /// as the starting point.
   String _fieldBase(XmlElement element, String tag) {
     final bases = <String>[];
     XmlNode? node = _child(element, tag);
     while (node != null) {
       if (node is XmlElement) {
-        // Префикс `xml:` связан с пространством имён XML неявно, и
-        // `package:xml` его не разрешает — поэтому и по полному имени.
+        // The `xml:` prefix is bound to the XML namespace implicitly, and
+        // `package:xml` doesn't resolve that — hence trying the qualified
+        // name too.
         final base =
             node.getAttribute('base', namespace: _xmlNamespace) ??
             node.getAttribute('xml:base');
@@ -349,8 +354,8 @@ class _Feed {
   }
 }
 
-/// HTML записи → Markdown, с относительными ссылками и картинками,
-/// разрешёнными от [baseUrl] и вложенных `xml:base`.
+/// Entry HTML → Markdown, with relative links and images resolved
+/// against [baseUrl] and nested `xml:base`.
 String _htmlToMarkdown(String html, String baseUrl) {
   try {
     final fragment = html_parser.parseFragment(html);
@@ -361,7 +366,7 @@ String _htmlToMarkdown(String html, String baseUrl) {
   }
 }
 
-/// Плоский текст HTML: переводы строки вокруг блочных элементов.
+/// Plain text of HTML: line breaks around block elements.
 String _plainTextOfHtml(String html) {
   final buffer = StringBuffer();
   void walk(dom.Node node) {
@@ -384,14 +389,14 @@ String _plainTextOfHtml(String html) {
 
 List<String> _splitLines(String text) {
   final lines = text.split(RegExp(r'\r\n|\r|\n'));
-  // Как `str.splitlines()`: завершающий перевод строки не даёт пустой
-  // последней строки.
+  // Like `str.splitlines()`: a trailing line break doesn't produce an
+  // empty final line.
   if (lines.length > 1 && lines.last.isEmpty) lines.removeLast();
   return lines;
 }
 
-/// `textwrap.dedent`: общий отступ непустых строк снимается, строки из
-/// одних пробелов становятся пустыми.
+/// `textwrap.dedent`: the common indentation of non-blank lines is
+/// stripped; lines made up only of whitespace become empty.
 String _dedent(List<String> lines) {
   String? common;
   for (final line in lines) {

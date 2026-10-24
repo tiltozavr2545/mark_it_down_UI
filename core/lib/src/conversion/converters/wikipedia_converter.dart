@@ -9,10 +9,10 @@ import '../document_converter.dart';
 import 'html_converter.dart';
 import 'youtube_converter.dart' show isHtml;
 
-/// Статья Wikipedia (режим «ссылка»): только содержимое статьи
-/// (`#mw-content-text`) под её заголовком, без меню, боковых панелей и
-/// скриптов. Порт `WikipediaConverter` markitdown; HTML → Markdown — тот же
-/// `html2md`, что у [HtmlConverter].
+/// A Wikipedia article (URL mode): only the article content
+/// (`#mw-content-text`) under its title, without menus, sidebars, or
+/// scripts. A port of markitdown's `WikipediaConverter`; HTML → Markdown
+/// uses the same `html2md` as [HtmlConverter].
 class WikipediaConverter implements DocumentConverter {
   const WikipediaConverter();
 
@@ -44,7 +44,7 @@ class WikipediaConverter implements DocumentConverter {
     title = title?.trim();
     if (title != null && title.isEmpty) title = null;
 
-    // «[править | править код]» у каждого раздела — кнопки, а не текст.
+    // The "[edit | edit source]" links on each section are buttons, not text.
     for (final edit in body.querySelectorAll('.mw-editsection')) {
       edit.remove();
     }

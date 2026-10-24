@@ -1,12 +1,12 @@
-/// Свои минимальные FFI-биндинги на C API Tesseract (`tesseract/capi.h`) и
-/// несколько функций Leptonica (`allheaders.h`) — то же решение, что у
-/// PDFium (`../pdf/pdfium_bindings.dart`): FFI работает внутри изолята
-/// конвертации, а `core/` не может импортировать Flutter-плагин. Почему
-/// Tesseract, а не ML Kit, и откуда берутся библиотеки — см.
+/// Our own minimal FFI bindings onto Tesseract's C API (`tesseract/capi.h`)
+/// and a few Leptonica functions (`allheaders.h`) — the same approach as
+/// PDFium (`../pdf/pdfium_bindings.dart`): FFI runs inside the conversion
+/// isolate, and `core/` can't import a Flutter plugin. For why Tesseract
+/// and not ML Kit, and where the libraries come from, see
 /// `docs/format-coverage.md#решения-этапа-6`.
 ///
-/// Имена типов повторяют заголовки буквально — это упрощает сверку
-/// сигнатур.
+/// Type names repeat the headers verbatim — this makes checking the
+/// signatures against them easier.
 // ignore_for_file: camel_case_types
 library;
 
@@ -14,12 +14,13 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
-/// Переменная окружения с каталогом, где лежат `libtesseract`/`libleptonica`
-/// (и всё, от чего они зависят). Нужна для `dart test` и для любой машины,
-/// где библиотеки не на стандартном месте платформы.
+/// Environment variable with the directory holding `libtesseract`/
+/// `libleptonica` (and everything they depend on). Needed for `dart test`
+/// and for any machine where the libraries aren't in the platform's
+/// standard location.
 const tesseractLibDirEnvVar = 'MARKITDOWN_TESSERACT_DIR';
 
-/// Пара библиотек: Tesseract и Leptonica, которую он использует.
+/// A pair of libraries: Tesseract and the Leptonica it uses.
 class TesseractLibraries {
   final DynamicLibrary tesseract;
   final DynamicLibrary leptonica;
@@ -27,23 +28,25 @@ class TesseractLibraries {
   const TesseractLibraries(this.tesseract, this.leptonica);
 }
 
-/// Находит и открывает библиотеки. `null`, если их нет: OCR —
-/// необязательная часть конвейера, его отсутствие не ошибка конвертации.
+/// Finds and opens the libraries. `null` if they're missing: OCR is an
+/// optional part of the pipeline, its absence isn't a conversion error.
 ///
-/// 1. [tesseractLibDirEnvVar] — явный каталог.
-/// 2. Android: голые имена — `.so` лежат в `jniLibs/arm64-v8a/` и находятся
-///    сами (из сборки Tesseract4Android, см. `tesseract/fetch.sh`).
-/// 3. Windows: рядом с `.exe` (`install(...)` в `app/windows/CMakeLists.txt`).
-///    Имена DLL версионные (`leptonica-1.87.0.dll`, `tesseract55.dll`) и
-///    переименовывать их нельзя — `tesseract55.dll` импортирует Leptonica по
-///    имени, — поэтому ищем по префиксу.
-/// 4. Linux: системные из пакетов дистрибутива (так их ставит CI).
+/// 1. [tesseractLibDirEnvVar] — an explicit directory.
+/// 2. Android: bare names — the `.so` files live in `jniLibs/arm64-v8a/`
+///    and are found on their own (from the Tesseract4Android build, see
+///    `tesseract/fetch.sh`).
+/// 3. Windows: next to the `.exe` (`install(...)` in
+///    `app/windows/CMakeLists.txt`). The DLL names are versioned
+///    (`leptonica-1.87.0.dll`, `tesseract55.dll`) and can't be renamed —
+///    `tesseract55.dll` imports Leptonica by name — so we search by prefix.
+/// 4. Linux: the system ones from distro packages (that's how CI installs
+///    them).
 TesseractLibraries? loadTesseractLibraries() {
   try {
     final dir = Platform.environment[tesseractLibDirEnvVar];
     if (dir != null && dir.isNotEmpty) return _openFromDirectory(dir);
     if (Platform.isAndroid) {
-      // Leptonica первой: зависимость Tesseract, грузится по имени.
+      // Leptonica first: a Tesseract dependency, loaded by name.
       final leptonica = DynamicLibrary.open('libleptonica.so');
       return TesseractLibraries(
         DynamicLibrary.open('libtesseract.so'),
@@ -60,7 +63,7 @@ TesseractLibraries? loadTesseractLibraries() {
       );
     }
   } on ArgumentError {
-    return null; // DynamicLibrary.open: файла нет или не грузится
+    return null; // DynamicLibrary.open: file missing or fails to load
   } on StateError {
     return null;
   }
@@ -184,16 +187,17 @@ typedef _pixScaleDart =
 typedef _setMsgSeverityNative = Int32 Function(Int32 severity);
 typedef _setMsgSeverityDart = int Function(int severity);
 
-/// `char` из C — байт UTF-8, читается [readCString].
+/// C's `char` — a UTF-8 byte, read by [readCString].
 typedef Utf8Char = Uint8;
 
-/// `PSM_AUTO`: разбор страницы на блоки без определения ориентации —
-/// режим командной строки Tesseract по умолчанию (в API по умолчанию
-/// `PSM_SINGLE_BLOCK`, который ломается на многоколоночных страницах).
+/// `PSM_AUTO`: parse the page into blocks without detecting orientation —
+/// Tesseract's command-line default mode (the API default is
+/// `PSM_SINGLE_BLOCK`, which breaks on multi-column pages).
 const tessPsmAuto = 3;
 
-/// `L_SEVERITY_NONE`: Leptonica молчит в stderr — её ругань на нечитаемую
-/// картинку уже превращается у нас в понятное предупреждение.
+/// `L_SEVERITY_NONE`: Leptonica stays quiet on stderr — its complaints
+/// about an unreadable image already get turned into a clear warning on
+/// our side.
 const _lSeverityNone = 6;
 
 class TesseractBindings {
@@ -334,13 +338,13 @@ class TesseractBindings {
   Pointer<Void> pixScale(Pointer<Void> pix, double scaleX, double scaleY) =>
       _pixScale(pix, scaleX, scaleY);
 
-  /// `5.5.1` и т.п. — пишется в `warnings` вместе с результатом.
+  /// `5.5.1` and the like — written into `warnings` along with the result.
   String get version => readCString(_version());
 }
 
-/// Строка UTF-8 с нулём в конце → Dart-строка (без освобождения памяти).
-/// Битые последовательности не роняют разбор: OCR иногда выдаёт обрезанный
-/// многобайтовый символ.
+/// A null-terminated UTF-8 string → a Dart string (without freeing the
+/// memory). Malformed sequences don't crash the parse: OCR sometimes
+/// outputs a truncated multi-byte character.
 String readCString(Pointer<Utf8Char> pointer) {
   if (pointer.address == 0) return '';
   var length = 0;

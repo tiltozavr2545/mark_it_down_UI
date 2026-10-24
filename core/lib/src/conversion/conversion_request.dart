@@ -4,10 +4,10 @@ import '../stream_info.dart';
 import 'conversion_limits.dart';
 import 'converter_registry.dart';
 
-/// Всё, что получает [DocumentConverter.convert]. `recurse` — не украшение:
-/// `zip` и `epub` (Этап 2) обязаны прогнать вложенные файлы через тот же
-/// реестр, не импортируя его напрямую, иначе цикл зависимостей. См.
-/// `docs/conversion-pipeline.md#3-конвертация`.
+/// Everything [DocumentConverter.convert] receives. `recurse` isn't
+/// decoration: `zip` and `epub` (Stage 2) must run nested files through
+/// the same registry without importing it directly, or there would be a
+/// dependency cycle. See `docs/conversion-pipeline.md#3-конвертация`.
 class ConversionRequest {
   final Uint8List bytes;
   final StreamInfo info;

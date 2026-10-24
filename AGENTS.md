@@ -1,411 +1,470 @@
 # AGENTS.md
 
-Контекст для AI-агента при работе в этом репозитории — общий для любого
-инструмента (Codex, Claude Code и т.д.).
+Context for an AI agent working in this repository — shared by any tool
+(Codex, Claude Code, etc.).
 
-Этот файл — только то, чего нет в коде: ограничения среды, конвенции работы и
-грабли. Всё остальное лежит там, где его и надо читать:
+This file contains only what isn't in the code: environment constraints,
+working conventions, and gotchas. Everything else lives where it should be
+read:
 
-| что | где |
+| what | where |
 |---|---|
-| что за проект, стек, структура, запуск | [README.md](README.md) |
-| история версий | [CHANGELOG.md](CHANGELOG.md) |
-| **конвейер конвертации** — типы, реестр, контракты, правила Markdown | [docs/conversion-pipeline.md](docs/conversion-pipeline.md) |
-| что по какому формату решено и чем закрыто | [docs/format-coverage.md](docs/format-coverage.md) |
-| устройство Flutter-приложения, решения по умолчанию | [docs/client-architecture.md](docs/client-architecture.md) |
-| Python-сайдкар: упаковка, протокол, подпись | [docs/python-sidecar.md](docs/python-sidecar.md) |
-| что значит «без интернета» и как это проверить | [docs/offline-and-privacy.md](docs/offline-and-privacy.md) |
-| сборка, подпись, релиз, проверки в CI | [docs/operations.md](docs/operations.md) |
-| отложенное, открытые вопросы | [docs/future-development.md](docs/future-development.md) |
-| **почему** решение принято так | комментарий рядом с кодом, затем `git log` |
-| историческое: замысел и план по этапам | [docs/project-brief.md](docs/project-brief.md), [docs/implementation-plan.md](docs/implementation-plan.md) |
+| what the project is, the stack, the layout, how to run it | [README.md](README.md) |
+| version history | [CHANGELOG.md](CHANGELOG.md) |
+| **the conversion pipeline** — types, registry, contracts, Markdown rules | [docs/conversion-pipeline.md](docs/conversion-pipeline.md) |
+| what's decided for each format and what covers it | [docs/format-coverage.md](docs/format-coverage.md) |
+| how the Flutter app is built, default decisions | [docs/client-architecture.md](docs/client-architecture.md) |
+| the Python sidecar: packaging, protocol, signing | [docs/python-sidecar.md](docs/python-sidecar.md) |
+| what "offline" means and how to verify it | [docs/offline-and-privacy.md](docs/offline-and-privacy.md) |
+| build, signing, release, CI checks | [docs/operations.md](docs/operations.md) |
+| deferred work, open questions | [docs/future-development.md](docs/future-development.md) |
+| **why** a decision was made the way it was | the comment next to the code, then `git log` |
+| historical: the original concept and stage plan | [docs/project-brief.md](docs/project-brief.md), [docs/implementation-plan.md](docs/implementation-plan.md) |
 
-## Проект
+## The project
 
-Второй Flutter-проект автора. Первый — Amicus (Android/iOS + Supabase), то
-есть Dart, Riverpod, ARB-локализация и сборка под мобильные уже знакомы.
-Нового здесь два: **десктоп как платформа** и **разбор бинарных форматов**.
+The author's second Flutter project. The first was Amicus (Android/iOS +
+Supabase), so Dart, Riverpod, ARB localization, and mobile builds are
+already familiar. Two things are new here: **desktop as a platform** and
+**parsing binary formats**.
 
-Работать пошагово по [docs/implementation-plan.md](docs/implementation-plan.md),
-не забегая вперёд, — это осознанное решение, а не отсутствие плана. Этапы
-выстроены по возрастанию риска: сначала то, что заведомо получится.
+Working step by step through
+[docs/implementation-plan.md](docs/implementation-plan.md), without getting
+ahead of ourselves, is a deliberate decision, not a lack of planning. The
+stages are ordered by increasing risk: the things that are sure to work
+come first.
 
-**Целевые платформы — Windows и Android** (приоритет автора: «не мак, а
-windows и android»). macOS вторична и не развивается без отдельного запроса.
-**Распространение — только GitHub Releases** (решение автора, 14.10.2026):
-в Google Play не публикуем, ограничения Play (200 МБ базового модуля,
-`targetSdk`, `.aab`) проекту не указ.
-Этапы 0–5 закрыты, Этап 6 (изображения и аудио) выпущен, идёт Этап 7 —
-полировка; вне плана, по запросу автора, — распознавание речи (0.8) и
-всё, что умеет markitdown (0.9, в том числе режим «ссылка»).
+**Target platforms are Windows and Android** (the author's priority: "not
+a Mac, but Windows and Android"). macOS is secondary and isn't developed
+further without a specific request. **Distribution is GitHub Releases
+only** (author's decision, 2026-10-14): nothing is published to Google
+Play, and Play's restrictions (200 MB base module, `targetSdk`, `.aab`)
+don't apply to this project.
+Stages 0–5 are closed, Stage 6 (images and audio) has shipped, Stage 7 —
+polish — is in progress; outside the plan, at the author's request, are
+speech recognition (0.8) and everything markitdown itself can do (0.9,
+including "link" mode).
 
-**Этапы 0–4 закрыты** (см. [docs/implementation-plan.md](docs/implementation-plan.md)):
-Этап 0 — каркас `app/`+`core/`, CI, распознавание типа. Этап 1 — конвейер
-конвертации (`DocumentConverter`/реестр/`ConversionLimits`), `markdown_writer`,
-пять текстовых конвертеров. Этап 2 — общий слой OOXML (`archive`+`xml`) и
-шесть форматов на нём: `docx` (абзацы/стили/списки с вложенностью через
-`numbering.xml`/таблицы/сноски/ссылки/картинки-заглушки), `xlsx`
-(`sharedStrings`+листы, формулы кэш-значением, объединённые ячейки → HTML-блок
-с warning), `pptx` (слайды+заметки докладчика), `epub` (главы через
-`HtmlConverter` Этапа 1 по `request.recurse`), `zip` (рекурсия с общим на всё
-дерево бюджетом лимитов в `ConverterRegistry`), `ipynb`. Этап 3 — `pdf` через
-свои FFI-биндинги на PDFium (не `syncfusion_flutter_pdf`: это Flutter-пакет,
-а `core/` не может его импортировать — см. «Конвенции работы» ниже), заголовки
-по размеру шрифта, склейка перенесённых по ширине строк в абзацы, предупреждение
-про страницы-сканы. Нативную `libpdfium` качает `pdfium/fetch.sh`, не
-коммитится — то же решение, что у `python-build-standalone` в
-[docs/python-sidecar.md](docs/python-sidecar.md); на Android добавляет APK
-≈6,3 МБ, подробный замер — в
-[docs/format-coverage.md](docs/format-coverage.md#решения-этапа-3). Все
-форматы — с фикстурами, включая злые (вложенные списки, таблица в таблице,
-объединённые ячейки, zip в zip, превышенные лимиты, PDF-скан, PDF без текста).
-Этап 4 — Python-сайдкар на десктопе: `sidecar/build.sh` собирает перемещаемый
-CPython + настоящий markitdown (macOS x86_64, 242 МБ, зависимости закреплены
-lock-файлом), `SidecarConverter` (приоритет −1.0, таймаут, откат на
-Dart-конвертер при любом сбое сайдкара) закрывает `xls`/`msg` и идёт первым на
-`pdf`/`docx`/`xlsx`/`pptx`. Регистрируется только на десктопе; в APK его нет
-(замер — [format-coverage.md](docs/format-coverage.md#android-не-потолстел-этап-4)).
-Сверка Dart ↔ сайдкар нашла и исправила четыре бага Dart-ядра, остальные
-расхождения записаны. **Не проверено** (нет сертификата и Xcode; платформа теперь вторичная):
-подпись Developer ID, нотаризация, встраивание сайдкара в Xcode-сборку,
-поведение под песочницей настоящего `.app`. Всё это — в
+**Stages 0–4 are closed** (see [docs/implementation-plan.md](docs/implementation-plan.md)):
+Stage 0 — scaffolding for `app/`+`core/`, CI, type detection. Stage 1 — the
+conversion pipeline (`DocumentConverter`/registry/`ConversionLimits`),
+`markdown_writer`, five text converters. Stage 2 — a shared OOXML layer
+(`archive`+`xml`) and six formats built on it: `docx` (paragraphs/styles/
+nested lists via `numbering.xml`/tables/footnotes/links/image placeholders),
+`xlsx` (`sharedStrings`+sheets, formulas as their cached value, merged
+cells → an HTML block with a warning), `pptx` (slides+speaker notes),
+`epub` (chapters via Stage 1's `HtmlConverter` through `request.recurse`),
+`zip` (recursion with a shared limits budget across the whole tree in
+`ConverterRegistry`), `ipynb`. Stage 3 — `pdf` via custom FFI bindings to
+PDFium (not `syncfusion_flutter_pdf`: that's a Flutter package, and
+`core/` can't import it — see "Working conventions" below), headings by
+font size, lines wrapped across the page width stitched back into
+paragraphs, a warning for scanned pages. The native `libpdfium` is
+downloaded by `pdfium/fetch.sh` and not committed — the same approach as
+`python-build-standalone` in
+[docs/python-sidecar.md](docs/python-sidecar.md); on Android it adds
+≈6.3 MB to the APK, with a detailed measurement in
+[docs/format-coverage.md](docs/format-coverage.md#stage-3-decisions). All
+formats have fixtures, including evil ones (nested lists, a table inside a
+table, merged cells, a zip inside a zip, exceeded limits, a scanned PDF, a
+PDF with no text). Stage 4 — the Python sidecar on desktop:
+`sidecar/build.sh` builds a relocatable CPython + real markitdown (macOS
+x86_64, 242 MB, dependencies pinned by a lock file), `SidecarConverter`
+(priority −1.0, timeout, falls back to the Dart converter on any sidecar
+failure) covers `xls`/`msg` and goes first for `pdf`/`docx`/`xlsx`/`pptx`.
+It's only registered on desktop; it's absent from the APK (measurement —
+[format-coverage.md](docs/format-coverage.md#android-didnt-get-heavier-stage-4)).
+Cross-checking Dart against the sidecar found and fixed four bugs in the
+Dart core; the remaining discrepancies are recorded. **Not verified** (no
+certificate or Xcode; the platform is now secondary): Developer ID
+signing, notarization, embedding the sidecar into an Xcode build, behavior
+under the sandbox of a real `.app`. All of this is in
 [docs/future-development.md](docs/future-development.md).
 
-**Этап 5 закрыт** (ручная проверка автора на `v0.5.0`: «на винде всё
-работает»; цифр большого PDF на Windows нет). Решения автора: п. 5 — в
-приложении сайдкар первым только на `pdf` (до 50 страниц) и `xls`/`msg`,
-`docx`/`xlsx`/`pptx` сразу в Dart (`SidecarConverter.appFormats`/`appMaxPdfPages`, применяются в
-`discover()`; `fromDirectory()` для сверки видит весь манифест); п. 6 —
-упаковка zip «сейчас, решить позже» (окончательно — Этап 7). Сделано в
-коде: `app/windows/`, `.gitattributes` (LF), джоб `windows` в `ci.yml`,
-`pdfium.dll` (`fetch.sh` + `install` в `windows/CMakeLists.txt`), поиск
-сайдкара рядом с `.exe`, grep `app/windows/` на сетевые библиотеки, сайдкар
-под Windows (джоб `windows-sidecar`, lock `sidecar/locks/windows-x86_64.txt`,
-сверка совпала с macOS побайтно).
-Раннеры закреплены: Linux — `ubuntu-24.04` (`ubuntu-latest` с 19.10.2026 —
-Ubuntu 26, другая версия Tesseract из пакетов); Windows — `windows-2022`:
-`windows-latest`/`windows-2025` теперь с VS 2026, которую Flutter 3.32.8 не
-знает. Реализовано и
-проверено (`make verify`), но не на macOS и не на Windows — см. ниже.
+**Stage 5 is closed** (manually verified by the author on `v0.5.0`:
+"everything works on Windows"; there are no numbers for a large PDF on
+Windows). Author's decisions: item 5 — in the app, the sidecar only goes
+first for `pdf` (up to 50 pages) and `xls`/`msg`, with `docx`/`xlsx`/`pptx`
+going straight to Dart (`SidecarConverter.appFormats`/`appMaxPdfPages`,
+applied in `discover()`; `fromDirectory()` for comparison sees the whole
+manifest); item 6 — zip packaging is "ship now, decide later" (finalized
+in Stage 7). Done in code: `app/windows/`, `.gitattributes` (LF), the
+`windows` job in `ci.yml`, `pdfium.dll` (`fetch.sh` + `install` in
+`windows/CMakeLists.txt`), locating the sidecar next to the `.exe`,
+grepping `app/windows/` for networking libraries, the sidecar for Windows
+(the `windows-sidecar` job, lock file
+`sidecar/locks/windows-x86_64.txt`, byte-for-byte match with macOS in the
+comparison).
+Runners are pinned: Linux — `ubuntu-24.04` (`ubuntu-latest` became
+Ubuntu 26 on 2026-10-19 — a different Tesseract version from its
+packages); Windows — `windows-2022`: `windows-latest`/`windows-2025` now
+ship with VS 2026, which Flutter 3.32.8 doesn't know about. Implemented
+and verified (`make verify`), but not on macOS or Windows — see below.
 
-**Этап 6 выпущен в `v0.6.0`, ручная проверка (п. 4) не отмечена.** EXIF:
-`ImageConverter` для PNG, JPEG, GIF, BMP, WebP, TIFF и HEIC, разбор свой
-(`core/lib/src/conversion/image/`), не пакет `exif`. Аудио:
-`AudioConverter` — MP3/FLAC/Ogg/WAV/MP4, разбор свой
-(`core/lib/src/conversion/audio/`). OCR: **Tesseract на обеих платформах**
-(решение автора; ML Kit не знает кириллицы) через свои FFI-биндинги в
-`core/lib/src/conversion/ocr/` — картинки JPEG/PNG/BMP и страницы-сканы PDF.
-Библиотеки: Android — из AAR Tesseract4Android (`tesseract/fetch.sh`),
-десктоп — `tesseract/build.sh` из исходников без libcurl; модели `rus+eng`
-— ассеты приложения. Транскрипция аудио отложена. Всё «почему» — в
-[format-coverage.md](docs/format-coverage.md#решения-этапа-6).
+**Stage 6 shipped in `v0.6.0`, manual verification (item 4) not checked
+off.** EXIF: `ImageConverter` for PNG, JPEG, GIF, BMP, WebP, TIFF, and
+HEIC, with a homegrown parser (`core/lib/src/conversion/image/`), not the
+`exif` package. Audio: `AudioConverter` — MP3/FLAC/Ogg/WAV/MP4, also a
+homegrown parser (`core/lib/src/conversion/audio/`). OCR: **Tesseract on
+both platforms** (author's decision; ML Kit doesn't know Cyrillic) via
+custom FFI bindings in `core/lib/src/conversion/ocr/` — JPEG/PNG/BMP images
+and scanned PDF pages. Libraries: Android — from the Tesseract4Android AAR
+(`tesseract/fetch.sh`), desktop — `tesseract/build.sh` from source without
+libcurl; the `rus+eng` models are app assets. Audio transcription is
+deferred. All the "why" is in
+[format-coverage.md](docs/format-coverage.md#stage-6-decisions).
 
-**Этап 7 — в работе.** 0.7: предела на размер файла нет (решение автора) —
-в `ConversionLimits` остались только лимиты архивов, суммарно
-распакованное считается без самого файла верхнего уровня.
+**Stage 7 — in progress.** 0.7: there is no longer a file-size limit
+(author's decision) — only archive limits remain in `ConversionLimits`,
+and the total uncompressed size is counted without the top-level file
+itself.
 
-**0.8 — распознавание речи** (вне плана, по запросу автора; ручная проверка
-не отмечена): whisper.cpp 1.9.5 на Windows и Android через свою
-C-прослойку `whisper/shim/` (`mdw.h`) и FFI из `core/`
-(`core/lib/src/conversion/speech/`); модель Whisper small q8_0 (264 МБ,
-многоязычная) и Silero VAD — ассетами (`whisper/fetch.sh`); с 0.8.1 —
-кусками по 10 минут по ходу декодирования, без предела длительности; сборка —
-`whisper/build.sh` (хост, `--android` через NDK). Не faster-whisper: тот
-Python, на Android его нет. Всё «почему» — в
-[format-coverage.md](docs/format-coverage.md#решения-транскрипции-08).
+**0.8 — speech recognition** (outside the plan, at the author's request;
+manual verification not checked off): whisper.cpp 1.9.5 on Windows and
+Android via a custom C shim layer `whisper/shim/` (`mdw.h`) and FFI from
+`core/` (`core/lib/src/conversion/speech/`); the Whisper small q8_0 model
+(264 MB, multilingual) and Silero VAD ship as assets (`whisper/fetch.sh`);
+since 0.8.1 — processed in 10-minute chunks as decoding proceeds, with no
+duration limit; built by `whisper/build.sh` (host, `--android` via NDK).
+Not faster-whisper: that needs Python, which doesn't exist on Android. All
+the "why" is in
+[format-coverage.md](docs/format-coverage.md#transcription-decisions-08).
 
-**0.9 — всё, что умеет markitdown** (вне плана, по запросу автора
-«сделаем всё, что может обычный markitdown, … можно с подключением к
-интернету»). Офлайн: Dart-разбор `xls` (BIFF8 и BIFF5) и `msg` на своём
-чтении OLE2 (`core/lib/src/conversion/ole2/`) — на Android они больше не
-«не поддерживается», на десктопе сайдкар остаётся первым; ленты RSS/Atom
-(порт `_rss_converter`); OCR GIF/WebP/TIFF через `package:image`. Сеть —
-режим «ссылка» (`core/lib/src/web/`): страница, файл по ссылке,
-Wikipedia, YouTube с субтитрами; «Вставить ссылку» и «Поделиться» ссылкой
-на Android. Bing и LLM-подписи — не делаются (решение автора). Всё
-«почему» — в [format-coverage.md](docs/format-coverage.md#решения-09-xls-msg-rss)
-и [offline-and-privacy.md](docs/offline-and-privacy.md).
+**0.9 — everything markitdown can do** (outside the plan, at the author's
+request to "do everything regular markitdown can do, … internet access is
+fine"). Offline: Dart parsing of `xls` (BIFF8 and BIFF5) and `msg` with a
+homegrown OLE2 reader (`core/lib/src/conversion/ole2/`) — on Android these
+are no longer "unsupported," and on desktop the sidecar still goes first;
+RSS/Atom feeds (ported from `_rss_converter`); OCR for GIF/WebP/TIFF via
+`package:image`. Networking — "link" mode (`core/lib/src/web/`): a page, a
+file via link, Wikipedia, YouTube with subtitles; "Paste link" and
+"Share" a link on Android. Bing and LLM-generated captions are not
+implemented (author's decision). All the "why" is in
+[format-coverage.md](docs/format-coverage.md#09-decisions-xls-msg-rss)
+and [offline-and-privacy.md](docs/offline-and-privacy.md).
 
-Многие разделы в `docs/` всё ещё заготовки, и это сказано в них прямо.
-Рабочие команды (подпись, нотаризация, сборка сайдкара) дописываются по ходу этапов, пока они в руках, а не вспоминаются к релизу.
+Many sections in `docs/` are still stubs, and they say so directly. Working
+commands (signing, notarization, building the sidecar) get written down as
+each stage goes, while they're fresh, rather than being reconstructed at
+release time.
 
-## Ограничения среды
+## Environment constraints
 
-- **Главное ограничение — продуктовое, а не техническое: файлы не уходят с
-  устройства, а сеть — только по явной ссылке.** С 0.9 (решение автора от
-  15.10.2026) есть режим «ссылка»: скачать страницу/файл/видео YouTube, на
-  которые указывает вставленная или присланная ссылка. Весь сетевой код —
-  в `core/lib/src/web/` (проверяет CI). Любое предложение, которое требует
-  сети сверх этого (аналитика, крэш-репортинг, проверка обновлений,
-  подкачка ML-модели, облачный OCR, LLM-подписи — последние автор отклонил
-  явно), противоречит продукту — см.
-  [docs/offline-and-privacy.md](docs/offline-and-privacy.md). Не предлагать;
-  если кажется, что без этого нельзя, это повод обсудить, а не обойти.
-- **Целевые платформы — Windows и Android.** Разработка идёт на Intel
-  MacBook Pro (macOS 12.7.6), а Flutter собирает Windows только на Windows,
-  поэтому Windows собирается и тестируется в CI на `windows-latest`
-  ([Этап 5](docs/implementation-plan.md#этап-5--windows-05)). Ручная проверка
-  («бросили файл — увидели результат») — на **собственном Windows-компьютере
-  автора**, на артефакте из CI; предлагать её можно и нужно. Android — APK и
-  телефон автора. Linux отложен.
-- **Ревью кода второй парой глаз нет** — это причина, по которой проверки
-  вынесены в CI, а не в договорённости.
-- **Версия Flutter закреплена на 3.32.8.** Ограничение перенесено из Amicus
-  (та же машина): новее требует macOS 14+, а Intel-машина физически не тянет
-  более новую macOS — это тупик, не предлагать обновление. Число проверено на
-  Этапе 0 (`flutter --version`) и совпадает.
-- **macOS вторична и здесь не собирается: на машине автора не ставится сам
-  Xcode.app** (только Command Line Tools 14.2), а `flutter build macos`
-  требует полный Xcode. Код под macOS не удаляется; соберут позже на Маке
-  друга. Не предлагать ставить Xcode повторно — не встаёт; не вкладываться в
-  нотаризацию и встраивание в Xcode без запроса. Подробнее —
-  [docs/future-development.md](docs/future-development.md#macos-сборка).
-- **iOS заблокирован машиной, а не приоритетами.** На macOS 12 ставится
-  максимум Xcode 14.2, и App Store Connect отклоняет бинарник, собранный
-  таким SDK (`ITMS-90111`) — в него зашивается версия хостовой ОС сборочной
-  машины, а не только версия Xcode. Это ровно та грабля, из-за которой в
-  Amicus завели Xcode Cloud (сборка на стабильном образе Apple независимо от
-  локальной macOS). Пока такого обхода здесь нет, iOS — не «следующий шаг
-  после Android», а отложенная платформа. Запускать на симуляторе и собирать
-  локально при этом можно, нельзя — подать.
-- **OCR — только Tesseract через FFI, без сети и без плагинов.** ML Kit не
-  предлагать: кириллицы в нём нет. Готовые десктопные сборки Tesseract
-  (vcpkg, UB Mannheim) не брать: в них libcurl. `make tesseract` собирает
-  локально (~10 минут, нужен cmake); без него OCR-тесты пропускаются, а
-  `make verify` всё равно зелёный.
-- **Распознавание речи — только whisper.cpp через FFI, модель в бандле.**
-  faster-whisper не предлагать (Python — только десктоп), подкачку модели
-  — тоже (сеть только по ссылке пользователя, не для служебных загрузок). `make whisper` — ≈10 минут сборки и 265 МБ моделей,
-  в `make verify` не входит; без него `speech_test.dart` пропускается.
-- **Python нужен только для сайдкара и только на десктопе** (Этап 4; на
-  Windows — Этап 5).
-  Системный Python не используется — берётся перемещаемый из
-  python-build-standalone, см. [docs/python-sidecar.md](docs/python-sidecar.md).
-  На мобильных Python нет и не будет: нативные колёса `lxml`/`pandas`/`pillow`
-  под мобильные ABI не существуют, и это не тема для обхода.
+- **The main constraint is product-driven, not technical: files never
+  leave the device, and the network is reached only via an explicit
+  link.** Since 0.9 (author's decision from 2026-10-15) there is a "link"
+  mode: download the page/file/YouTube video that a pasted or shared link
+  points to. All networking code lives in `core/lib/src/web/` (checked by
+  CI). Any proposal that would need the network beyond that — analytics,
+  crash reporting, update checks, downloading an ML model on demand, cloud
+  OCR, LLM-generated captions (the last of which the author explicitly
+  rejected) — conflicts with the product; see
+  [docs/offline-and-privacy.md](docs/offline-and-privacy.md). Don't propose
+  it; if it seems unavoidable, that's a reason to discuss it, not to work
+  around it.
+- **Target platforms are Windows and Android.** Development happens on an
+  Intel MacBook Pro (macOS 12.7.6), and Flutter only builds a Windows app
+  on Windows, so Windows is built and tested in CI on `windows-latest`
+  ([Stage 5](docs/implementation-plan.md#stage-5--windows-05)). Manual
+  verification ("dropped a file — saw the result") happens on the
+  **author's own Windows machine**, using the CI artifact; it's fine and
+  worth suggesting. Android is verified via APK on the author's phone.
+  Linux is deferred.
+- **There is no second pair of eyes reviewing the code** — that's why
+  checks are pushed into CI rather than relying on agreements between
+  people.
+- **The Flutter version is pinned at 3.32.8.** This constraint carried
+  over from Amicus (same machine): a newer version requires macOS 14+, and
+  the Intel machine physically cannot run a newer macOS — this is a dead
+  end, don't suggest upgrading. The number was verified at Stage 0
+  (`flutter --version`) and still matches.
+- **macOS is secondary and isn't built here: Xcode.app itself won't
+  install on the author's machine** (only Command Line Tools 14.2 is
+  available), and `flutter build macos` requires the full Xcode. The
+  macOS code isn't removed; it'll be built later on a friend's Mac. Don't
+  suggest reinstalling Xcode — it won't install; don't invest in
+  notarization or Xcode-build embedding without a request. More —
+  [docs/future-development.md](docs/future-development.md#macos-build).
+- **iOS is blocked by the machine, not by priorities.** macOS 12 can only
+  install up to Xcode 14.2, and App Store Connect rejects a binary built
+  with that SDK (`ITMS-90111`) — it bakes in the build machine's host OS
+  version, not just the Xcode version. This is exactly the snag that led
+  to setting up Xcode Cloud for Amicus (building on a stable Apple image
+  independent of the local macOS). There's no such workaround here yet, so
+  iOS isn't "the next step after Android" — it's a deferred platform.
+  Running on the simulator and building locally still work; submitting
+  does not.
+- **OCR is Tesseract via FFI only, no network and no plugins.** Don't
+  suggest ML Kit: it has no Cyrillic support. Don't use prebuilt desktop
+  Tesseract builds (vcpkg, UB Mannheim): they bundle libcurl.
+  `make tesseract` builds it locally (~10 minutes, needs cmake); without
+  it, OCR tests are skipped, and `make verify` still passes.
+- **Speech recognition is whisper.cpp via FFI only, with the model in the
+  bundle.** Don't suggest faster-whisper (Python is desktop-only), nor
+  downloading the model on demand (the network is only used for the
+  user's own links, not for internal downloads). `make whisper` takes
+  ≈10 minutes to build and 265 MB of models, and isn't part of
+  `make verify`; without it, `speech_test.dart` is skipped.
+- **Python is needed only for the sidecar, and only on desktop** (Stage 4;
+  on Windows — Stage 5).
+  The system Python isn't used — a relocatable one from
+  python-build-standalone is used instead, see
+  [docs/python-sidecar.md](docs/python-sidecar.md). There's no Python on
+  mobile and there won't be: native wheels for `lxml`/`pandas`/`pillow`
+  don't exist for mobile ABIs, and that's not something to work around.
 
-## Конвенции работы
+## Working conventions
 
-- **Перед сдачей — `make verify`**: `pub get`, `dart format
-  --set-exit-if-changed`, `flutter analyze`, `flutter test` для `app/` и
-  `dart test` для `core/`. То же гоняет CI.
-- **`core/` не импортирует `flutter/` ни в одном файле.** Это проверяется в CI
-  и не обсуждается: от этого зависят быстрые тесты, работа в изоляте и
-  возможность собрать CLI. Понадобилось что-то из Flutter — значит код не в
-  том пакете.
-- **Проверка «сеть только по ссылке» в CI — с первого коммита, а не когда
-  зависимостей станет тридцать.** Падающие шаги: сетевой пакет в `dart pub
-  deps`, `HttpClient`/сокеты вне `core/lib/src/web/`, сетевое разрешение
-  сверх `INTERNET` в собранном APK; команды — в
-  [docs/operations.md](docs/operations.md). Сетевая зависимость приезжает
-  транзитивно и молча, поэтому ловить её надо автоматом. Новое место с
-  сетью — правка шага CI и решение автора, а не мимоходом.
-- **Новый формат = новый конвертер в реестре + фикстуры.** Пара «исходник +
-  ожидаемый Markdown» в `core/test/fixtures/` обязательна: у проекта **две
-  реализации** (Dart-ядро и сайдкар), и единственный способ заметить их
-  расхождение — гонять обе по одному набору. Расхождение либо исправляется,
-  либо осознанно записывается в
+- **Run `make verify` before submitting anything**: `pub get`,
+  `dart format --set-exit-if-changed`, `flutter analyze`, `flutter test`
+  for `app/`, and `dart test` for `core/`. CI runs the same thing.
+- **`core/` does not import `flutter/` in any file.** This is checked in
+  CI and is not up for debate: fast tests, running inside an isolate, and
+  the ability to build a CLI all depend on it. If you need something from
+  Flutter, the code is in the wrong package.
+- **The "network only via link" check has been in CI since the first
+  commit, not once dependencies grew to thirty.** Failing steps: a
+  networking package showing up in `dart pub deps`, an `HttpClient`/socket
+  outside `core/lib/src/web/`, a networking permission beyond `INTERNET`
+  in the built APK; the commands are in
+  [docs/operations.md](docs/operations.md). A networking dependency can
+  arrive transitively and silently, so it has to be caught automatically.
+  A new place that touches the network means editing the CI step and
+  getting the author's decision, not slipping it in along the way.
+- **A new format = a new converter in the registry + fixtures.** A
+  "source + expected Markdown" pair in `core/test/fixtures/` is mandatory:
+  the project has **two implementations** (the Dart core and the
+  sidecar), and the only way to notice them diverging is to run both
+  against the same set. A discrepancy is either fixed or deliberately
+  recorded in
   [docs/format-coverage.md](docs/format-coverage.md).
-- **Фикстуры нужны злые, а не красивые.** zip в zip, `.docx` под именем
-  `.pdf`, текст в Windows-1251 без BOM, `xlsx` с объединёнными ячейками, PDF
-  из сканов, файл нулевой длины, файл без расширения. Каждая такая строка —
-  поведение, которое кто-то выбрал заранее; без фикстуры оно выбирается
-  случайно.
-- **Markdown собирается только через `markdown_writer`.** Экранирование,
-  таблицы, заголовки — один модуль на все конвертеры. Повод личный: в Amicus
-  правило видимости разошлось по четырём копиям, две отстали и стали дырами.
-  Здесь та же ошибка даёт конвертеры, которые по-разному экранируют один и тот
-  же символ.
-- **`make sidecar` и `make compare-sidecar` не входят в `make verify`**:
-  качают сотни МБ и нужны только тому, кто трогает сайдкар или конвертеры
-  `pdf`/`docx`/`xlsx`/`pptx`. Версии зависимостей сайдкара закреплены
-  `sidecar/locks/<host>.txt`; обновлять осознанно (`make sidecar-lock`), не
-  мимоходом.
-- **Версия бампается в каждом PR**: `make verify-version BASE_REF=origin/main`,
-  формат `name+build`.
-- **Локализация:** строки в `app/lib/l10n/app_{en,ru}.arb`, генерация
-  `flutter gen-l10n`, сгенерированные файлы коммитятся. Править ARB
-  **текстом** — переписывание через `json.dump` съедает пустые строки,
-  которыми файл разбит на смысловые группы.
-- **`CLAUDE.md` — тонкая обёртка вокруг этого файла.** Общие конвенции и
-  грабли живут только здесь, не дублировать.
+- **Fixtures need to be evil, not pretty.** A zip inside a zip, a `.docx`
+  named `.pdf`, text in Windows-1251 without a BOM, an `xlsx` with merged
+  cells, a PDF made of scans, a zero-length file, a file with no
+  extension. Each such case is a piece of behavior someone chose on
+  purpose; without a fixture it gets chosen at random.
+- **Markdown is only ever assembled through `markdown_writer`.** Escaping,
+  tables, headings — one module for every converter. This is personal: in
+  Amicus, the visibility rule got duplicated across four copies, two of
+  which fell out of sync and became holes. The same mistake here would
+  produce converters that escape the same character differently.
+- **`make sidecar` and `make compare-sidecar` are not part of
+  `make verify`**: they download hundreds of MB and are only needed by
+  someone touching the sidecar or the `pdf`/`docx`/`xlsx`/`pptx`
+  converters. The sidecar's dependency versions are pinned by
+  `sidecar/locks/<host>.txt`; update them deliberately
+  (`make sidecar-lock`), not in passing.
+- **The version is bumped in every PR**: `make verify-version
+  BASE_REF=origin/main`, format `name+build`.
+- **Localization:** strings live in `app/lib/l10n/app_{en,ru}.arb`,
+  generated via `flutter gen-l10n`, and the generated files are committed.
+  Edit the ARB files **as text** — rewriting them through `json.dump`
+  swallows the blank lines that split the file into logical groups.
+- **`CLAUDE.md` is a thin wrapper around this file.** Shared conventions
+  and gotchas live only here — don't duplicate them.
 
-## Грабли
+## Gotchas
 
-Часть перенесена из Amicus (те же инструменты, те же места), часть — известные
-свойства форматов. Список пополняется по ходу.
+Some carried over from Amicus (same tools, same spots), some are known
+properties of the formats. The list grows as work continues.
 
-- **Расширению файла верить нельзя.** Файл из мессенджера называется
-  `document` без расширения, `.docx` приходит под именем `.pdf`, а на Android
-  MIME от системы — `application/octet-stream`. Тип определяется по магическим
-  байтам, расширение — только подсказка при неоднозначности.
-- **`PK\x03\x04` не значит «архив».** `docx`, `xlsx`, `pptx`, `epub`, `apk` и
-  обычный zip — всё это zip. Различать по содержимому (`[Content_Types].xml`,
-  `mimetype` первым файлом), иначе `docx` уйдёт в конвертер архивов.
-- **Общие конвертеры должны спрашиваться последними.** `html` и `plain text`
-  возьмут что угодно текстовое, включая XML из `docx`. Отсюда числовые
-  приоритеты в реестре: 0.0 — конкретный формат, 10.0 — общий.
-- **Текст без BOM, не разбирающийся как UTF-8, — это не битый файл**, а почти
-  наверняка Windows-1251. На русскоязычных выгрузках это обычное дело.
-- **Плагины платформы из изолята не работают** — без
-  `BackgroundIsolateBinaryMessenger` из `Isolate.run` плагин не позвонит.
-  Поэтому OCR и распознавание речи — FFI на свои нативные библиотеки
-  (Tesseract, whisper.cpp), а не плагины: FFI в изоляте работает.
-- **`Isolate.run` нельзя отменить.** Для долгих форматов понадобится
-  долгоживущий изолят с портом; закладывать `ConversionLimits` так, чтобы
-  отмена потом вписалась. Распознавание речи обходит это общей нативной
-  памятью (`TranscriptionControl`: флаг отмены и прогресс), которую
-  нативный код проверяет сам, — освобождать её только после конца
-  изолята.
-- **`Clipboard.setData` умеет только `text/plain`.** Чтобы положить
-  `text/markdown` рядом, нужен `super_clipboard`.
-- **Автокопирование результата — ошибка.** Выглядит удобным ровно до первого
-  раза, когда затирает то, что человек нёс в буфере. Копирование только по
-  нажатию.
-- **Распакованный размер архива проверять по ходу, а не по заголовку.**
-  Заголовку zip верить нельзя — это единственная защита от zip-бомбы.
-- **Объединённые ячейки Markdown-таблицей не выражаются.** Отдавать такой лист
-  HTML-блоком и писать в `warnings`; молча ломать сетку хуже.
-- **Base64-картинки в выводе не нужны.** Десятки тысяч токенов мусора в
-  промпте ради того, чего модель всё равно не увидит. Изображения —
-  заглушками `![alt](имя)`.
-- **Сканированный PDF текста не содержит вовсе.** Любой движок вернёт пустоту;
-  это не баг и не ошибка конвертации, а предупреждение в `warnings`.
-- **Частичный результат полезнее отказа.** PDF, где половина страниц — сканы,
-  должен отдать текст с остальных. Отказ целиком — только когда отдавать
-  нечего.
-- **Сырой текст исключения пользователю не показывается никогда.** В Amicus
-  это закрывали отдельным багфиксом после релиза; здесь заложено сразу —
-  три внятных случая, см.
-  [docs/conversion-pipeline.md](docs/conversion-pipeline.md#ошибки).
-- **Временные файлы удалять в `finally`, а не «в конце».** Путь по ошибке —
-  основной способ оставить документ пользователя в `/tmp`.
-- **`dart test` в `core/` без `MARKITDOWN_PDFIUM_PATH` не найдёт
-  `libpdfium`.** `make test`/`make verify` сами качают библиотеку
-  (`pdfium/fetch.sh`) и выставляют переменную; запуск `dart test` вручную в
-  `core/` — не забыть то же самое, иначе PDF-фикстуры падают с «symbol not
-  found», а не с понятной причиной.
-- **У PDFium «верх» символа (`FPDFText_GetCharBox`) — это верх bbox глифа,
-  не базовая линия.** Строки, начинающиеся с буквы без выносного элемента
-  (`c`, `e`, `o`) и с выносным (`T`, `l`), при одном и том же межстрочном
-  интервале дают на 1–2pt разный «верх» — учтено порогом с запасом в
-  `pdf_converter.dart`, но это не баг, если цифры на новой фикстуре снова не
-  совпадут ровно.
-- **Сверка с сайдкаром — `make compare-sidecar`, не часть `make verify`.**
-  Нужен собранный `make sidecar`; отчёт в `core/build/sidecar-compare/`.
-  Любая новая фикстура для `pdf`/`docx`/`xlsx`/`pptx` обязана пройти эту
-  сверку, расхождение — исправить или записать в
-  [docs/format-coverage.md](docs/format-coverage.md#сверка-с-эталоном-этап-4).
-  Интеграционные тесты с настоящим сайдкаром
-  (`core/test/sidecar_integration_test.dart`) пропускаются без
-  `MARKITDOWN_SIDECAR_DIR`; вручную — с ним и с `MARKITDOWN_PDFIUM_PATH`.
-- **Фикстуры «написаны руками» не равны «валидны».** Рукописный `pptx` без
-  `<p:spPr>` и пакет с абсолютными `Target` в `.rels` (так пишет openpyxl)
-  ловит только эталонная библиотека. Исходники, которые нельзя написать
-  руками (`xls`, `msg`, валидный `pptx`, `xlsx` с типами, PDF с таблицей),
-  порождает `sidecar/samples/make_samples.py`.
-- **Сайдкар на macOS подписывается только после `build.sh` целиком** — после
-  `compileall` и всех чисток: любая правка файла после подписи её ломает.
-- **Рантайм сайдкара идёт с `-B`.** Запись `.pyc` в подписанный бандл ломает
-  подпись; байткод собирается заранее.
-- **Без `cs.disable-library-validation` при ad-hoc подписи падает
-  `import numpy`** («mapped file has no Team ID»). Этот ключ — единственный в
-  `sidecar/sidecar.entitlements`; сетевых там нет и быть не должно (проверяет
-  CI).
-- **Сайдкар на больших файлах медленнее Dart в десятки-сотни раз** (PDF на
-  300 страниц — 112 с против 1,2 с). Поэтому в приложении он первым только
-  на `pdf` до 50 страниц и на `xls`/`msg` — решение автора (Этап 5, п. 5).
-  Расширять `appFormats` или поднимать порог — снова решение автора, не
-  мимоходом.
-- **Windows-сборку локально не проверить.** Всё, что касается
-  `app/windows/`, `pdfium.dll` и шагов `windows`-джоба, проверяется только
-  пушем в CI; Makefile и `windows`-джоб — два списка одних проверок,
-  держать одинаковыми.
-- **В `sidecar/build.sh` чистка интерпретатора на Windows — своей веткой.**
-  NTFS не различает регистр: `python/lib/` там совпадает с `python/Lib/`, и
-  Unix-шный `rm -rf python/lib/{…,thread*}` снёс бы `threading.py`.
-- **Python-скрипты сборки сайдкара — с `-X utf8`.** Под `-I` переменные
-  `PYTHONUTF8`/`PYTHONIOENCODING` игнорируются, а stdout в пайпе на
-  Windows — cp1252: любой `print` с кириллицей падает.
-- **`| head` в шаге CI под `pipefail` даёт код 141** (SIGPIPE у того, кто
-  пишет в пайп). В `ci.yml` — `awk 'NR <= N'`.
-- **`ftyp` в начале файла — не значит HEIC.** Ту же коробку ISO BMFF
-  открывают MP4, M4A и MOV с телефона; HEIC отличается только маркой
-  (`heic`, `mif1`, `avif`…). Распознавать по марке, иначе видео и голосовые
-  станут «картинкой» — это особенно важно к метаданным аудио (Этап 6, п. 3).
-- **Смещениям внутри EXIF верить нельзя**, как и заголовку zip: IFD может
-  указывать сам на себя или за конец блока. Поэтому разбор свой, с памятью о
-  посещённых IFD и проверкой каждой длины, — пакет `exif` на петле виснет.
-  Изображение с опознанной сигнатурой отказа не получает никогда: формат и
-  размер отдаются и при битом EXIF.
-- **`FPDFBitmap_BGRx` = 3, а не 2.** 2 — это `FPDFBitmap_BGR`, 3 байта на
-  пиксель; Tesseract, которому сказано «4 байта», читает такой растр за
-  концом буфера — задвоенный текст или segfault процесса, не исключение.
-  Константы `fpdfview.h` сверять по заголовку, не по памяти.
-- **Вывод OCR в тестах сверяется фразами, не побайтно** (`ocr_test.dart`):
-  он зависит от версии Tesseract, а на CI Linux она из пакетов Ubuntu.
-  Общий набор фикстур гоняется **без** OCR, чтобы его эталоны от движка не
-  зависели.
-- **`tesseract/build.sh` под bash 3.2 (macOS):** пустой массив под
-  `set -u` — «unbound variable»; раскрывать как `${arr[@]+"${arr[@]}"}`.
-- **Путь в нативную библиотеку на Windows — не UTF-8.** `fopen` из MSVC
-  (им Tesseract читает модели) понимает путь в ANSI-кодировке системы, а
-  распакованный zip лежит в `C:\Users\<кириллица>\Downloads\…`. Поэтому
-  `_pathForFopen` в `tesseract_ocr.dart`: короткое имя 8.3, иначе cp1251,
-  иначе OCR недоступен. PDFium и Leptonica получают байты из памяти, им это
-  не грозит; любой новой нативной библиотеке, которой передаётся путь, —
-  грозит.
-- **CMake Tesseract на Windows линкует `Ws2_32` безусловно** (ради
-  отладочного ScrollView). `build.sh` вычищает его из CMakeLists и в конце
-  грепает собранные библиотеки на сетевые — не убирать ни то, ни другое.
-- **На Windows сайдкар идёт первым на PDF до 50 страниц** — и вернул бы по
-  скану пустоту как успех. Поэтому при доступном OCR он отклоняет PDF со
-  страницами-сканами (`scannedPdfToDart`); трогая порядок конвертеров,
-  держать это в голове.
-- **whisper.cpp пишет все библиотеки в `${CMAKE_BINARY_DIR}/bin`**, а его
-  `cmake_minimum_required` старше 3.13: без `CMP0077=NEW` его
-  `option(BUILD_SHARED_LIBS …)` затирает значение из нашего
-  `whisper/shim/CMakeLists.txt`. Оба места помечены в нём комментариями.
-- **Варианты CPU-бэкенда ggml — отдельные библиотеки, и грузятся они при
-  запуске** (`ggml-cpu-haswell.dll`, `libggml-cpu-android_armv8.2_2.so`…).
-  Не «упрощать» до одной сборки под AVX2/dotprod: на процессоре без них
-  приложение падает целиком, а не конвертация. На Android `.so` не
-  распакованы из APK — прослойка пробует их по голым именам
-  (`mdw_init`), список имён — в `mdw.c`; новый вариант в ggml — дописать
-  туда.
-- **На Windows DLL распознавания открываются по порядку зависимостей**
-  (`ggml-base` → `ggml` → `whisper` → `markitdown_whisper`, см.
-  `loadWhisperLibrary`): LoadLibrary ищет импорты рядом с `.exe` процесса,
-  а у `dart test` это `dart.exe`. Тот же приём, что у Leptonica.
-- **Media Foundation выбирает обработчик по расширению файла.** Звук без
-  расширения или под чужим (`голосовое` из мессенджера) он не откроет —
-  временный файл для декодера платформы пишется с расширением по
-  сигнатуре.
-- **`mfplat.dll` есть не везде** — в Windows «N» без Media Feature Pack и в
-  Windows Server без компонента Media Foundation её нет. Поэтому она
-  грузится динамически (`mdw_platform_windows.cpp`): импорт уронил бы
-  загрузку всей `markitdown_whisper.dll`, и пропало бы всё распознавание, а
-  не только AAC. На раннере `windows-2022` Media Foundation есть — AAC
-  проверяется в CI (`speech_test.dart`).
-- **Декодер AAC в Media Foundation меняет формат вывода по первому кадру**
-  (`MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`) — частоту и каналы надо
-  перечитывать, а тип выхода проверять (float или 16-битный PCM). Без
-  этого M4A на Windows «декодировался» в шум, и расшифровка выходила
-  пустой — поймал CI.
-- **`yes | sdkmanager` под `pipefail` — код 141**, как `| head`. В
-  `release.yml` — `(yes || true) | …`.
-- **`archive` 4 на битом zip не бросает исключение, а отдаёт пустой
-  архив.** Повреждённый файл тихо стал бы «пустым архивом» — поэтому все
-  чтения zip идут через `decodeZip` (`zip_family.dart`), который такой
-  результат считает отказом.
-- **`package:xml` не связывает префикс `xml:` с его пространством имён** —
-  `getAttribute('base', namespace: …)` на `xml:base` вернёт `null`. В
-  `rss_converter.dart` атрибут ищется и по полному имени.
-- **Строка BIFF8, разорванная записью `CONTINUE` посреди символов,
-  продолжается с нового байта флагов** — и сжатая (Latin-1) строка может
-  продолжиться как UTF-16. Счётчики форматирования и фонетики после
-  символов переходят границу без такого байта. Злая фикстура
-  `xls/evil.xls` это проверяет; сверять с `xlrd`.
-- **`flutter create --platforms=…` переписывает `app/.metadata`** — выкидывает
-  из `migration.platforms` уже существующие платформы. После запуска
-  вернуть их руками.
+- **A file's extension can't be trusted.** A file from a messaging app is
+  named `document` with no extension, a `.docx` arrives named `.pdf`, and
+  on Android the system-supplied MIME type is
+  `application/octet-stream`. Type is determined by magic bytes; the
+  extension is only a hint when things are ambiguous.
+- **`PK\x03\x04` doesn't mean "archive."** `docx`, `xlsx`, `pptx`, `epub`,
+  `apk`, and a plain zip are all zip files. Distinguish by content
+  (`[Content_Types].xml`, `mimetype` as the first file), otherwise a
+  `docx` ends up going to the archive converter.
+- **Generic converters must be asked last.** `html` and `plain text` will
+  grab anything text-like, including the XML inside a `docx`. Hence the
+  numeric priorities in the registry: 0.0 for a specific format, 10.0 for
+  a generic one.
+- **Text with no BOM that doesn't parse as UTF-8 isn't a corrupted
+  file** — it's almost certainly Windows-1251. This is routine for
+  Russian-language exports.
+- **Platform plugins don't work from an isolate** — without
+  `BackgroundIsolateBinaryMessenger` from `Isolate.run`, a plugin can't
+  make its call. That's why OCR and speech recognition are FFI calls into
+  their own native libraries (Tesseract, whisper.cpp), rather than
+  plugins: FFI works fine inside an isolate.
+- **`Isolate.run` can't be cancelled.** Long-running formats will need a
+  long-lived isolate with a port; `ConversionLimits` should be designed so
+  cancellation can be fitted in later. Speech recognition works around
+  this with shared native memory (`TranscriptionControl`: a cancel flag
+  and progress), which the native code checks itself — it should only be
+  freed after the isolate ends.
+- **`Clipboard.setData` only supports `text/plain`.** To also put
+  `text/markdown` on the clipboard, you need `super_clipboard`.
+- **Auto-copying the result is a mistake.** It looks convenient right up
+  until the first time it overwrites whatever someone was already
+  carrying on the clipboard. Copy only on button press.
+- **Check an archive's uncompressed size as you go, not from the
+  header.** The zip header can't be trusted — that's the whole point of
+  the zip-bomb defense.
+- **Merged cells can't be expressed in a Markdown table.** Emit that
+  sheet as an HTML block and note it in `warnings`; silently breaking the
+  grid is worse.
+- **Base64 images in the output aren't needed.** Tens of thousands of
+  tokens of noise in the prompt for something the model wouldn't see
+  anyway. Images become `![alt](filename)` placeholders.
+- **A scanned PDF contains no text at all.** Any engine will return
+  nothing; that's not a bug or a conversion error, it's a warning in
+  `warnings`.
+- **A partial result is more useful than a failure.** A PDF where half
+  the pages are scans should still return the text from the rest.
+  Failing outright is only right when there's nothing to return at all.
+- **Raw exception text is never shown to the user.** In Amicus this was
+  fixed with a separate bugfix after release; here it's built in from the
+  start — three clear cases, see
+  [docs/conversion-pipeline.md](docs/conversion-pipeline.md#errors).
+- **Delete temp files in a `finally`, not "at the end."** The error path
+  is the main way a user's document ends up left behind in `/tmp`.
+- **`dart test` in `core/` won't find `libpdfium` without
+  `MARKITDOWN_PDFIUM_PATH`.** `make test`/`make verify` download the
+  library themselves (`pdfium/fetch.sh`) and set the variable; when
+  running `dart test` manually in `core/`, don't forget to do the same,
+  or the PDF fixtures fail with "symbol not found" instead of a clear
+  reason.
+- **For PDFium, a character's "top" (`FPDFText_GetCharBox`) is the top of
+  the glyph's bounding box, not the baseline.** Lines starting with a
+  letter with no ascender (`c`, `e`, `o`) versus one with an ascender
+  (`T`, `l`) produce a "top" that differs by 1–2pt for the same line
+  spacing — handled with a margin of error in `pdf_converter.dart`, but
+  that's not a bug if the numbers on a new fixture don't match exactly
+  again.
+- **Cross-checking against the sidecar is `make compare-sidecar`, not
+  part of `make verify`.** It needs `make sidecar` built; the report lands
+  in `core/build/sidecar-compare/`. Any new fixture for
+  `pdf`/`docx`/`xlsx`/`pptx` must pass this comparison — a discrepancy
+  gets fixed or recorded in
+  [docs/format-coverage.md](docs/format-coverage.md#reference-comparison-stage-4).
+  Integration tests with the real sidecar
+  (`core/test/sidecar_integration_test.dart`) are skipped without
+  `MARKITDOWN_SIDECAR_DIR`; run manually with that plus
+  `MARKITDOWN_PDFIUM_PATH`.
+- **"Hand-written" fixtures aren't the same as "valid."** A hand-written
+  `pptx` with no `<p:spPr>`, and a package with absolute `Target` values
+  in `.rels` (which is how openpyxl writes them), are only caught by the
+  reference library. Source files that can't be hand-written (`xls`,
+  `msg`, a valid `pptx`, an `xlsx` with types, a PDF with a table) are
+  generated by `sidecar/samples/make_samples.py`.
+- **The macOS sidecar is only signed after `build.sh` has fully
+  finished** — after `compileall` and all cleanup: any edit to a file
+  after signing breaks the signature.
+- **The sidecar runtime runs with `-B`.** Writing `.pyc` files into a
+  signed bundle breaks the signature; bytecode is compiled ahead of time
+  instead.
+- **Without `cs.disable-library-validation`, ad-hoc signing makes
+  `import numpy` fail** ("mapped file has no Team ID"). This is the only
+  entitlement in `sidecar/sidecar.entitlements`; there are no networking
+  ones and there shouldn't be (checked by CI).
+- **The sidecar is tens to hundreds of times slower than Dart on large
+  files** (a 300-page PDF: 112s versus 1.2s). That's why in the app it
+  only goes first for `pdf` up to 50 pages and for `xls`/`msg` — an
+  author's decision (Stage 5, item 5). Expanding `appFormats` or raising
+  the threshold is again the author's decision, not something to slip in.
+- **The Windows build can't be verified locally.** Anything touching
+  `app/windows/`, `pdfium.dll`, or the steps of the `windows` job can only
+  be verified by pushing to CI; the Makefile and the `windows` job are two
+  lists of the same checks — keep them in sync.
+- **In `sidecar/build.sh`, interpreter cleanup on Windows has its own
+  branch.** NTFS is case-insensitive: `python/lib/` collides with
+  `python/Lib/` there, and the Unix-style `rm -rf
+  python/lib/{…,thread*}` would wipe out `threading.py`.
+- **The sidecar's Python build scripts use `-X utf8`.** Under `-I`, the
+  `PYTHONUTF8`/`PYTHONIOENCODING` variables are ignored, and stdout piped
+  on Windows is cp1252: any `print` containing Cyrillic will crash.
+- **`| head` in a CI step under `pipefail` yields exit code 141** (SIGPIPE
+  for whoever is writing into the pipe). In `ci.yml`, use
+  `awk 'NR <= N'` instead.
+- **`ftyp` at the start of a file doesn't mean HEIC.** The same ISO BMFF
+  container is also used by MP4, M4A, and MOV from a phone; HEIC is only
+  distinguished by its brand (`heic`, `mif1`, `avif`…). Detect by brand,
+  or video and voice messages will turn into "images" — this matters
+  especially for audio metadata (Stage 6, item 3).
+- **Offsets inside EXIF can't be trusted**, just like a zip header: an
+  IFD can point at itself or past the end of the block. That's why parsing
+  is homegrown, tracking visited IFDs and checking every length — the
+  `exif` package gets stuck in a loop on such files. An image with a
+  recognized signature never gets refused outright: the format and size
+  are still returned even with broken EXIF.
+- **`FPDFBitmap_BGRx` = 3, not 2.** 2 is `FPDFBitmap_BGR`, 3 bytes per
+  pixel; Tesseract, told "4 bytes," reads such a bitmap past the end of
+  the buffer — doubled text or a process segfault, not an exception.
+  Check the constants in `fpdfview.h`, don't rely on memory.
+- **OCR output in tests is compared by phrase, not byte-for-byte**
+  (`ocr_test.dart`): it depends on the Tesseract version, and on Linux CI
+  that comes from Ubuntu's packages. The general fixture set is run
+  **without** OCR, so its reference outputs don't depend on the engine.
+- **`tesseract/build.sh` under bash 3.2 (macOS):** an empty array under
+  `set -u` is an "unbound variable"; expand it as
+  `${arr[@]+"${arr[@]}"}`.
+- **A path to a native library on Windows isn't UTF-8.** `fopen` from
+  MSVC (which Tesseract uses to read models) expects a path in the
+  system's ANSI codepage, while an unpacked zip may sit in
+  `C:\Users\<Cyrillic>\Downloads\…`. Hence `_pathForFopen` in
+  `tesseract_ocr.dart`: try the 8.3 short name first, then cp1251,
+  otherwise OCR is unavailable. PDFium and Leptonica receive bytes from
+  memory, so they're unaffected; any new native library that gets handed
+  a path is at risk.
+- **Tesseract's CMake unconditionally links `Ws2_32` on Windows** (for the
+  debug ScrollView). `build.sh` strips it from the CMakeLists and, at the
+  end, greps the built libraries for networking symbols — don't remove
+  either step.
+- **On Windows the sidecar goes first for PDFs up to 50 pages** — and
+  would return emptiness from a scan as a success. That's why, when OCR
+  is available, it rejects a PDF made of scanned pages
+  (`scannedPdfToDart`); keep this in mind when touching converter order.
+- **whisper.cpp writes all its libraries to `${CMAKE_BINARY_DIR}/bin`**,
+  and its `cmake_minimum_required` predates 3.13: without `CMP0077=NEW`,
+  its `option(BUILD_SHARED_LIBS …)` overwrites the value set in our own
+  `whisper/shim/CMakeLists.txt`. Both spots are flagged with comments
+  there.
+- **The ggml CPU backend variants are separate libraries, loaded at
+  startup** (`ggml-cpu-haswell.dll`, `libggml-cpu-android_armv8.2_2.so`…).
+  Don't "simplify" to a single build targeting AVX2/dotprod: on a
+  processor without them, the whole app crashes, not just conversion. On
+  Android the `.so` files aren't extracted from the APK — the shim layer
+  tries them by bare name (`mdw_init`); the list of names is in `mdw.c` —
+  add any new ggml variant there too.
+- **On Windows, the speech-recognition DLLs are opened in dependency
+  order** (`ggml-base` → `ggml` → `whisper` → `markitdown_whisper`, see
+  `loadWhisperLibrary`): LoadLibrary looks for imports next to the
+  process's `.exe`, and for `dart test` that's `dart.exe`. Same trick as
+  Leptonica.
+- **Media Foundation picks a handler by file extension.** It won't open
+  audio with no extension or with a mismatched one (`voice message` from
+  a messaging app) — the temp file handed to the platform decoder is
+  written with an extension based on its signature.
+- **`mfplat.dll` isn't present everywhere** — it's missing from Windows
+  "N" editions without the Media Feature Pack, and from Windows Server
+  without the Media Foundation component. That's why it's loaded
+  dynamically (`mdw_platform_windows.cpp`): a static import would bring
+  down loading of the entire `markitdown_whisper.dll`, losing all speech
+  recognition, not just AAC. On the `windows-2022` runner Media
+  Foundation is present — AAC is checked in CI (`speech_test.dart`).
+- **The AAC decoder in Media Foundation changes its output format after
+  the first frame**
+  (`MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`) — sample rate and channel
+  count need to be re-read, and the output type (float versus 16-bit PCM)
+  needs to be checked. Without this, M4A on Windows "decoded" into noise
+  and the transcription came out empty — caught by CI.
+- **`yes | sdkmanager` under `pipefail` is exit code 141**, same as
+  `| head`. In `release.yml`, use `(yes || true) | …`.
+- **`archive` 4 doesn't throw on a corrupted zip — it returns an empty
+  archive.** A corrupted file would silently become a "silently empty
+  archive" — that's why all zip reads go through `decodeZip`
+  (`zip_family.dart`), which treats such a result as a failure.
+- **`package:xml` doesn't bind the `xml:` prefix to its namespace** —
+  `getAttribute('base', namespace: …)` on `xml:base` returns `null`. In
+  `rss_converter.dart` the attribute is also looked up by its full name.
+- **A BIFF8 string split by a `CONTINUE` record mid-character resumes
+  from a new flag byte** — and a compressed (Latin-1) string can resume
+  as UTF-16. Formatting and phonetic run counters past the characters
+  cross the boundary without such a byte. The evil fixture `xls/evil.xls`
+  checks this; compare against `xlrd`.
+- **`flutter create --platforms=…` rewrites `app/.metadata`** — it drops
+  platforms already present from `migration.platforms`. Restore them by
+  hand after running it.

@@ -16,10 +16,10 @@ import 'file_intake/picked_file.dart';
 import 'file_intake/share_intake.dart';
 import '../l10n/generated/app_localizations.dart';
 
-/// Markdown длиннее этого не рендерится целиком — `SelectableText` на
-/// многомегабайтном результате кладёт кадр намертво. В буфер и в файл уходит
-/// полный текст, срез — только на экране. См.
-/// `docs/client-architecture.md#большие-файлы`.
+/// Markdown longer than this doesn't render in full — `SelectableText` on a
+/// multi-megabyte result freezes the frame solid. The full text still goes
+/// to the clipboard and the file; the truncation is only on screen. See
+/// `docs/client-architecture.md#large-files`.
 const _maxPreviewChars = 20000;
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -43,8 +43,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  /// Поделились файлом — как файл; ссылкой (YouTube, браузер) — режим
-  /// «ссылка». Текст без ссылки молча не принимается.
+  /// Shared a file — handled as a file; a link (YouTube, browser) — "link"
+  /// mode. Text with no link is silently ignored.
   void _acceptShared(SharedInput input) {
     if (input.files.isNotEmpty) {
       _acceptAll(input.files);
@@ -57,8 +57,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _pasteLink() async {
-    // Ссылка из буфера обмена — сразу в поле: обычно её только что
-    // скопировали. Читается по нажатию кнопки, а не на старте.
+    // A link from the clipboard goes straight into the field: it was
+    // usually just copied. Read on button press, not on startup.
     final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
     final copied = clipboard?.text?.trim() ?? '';
     if (!mounted) return;
@@ -314,8 +314,8 @@ class _Converting extends StatelessWidget {
               SizedBox(
                 width: 320,
                 child: LinearProgressIndicator(
-                  // 0 — звук декодируется или модель грузится: доля
-                  // неизвестна, полоса бежит.
+                  // 0 means the audio is decoding or the model is loading:
+                  // the fraction is unknown, so the bar runs indeterminate.
                   value: progress > 0 ? progress / 100 : null,
                 ),
               ),
@@ -544,8 +544,9 @@ String _markdownFileName(String? originalFilename) {
   return '$base.md';
 }
 
-/// Страница по ссылке имени файла не имеет — берётся её заголовок, без
-/// символов, запрещённых в именах файлов Windows, и не длиннее разумного.
+/// A page fetched by link has no filename — its title is used instead,
+/// stripped of characters forbidden in Windows filenames, and capped at a
+/// reasonable length.
 String _titleFileName(String? title) {
   final cleaned = (title ?? '')
       .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), ' ')

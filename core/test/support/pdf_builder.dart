@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-/// Собирает минимальный валидный PDF из [pageCount] пустых страниц — ровно
-/// настолько, чтобы проверить решения, зависящие от числа страниц (порог
-/// сайдкара), без многостраничных фикстур в репозитории. Текста на страницах
-/// нет: Dart-конвертер отдаст пустой Markdown с предупреждением.
+/// Builds a minimal valid PDF out of [pageCount] blank pages — just
+/// enough to test decisions that depend on the page count (the sidecar
+/// threshold) without multi-page fixtures in the repository. The pages
+/// have no text: the Dart converter will return empty Markdown with a
+/// warning.
 Uint8List buildBlankPdf(int pageCount) {
-  // 1 — каталог, 2 — дерево страниц, 3.. — страницы.
+  // 1 — the catalog, 2 — the page tree, 3.. — the pages.
   final objects = <String>[
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Count $pageCount '
@@ -18,7 +19,7 @@ Uint8List buildBlankPdf(int pageCount) {
   final out = StringBuffer('%PDF-1.4\n');
   final offsets = <int>[];
   for (var i = 0; i < objects.length; i++) {
-    offsets.add(out.length); // только ASCII — символы равны байтам
+    offsets.add(out.length); // ASCII only — characters equal bytes
     out.write('${i + 1} 0 obj\n${objects[i]}\nendobj\n');
   }
   final xrefOffset = out.length;

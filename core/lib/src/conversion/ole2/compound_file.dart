@@ -1,17 +1,18 @@
 import 'dart:typed_data';
 
-/// Полный разбор OLE Compound File (CFB, MS-CFB): каталог как дерево и
-/// чтение потоков, включая мелкие из mini stream. Нужен `xls` (поток
-/// `Workbook`) и `msg` (свойства в потоках `__substg1.0_*` и подкаталогах
-/// получателей и вложений). Для распознавания типа хватает одних имён —
-/// это `type_detection/ole2_directory.dart`, он легче и терпит обрезанный
-/// файл.
+/// A full parse of an OLE Compound File (CFB, MS-CFB): the directory as a
+/// tree, and reading streams, including the small ones from the mini
+/// stream. Needed for `xls` (the `Workbook` stream) and `msg` (properties
+/// in `__substg1.0_*` streams and recipient/attachment subdirectories). For
+/// type detection, names alone are enough — that's
+/// `type_detection/ole2_directory.dart`, which is lighter and tolerates a
+/// truncated file.
 ///
-/// Смещениям внутри файла верить нельзя, как и заголовку zip: цепочка
-/// секторов может замыкаться, номер — указывать за конец, размер потока —
-/// быть больше файла. Поэтому каждая цепочка проходится с ограничением на
-/// число шагов, а всё, что не сходится, — [FormatException], которую
-/// конвертер превращает в понятный отказ.
+/// Offsets inside the file can't be trusted, same as a zip header: a
+/// sector chain can loop, a number can point past the end, a stream's size
+/// can exceed the file. So every chain is walked with a cap on the number
+/// of steps, and anything that doesn't add up becomes a [FormatException],
+/// which the converter turns into a clear, readable failure.
 class CompoundFile {
   final Uint8List _bytes;
   final int _sectorSize;
@@ -32,7 +33,7 @@ class CompoundFile {
     this._entries,
   );
 
-  /// Бросает [FormatException], если [bytes] не разбираются как CFB.
+  /// Throws [FormatException] if [bytes] doesn't parse as CFB.
   factory CompoundFile.parse(Uint8List bytes) {
     const headerSize = 512;
     if (bytes.length < headerSize) {
@@ -64,7 +65,8 @@ class CompoundFile {
 
     final reader = _SectorReader(bytes, sectorSize);
 
-    // Номера секторов FAT: до 109 в заголовке, остальные — цепочкой DIFAT.
+    // FAT sector numbers: up to 109 in the header, the rest via the DIFAT
+    // chain.
     final fatSectorIds = <int>[];
     for (var i = 0; i < 109 && fatSectorIds.length < fatSectorCount; i++) {
       final id = data.getUint32(0x4C + i * 4, Endian.little);
@@ -120,15 +122,15 @@ class CompoundFile {
 
   CfbEntry get root => _entries.first;
 
-  /// Непосредственные потомки хранилища [storage] в порядке дерева
-  /// (красно-чёрное дерево по имени: левый — правый — потомок).
+  /// The immediate children of [storage] in tree order (a red-black tree
+  /// keyed by name: left — right — child).
   List<CfbEntry> children(CfbEntry storage) {
     final result = <CfbEntry>[];
     final visited = <int>{};
     final stack = <int>[];
     var current = storage.childId;
-    // Обход по порядку без рекурсии: дерево приходит из файла и может быть
-    // сколь угодно глубоким или зацикленным.
+    // Non-recursive in-order traversal: the tree comes from the file and
+    // can be arbitrarily deep or cyclic.
     while (true) {
       while (_isEntry(current) && visited.add(current)) {
         stack.add(current);
@@ -142,8 +144,8 @@ class CompoundFile {
     return result;
   }
 
-  /// Потомок [storage] по имени. Имена в CFB сравниваются без учёта
-  /// регистра.
+  /// The child of [storage] by name. Names in CFB are compared case-
+  /// insensitively.
   CfbEntry? child(CfbEntry storage, String name) {
     final lower = name.toLowerCase();
     for (final entry in children(storage)) {
@@ -152,9 +154,9 @@ class CompoundFile {
     return null;
   }
 
-  /// Содержимое потока. Размер берётся из каталога, но не больше, чем
-  /// реально нашлось в цепочке: обрезанный файл даёт обрезанный поток, а не
-  /// исключение посреди разбора.
+  /// The stream's content. The size is taken from the directory, but
+  /// capped at what's actually found in the chain: a truncated file gives
+  /// a truncated stream, not an exception mid-parse.
   Uint8List read(CfbEntry stream) {
     if (stream.type != CfbEntryType.stream) {
       throw const FormatException('OLE2: это не поток');
@@ -199,7 +201,7 @@ class CompoundFile {
 
 enum CfbEntryType { empty, storage, stream, root }
 
-/// Запись каталога CFB: хранилище (папка), поток или корень.
+/// A CFB directory entry: a storage (folder), a stream, or the root.
 class CfbEntry {
   final int id;
   final String name;
@@ -225,7 +227,7 @@ class CfbEntry {
     final data = ByteData.sublistView(directory, offset, offset + 128);
     final nameLength = data.getUint16(64, Endian.little);
     final units = <int>[];
-    // Длина в байтах включает завершающий нулевой символ UTF-16.
+    // The byte length includes the trailing UTF-16 null character.
     for (var i = 0; i + 2 <= nameLength - 2 && i + 2 <= 64; i += 2) {
       units.add(data.getUint16(i, Endian.little));
     }
@@ -235,8 +237,8 @@ class CfbEntry {
       5 => CfbEntryType.root,
       _ => CfbEntryType.empty,
     };
-    // Размер — 64 бита, но в версии 3 старшая половина бывает мусором;
-    // потоки больше 4 ГБ этому приложению всё равно не встретятся.
+    // The size is 64-bit, but in version 3 the high half can be garbage;
+    // streams over 4 GB won't show up for this app anyway.
     final size = data.getUint32(120, Endian.little);
     return CfbEntry._(
       id,
@@ -254,8 +256,8 @@ class CfbEntry {
   String toString() => 'CfbEntry($name, $type, $size)';
 }
 
-/// `0xFFFFFFFA` и выше — служебные значения (конец цепочки, свободный
-/// сектор, сектор FAT/DIFAT), а не номера.
+/// `0xFFFFFFFA` and above are reserved values (end of chain, free sector,
+/// a FAT/DIFAT sector), not numbers.
 bool _isRegular(int id) => id < 0xFFFFFFFA;
 
 class _SectorReader {
@@ -266,8 +268,9 @@ class _SectorReader {
 
   int get sectorCount => (bytes.length + sectorSize - 1) ~/ sectorSize;
 
-  /// Сектор N лежит со смещением (N + 1) * размер: «нулевой» — заголовок.
-  /// Последний сектор файла бывает недописан — отдаётся то, что есть.
+  /// Sector N sits at offset (N + 1) * size: sector "zero" is the header.
+  /// The file's last sector can be incomplete — whatever's there is
+  /// returned.
   Uint8List sector(int id) {
     final offset = (id + 1) * sectorSize;
     if (id < 0 || offset >= bytes.length) {

@@ -11,23 +11,26 @@ import '../converter_registry.dart';
 import '../document_converter.dart';
 import '../failure_text.dart';
 
-/// Обычный архив (не OOXML/EPUB/APK — те уже разведены `refineZipFamily`) —
-/// рекурсия через `request.recurse` по каждому файлу, с лимитами, которые
-/// теперь считает [ConverterRegistry] по всему дереву (`zip` в `zip`), а не
-/// этот конвертер. См. `docs/conversion-pipeline.md#3-конвертация`.
+/// A regular archive (not OOXML/EPUB/APK — those are already separated out
+/// by `refineZipFamily`) — recursion through `request.recurse` over each
+/// file, with limits that [ConverterRegistry] now tracks across the whole
+/// tree (`zip` inside `zip`), not this converter. See
+/// `docs/conversion-pipeline.md#3-конвертация`.
 ///
-/// Превышенный лимит на вложенном файле — хард-фейл всего архива (как и
-/// любой другой [LimitExceededFailure]), а не warning: лимит сигналит, что
-/// дальше идти небезопасно, а не что один файл не повезло конвертировать.
-/// Любая другая ошибка на вложенном файле — warning и пропуск, остальные
-/// файлы архива продолжают обрабатываться (частичный результат).
+/// An exceeded limit on a nested file is a hard failure for the whole
+/// archive (like any other [LimitExceededFailure]), not a warning: the
+/// limit signals that it's unsafe to continue, not that one file simply
+/// failed to convert. Any other error on a nested file is a warning and a
+/// skip — the rest of the archive's files keep processing (a partial
+/// result).
 ///
-/// Честная оговорка: `archive` распаковывает содержимое файла одним вызовом,
-/// без возможности прервать его на середине — бюджет в реестре проверяется
-/// по факту полученных байт уже после распаковки каждого файла, а не по
-/// заголовку. От архива из множества файлов это защищает; от одного файла,
-/// который сам разворачивается в гигабайты, — нет. Для масштаба этого
-/// проекта это сознательный компромисс, не недосмотр.
+/// An honest caveat: `archive` unpacks a file's contents in one call, with
+/// no way to interrupt it midway — the registry's budget is checked
+/// against the actual byte count only after each file has been unpacked,
+/// not against its header. This protects against an archive made of many
+/// files; it does not protect against a single file that itself expands
+/// into gigabytes. For this project's scale that's a deliberate trade-off,
+/// not an oversight.
 class ZipConverter implements DocumentConverter {
   const ZipConverter();
 

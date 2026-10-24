@@ -1,16 +1,16 @@
-"""Тонкая обёртка над настоящим markitdown: argv -> один JSON-объект на stdout.
+"""Thin wrapper over the real markitdown: argv -> a single JSON object on stdout.
 
-Запуск (протокол описан в docs/python-sidecar.md):
+Invocation (protocol described in docs/python-sidecar.md):
 
     <dir>/python/bin/python3 -I -B <dir>/run.py --in <path> --format <id>
 
-stdout — ровно один JSON `{"markdown": str, "title": str|null, "warnings": [...]}`,
-всё остальное (предупреждения библиотек, логи, трейсбеки) — только stderr.
-Коды выхода: 0 успех; 2 формат не поддерживается; 3 битый файл; 1 прочее.
+stdout is exactly one JSON `{"markdown": str, "title": str|null, "warnings": [...]}`,
+everything else (library warnings, logs, tracebacks) goes to stderr only.
+Exit codes: 0 success; 2 unsupported format; 3 corrupted file; 1 other.
 
-Обёртка намеренно не содержит логики конвертации: сайдкар ценен как эталон
-«настоящего markitdown», и любая правка вывода здесь превратила бы эталон в
-ещё одну реализацию.
+The wrapper deliberately contains no conversion logic: the sidecar's value is
+being a reference for "the real markitdown", and any tweak to the output here
+would turn the reference into yet another implementation.
 """
 
 import json
@@ -19,9 +19,9 @@ import os
 import sys
 import warnings
 
-# Формат (id из приложения) -> расширение-подсказка для markitdown. Временный
-# файл может прийти без правильного расширения, а конвертеры markitdown выбирают
-# себя прежде всего по нему. Ключи обязаны совпадать с FORMATS в build.sh.
+# Format (id from the app) -> extension hint for markitdown. A temp file
+# can arrive without the right extension, and markitdown's converters pick
+# themselves mainly by it. Keys must match FORMATS in build.sh.
 FORMAT_EXTENSIONS = {
     "pdf": ".pdf",
     "docx": ".docx",
@@ -36,8 +36,9 @@ EXIT_OTHER = 1
 EXIT_UNSUPPORTED = 2
 EXIT_BROKEN = 3
 
-# Модули конвертеров markitdown и имена переменных, где они прячут ошибку
-# импорта необязательной зависимости (см. _dependency_exc_info в исходниках).
+# markitdown converter modules and the variable names where they stash the
+# import error of an optional dependency (see _dependency_exc_info in the
+# sources).
 _DEPENDENCY_FLAGS = {
     "pdf": ("markitdown.converters._pdf_converter", "_dependency_exc_info"),
     "docx": ("markitdown.converters._docx_converter", "_dependency_exc_info"),
@@ -56,8 +57,8 @@ def _err(message):
 
 
 def _parse_args(argv):
-    # argparse по умолчанию выходит с кодом 2 — а это у нас «формат не
-    # поддерживается». Неверные аргументы — код 1, поэтому разбираем руками.
+    # argparse exits with code 2 by default — but that's our "format not
+    # supported". Bad arguments are code 1, so we parse by hand.
     args = {"in": None, "format": None, "self_check": False}
     it = iter(argv)
     for arg in it:
@@ -79,13 +80,13 @@ def _parse_args(argv):
 
 
 def _emit(stdout_fd, payload):
-    """Пишет JSON в настоящий stdout (fd, сохранённый до подмены)."""
+    """Writes JSON to the real stdout (the fd saved before it was swapped)."""
     text = json.dumps(payload, ensure_ascii=False)
     try:
         data = text.encode("utf-8")
     except UnicodeEncodeError:
-        # Одинокие суррогаты из битых документов: ASCII-вариант с \uXXXX
-        # остаётся валидным JSON при любом содержимом.
+        # Lone surrogates from corrupted documents: the ASCII variant with
+        # \uXXXX stays valid JSON no matter the content.
         data = json.dumps(payload, ensure_ascii=True).encode("ascii")
     view = memoryview(data)
     while view:
@@ -98,11 +99,12 @@ def _setup_paths():
 
 
 def _setup_diagnostics():
-    """Всё, что библиотеки захотят сказать, — в stderr, а не в stdout.
+    """Anything the libraries want to say goes to stderr, not stdout.
 
-    Возвращает fd настоящего stdout. Сам fd 1 перенаправляется на stderr на
-    всё время работы: нативные расширения (onnxruntime у magika) пишут в него
-    напрямую, минуя sys.stdout, и никакой print-перехват это не поймает.
+    Returns the fd of the real stdout. fd 1 itself is redirected to stderr
+    for the whole run: native extensions (onnxruntime under magika) write
+    to it directly, bypassing sys.stdout, and no print interception would
+    catch that.
     """
     stdout_fd = os.dup(1)
     os.dup2(2, 1)
@@ -114,12 +116,13 @@ def _setup_diagnostics():
 
 
 def _self_check():
-    """Проверка собранного дерева: markitdown грузится, зависимости на месте.
+    """Checks the built tree: markitdown loads, dependencies are in place.
 
-    Не прогон конвертации (для этого фикстуры), а гарантия, что manifest не
-    врёт: конвертер без своей зависимости markitdown молча пропускает.
+    Not a conversion run (fixtures exist for that), but a guarantee that the
+    manifest isn't lying: a converter missing its dependency is silently
+    skipped by markitdown.
     """
-    import markitdown  # noqa: F401  (ошибка импорта = сборка негодная)
+    import markitdown  # noqa: F401  (import error = build is bad)
     from importlib import import_module
 
     problems = []
@@ -128,15 +131,15 @@ def _self_check():
         exc_info = getattr(import_module(module_name), flag)
         if exc_info is not None:
             problems.append(f"{fmt}: {exc_info[1]!r}")
-    # MarkItDown() загружает модель magika через onnxruntime; identify_bytes
-    # гоняет настоящий инференс. Это страховка сборки: из lib/ вычищаются
-    # пакеты, которые onnxruntime формально требует, но, как считается, не
-    # импортирует (sympy, mpmath) — если это перестанет быть правдой, упасть
-    # должна сборка, а не пользователь на первом файле.
+    # MarkItDown() loads the magika model via onnxruntime; identify_bytes
+    # runs real inference. This is a build safety net: packages that
+    # onnxruntime formally requires but is believed not to actually import
+    # (sympy, mpmath) are stripped from lib/ — if that stops being true, the
+    # build should fail, not the user on their first file.
     guess = markitdown.MarkItDown()._magika.identify_bytes(b"# hello\n\nworld\n")
     if guess.status != "ok":
         problems.append(f"magika: статус {guess.status}")
-    # Табличный путь markitdown (xlsx/xls) целиком стоит на pandas.
+    # markitdown's tabular path (xlsx/xls) rests entirely on pandas.
     import pandas
 
     pandas.DataFrame({"a": [1]}).to_html(index=False)
@@ -158,19 +161,20 @@ def _self_check():
     return EXIT_OK
 
 
-# Форматы, чей путь кода в markitdown стоит на pandas (read_excel + to_html).
+# Formats whose code path in markitdown rests on pandas (read_excel + to_html).
 _PANDAS_FORMATS = {"xlsx", "xls"}
 
 
 def _convert(path, fmt):
-    """Возвращает (payload, exit_code)."""
+    """Returns (payload, exit_code)."""
     if fmt not in _PANDAS_FORMATS:
-        # markitdown импортирует ВСЕ конвертеры разом, а xlsx/xls тянут pandas
-        # (~0,4 с и ~35 МБ ОЗУ на старте). Для pdf/docx/pptx/msg он
-        # не нужен вообще (проверено grep'ом по markitdown и pdfplumber).
-        # `sys.modules[name] = None` — штатный способ сказать «import упадёт
-        # с ImportError»: markitdown сам ловит это и просто помечает xlsx-
-        # конвертеры как недоступные. Код и вывод markitdown не меняются.
+        # markitdown imports ALL converters at once, and xlsx/xls pull in
+        # pandas (~0.4s and ~35 MB RAM at startup). For pdf/docx/pptx/msg it
+        # isn't needed at all (verified by grepping markitdown and
+        # pdfplumber). `sys.modules[name] = None` is the standard way to say
+        # "import will fail with ImportError": markitdown itself catches
+        # this and simply marks the xlsx converters as unavailable.
+        # markitdown's code and output don't change.
         sys.modules["pandas"] = None  # type: ignore[assignment]
     from markitdown import MarkItDown, StreamInfo
     from markitdown import (
@@ -188,8 +192,9 @@ def _convert(path, fmt):
         return None, EXIT_UNSUPPORTED
     except FileConversionException as exc:
         attempts = exc.attempts or []
-        # Если все попытки упали на отсутствующей зависимости — это сломанная
-        # сборка, а не битый файл: пользователю «файл повреждён» было бы ложью.
+        # If every attempt failed on a missing dependency, that's a broken
+        # build, not a corrupted file: telling the user "file is corrupted"
+        # would be a lie.
         if attempts and all(
             isinstance(a.exc_info[1], MissingDependencyException)
             for a in attempts
@@ -238,7 +243,7 @@ def main(argv):
         if payload is not None:
             _emit(stdout_fd, payload)
         return code
-    except Exception:  # noqa: BLE001 — любой сбой превращаем в код 1 + stderr
+    except Exception:  # noqa: BLE001 — any failure becomes code 1 + stderr
         import traceback
 
         traceback.print_exc(file=sys.stderr)
@@ -248,6 +253,6 @@ def main(argv):
 if __name__ == "__main__":
     code = main(sys.argv[1:])
     sys.stderr.flush()
-    # os._exit не нужен: обычного выхода достаточно, потоков onnxruntime после
-    # конвертации никто не ждёт.
+    # os._exit isn't needed: a normal exit is enough, nobody waits on
+    # onnxruntime's threads after conversion.
     sys.exit(code)

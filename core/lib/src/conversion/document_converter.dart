@@ -5,31 +5,33 @@ import 'conversion_failure.dart';
 import 'conversion_request.dart';
 import 'conversion_result.dart';
 
-/// Контракт одного конвертера. См.
+/// The contract for a single converter. See
 /// `docs/conversion-pipeline.md#2-реестр-конвертеров`.
 abstract interface class DocumentConverter {
-  /// Стабильный идентификатор (`'csv'`, `'html'`, …) — попадает в
-  /// [ConversionResult.converterId] и в тексты ошибок.
+  /// A stable identifier (`'csv'`, `'html'`, …) — lands in
+  /// [ConversionResult.converterId] and in error texts.
   String get id;
 
-  /// Меньше — спрашивается раньше. `0.0` — конкретный формат, `10.0` —
-  /// общий (`html`, `plain text`).
+  /// Lower is asked earlier. `0.0` is a specific format, `10.0` is
+  /// generic (`html`, `plain text`).
   double get priority;
 
-  /// Синхронно и без обращения к диску: решение «мой ли это файл»
-  /// принимается по [StreamInfo] и уже прочитанным [head]-байтам, а не
-  /// потоку — иначе каждый конвертер в цепочке читал бы файл с начала.
+  /// Synchronous and without touching disk: the "is this my file"
+  /// decision is made from [StreamInfo] and the already-read [head]
+  /// bytes, not the stream — otherwise every converter in the chain
+  /// would read the file from the start.
   bool accepts(StreamInfo info, Uint8List head);
 
-  /// Бросает [ConversionCorruptedException] на распознанное, но
-  /// нечитаемое содержимое — реестр сам превратит это в понятный отказ.
-  /// Любое другое исключение реестр тоже перехватит, не показывая его текст
-  /// пользователю.
+  /// Throws [ConversionCorruptedException] for content that's recognized
+  /// but unreadable — the registry turns that into an understandable
+  /// decline on its own. The registry also catches any other exception,
+  /// without showing its text to the user.
   Future<ConversionResult> convert(ConversionRequest request);
 }
 
-/// Конвертер бросает это, когда формат опознан, но содержимое повреждено.
-/// [reason] — уже человекочитаемая причина, не текст исключения библиотеки.
+/// A converter throws this when the format is recognized but the content
+/// is damaged. [reason] is already a human-readable cause, not a
+/// library exception's text.
 class ConversionCorruptedException implements Exception {
   final String reason;
 
@@ -39,10 +41,11 @@ class ConversionCorruptedException implements Exception {
   String toString() => reason;
 }
 
-/// Конвертер бросает это, когда рекурсия (`zip`/`epub`) наткнулась на
-/// [ConversionLimits], уже превышенный вложенным файлом — реестр превращает
-/// это в [LimitExceededFailure], а не в generic «файл повреждён». [reason] —
-/// уже человекочитаемое описание лимита.
+/// A converter throws this when recursion (`zip`/`epub`) ran into
+/// [ConversionLimits] already exceeded by a nested file — the registry
+/// turns this into [LimitExceededFailure] rather than a generic "file
+/// damaged". [reason] is already a human-readable description of the
+/// limit.
 class ConversionLimitExceededException implements Exception {
   final String reason;
 
@@ -52,25 +55,26 @@ class ConversionLimitExceededException implements Exception {
   String toString() => reason;
 }
 
-/// Конвертер бросает это, когда **не смог** обработать файл, но формат
-/// может уметь следующий в цепочке конвертер (сайдкар отказался или упал, а
-/// Dart-реализация того же формата есть). В отличие от
-/// [ConversionCorruptedException], реестр не завершает прогон, а переходит к
-/// следующему конвертеру, чей `accepts()` тоже сказал «да»: частичный или
-/// запасной результат полезнее отказа. Если запасного нет или он тоже
-/// провалился, пользователю уходит [failure] — отказ первого конвертера, а
-/// не generic-ошибка.
+/// A converter throws this when it **couldn't** handle the file, but
+/// the format might be handled by the next converter in the chain (a
+/// sidecar declined or crashed, and a Dart implementation of the same
+/// format exists). Unlike [ConversionCorruptedException], the registry
+/// doesn't end the run but moves on to the next converter whose
+/// `accepts()` also said "yes": a partial or fallback result is more
+/// useful than a decline. If there's no fallback, or it fails too, the
+/// user gets [failure] — the first converter's decline, not a generic
+/// error.
 class ConversionDeclinedException implements Exception {
-  /// Что показать, если дальше по цепочке никто не справился.
+  /// What to show if nobody further down the chain managed it.
   final ConversionFailure failure;
 
-  /// Человекочитаемая пометка в `warnings`, если справился запасной
-  /// конвертер («сайдкар не смог обработать файл, результат получен
-  /// встроенным разбором»). Без текстов исключений и stderr.
+  /// A human-readable note for `warnings` if a fallback converter
+  /// handled it ("the sidecar couldn't process the file, the result
+  /// came from the built-in parser"). No exception texts or stderr.
   final String fallbackWarning;
 
-  /// Диагностика для разработчика (хвост stderr сайдкара и т.п.). Пользователю
-  /// не показывается никогда — только для логов и отладки.
+  /// Diagnostics for the developer (the sidecar's stderr tail, etc.).
+  /// Never shown to the user — logging and debugging only.
   final String? diagnostics;
 
   const ConversionDeclinedException({

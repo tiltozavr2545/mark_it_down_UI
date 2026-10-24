@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Release: песочница ВКЛЮЧЕНА. С 0.9 есть network.client — исходящие
-  соединения для режима «ссылка» (скачать страницу или файл по ссылке,
-  docs/offline-and-privacy.md). network.server (входящие) здесь — ошибка;
-  CI это проверяет. Сайдкар наследует песочницу и вместе с ней
-  network.client: сетевые конвертеры markitdown в нём не установлены, это
-  и держит его без сети (см. docs/python-sidecar.md). Подробности —
+  Release: the sandbox is ENABLED. Since 0.9 there's network.client —
+  outgoing connections for "link" mode (downloading a page or file by link,
+  docs/offline-and-privacy.md). network.server (incoming) here is an error;
+  CI checks for that. The sidecar inherits the sandbox and, with it,
+  network.client: markitdown's network converters aren't installed in it,
+  and that's what keeps it offline (see docs/python-sidecar.md). Details —
   docs/operations.md.
 -->
 <plist version="1.0">

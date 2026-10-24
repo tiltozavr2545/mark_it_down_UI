@@ -13,10 +13,10 @@ import '../converter_registry.dart';
 import '../document_converter.dart';
 import '../failure_text.dart';
 
-/// `META-INF/container.xml` → `content.opf` (порядок глав через `spine`) →
-/// каждая глава через `HtmlConverter` Этапа 1, по тому же реестру —
-/// `request.recurse`, а не прямой вызов. Ошибка на одной главе не валит всю
-/// книгу: `warnings` + главу пропускаем, остальное отдаём. См.
+/// `META-INF/container.xml` → `content.opf` (chapter order via `spine`) →
+/// each chapter through Stage 1's `HtmlConverter`, via the same registry —
+/// `request.recurse`, not a direct call. An error on one chapter doesn't
+/// fail the whole book: `warnings` + skip the chapter, return the rest. See
 /// `docs/implementation-plan.md#этап-2-office-02`.
 class EpubConverter implements DocumentConverter {
   const EpubConverter();

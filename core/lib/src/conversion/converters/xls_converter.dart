@@ -9,11 +9,12 @@ import '../ole2/compound_file.dart';
 import '../spreadsheet/sheet_markdown.dart';
 import '../xls/biff_workbook.dart';
 
-/// Excel 97–2003 (`.xls`, BIFF8) и Excel 5–95 (BIFF5/7): поток `Workbook`
-/// или `Book` из OLE2-контейнера → листы тем же рендером, что у `xlsx`
-/// ([renderSheet]). На десктопе первым идёт сайдкар (настоящий markitdown
-/// через `xlrd`, решение автора, Этап 5), этот конвертер — запасной путь;
-/// на Android — единственный.
+/// Excel 97–2003 (`.xls`, BIFF8) and Excel 5–95 (BIFF5/7): the `Workbook`
+/// or `Book` stream from the OLE2 container → sheets rendered with the
+/// same renderer as `xlsx` ([renderSheet]). On desktop, the sidecar runs
+/// first (real markitdown via `xlrd`, the author's design decision, Stage
+/// 5); this converter is the fallback path there, and the only one on
+/// Android.
 class XlsConverter implements DocumentConverter {
   const XlsConverter();
 

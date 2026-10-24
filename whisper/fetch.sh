@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Модели распознавания речи — только качаются, по закреплённым коммитам и
-# sha256 из whisper/versions.sh. Ничего из скачанного не коммитится — тот
-# же порядок, что у tesseract/fetch.sh.
+# Speech recognition models — downloaded only, by the pinned commits and
+# sha256 from whisper/versions.sh. Nothing downloaded is committed — the
+# same arrangement as tesseract/fetch.sh.
 #
-#   whisper/models/                модели — для dart test в core/
-#   app/assets/whisper/            они же — ассетами приложения (на Windows
-#                                  лягут файлами рядом с .exe, на Android
-#                                  копируются из APK при первом аудиофайле)
-#                                  и models.json — их опись
+#   whisper/models/                the models — for dart test in core/
+#   app/assets/whisper/            the same models as app assets (on
+#                                  Windows they end up as files next to
+#                                  .exe, on Android they're copied from the
+#                                  APK on the first audio file)
+#                                  plus models.json — their manifest
 #
-# 265 МБ, поэтому, в отличие от tessdata, не входит в make test: без
-# моделей тесты транскрипции пропускаются (`make whisper` — качает и
-# собирает).
+# 265 MB, so unlike tessdata it isn't part of make test: without the
+# models the transcription tests are skipped (`make whisper` downloads and
+# builds them).
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=whisper/versions.sh
@@ -26,7 +27,7 @@ mkdir -p "${MODELS_DIR}" "${ASSETS_DIR}"
 download "${MODEL_URL}" "${MODEL_SHA256}" "${MODELS_DIR}/${MODEL_NAME}"
 download "${VAD_URL}" "${VAD_SHA256}" "${MODELS_DIR}/${VAD_NAME}"
 
-# Старые версии моделей из ассетов убираем: иначе приложение повезёт обе.
+# Remove old model versions from assets: otherwise the app would ship both.
 for file in "${ASSETS_DIR}"/*.bin; do
   [[ -e "${file}" ]] || continue
   case "$(basename "${file}")" in
@@ -35,17 +36,18 @@ for file in "${ASSETS_DIR}"/*.bin; do
   esac
 done
 for name in "${MODEL_NAME}" "${VAD_NAME}"; do
-  # cmp, а не размер: та же длина у другой версии модели — не редкость.
+  # cmp, not size: a different model version having the same length isn't rare.
   if ! cmp -s "${MODELS_DIR}/${name}" "${ASSETS_DIR}/${name}"; then
     cp "${MODELS_DIR}/${name}" "${ASSETS_DIR}/${name}"
   fi
 done
 
-# Опись для приложения: имена, размеры и sha256. По ней Android решает,
-# копировать ли модель из APK, не читая 265 МБ в память ради сравнения
-# (копия на диске названа по хешу — другая версия модели не спутается с
-# прежней той же длины), а Dart не держит имена файлов у себя — одна
-# правда, versions.sh.
+# A manifest for the app: names, sizes, and sha256. Android uses it to
+# decide whether to copy the model from the APK, without reading 265 MB
+# into memory just to compare (the copy on disk is named by its hash, so a
+# different model version of the same length won't be confused with the
+# old one), and Dart doesn't keep file names of its own — there's one
+# source of truth, versions.sh.
 size_of() { wc -c <"$1" | tr -d ' '; }
 cat >"${ASSETS_DIR}/models.json" <<JSON
 {

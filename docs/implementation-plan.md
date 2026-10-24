@@ -1,521 +1,571 @@
-# План реализации (0.1 → 1.0)
+# Implementation Plan (0.1 → 1.0)
 
-Пошаговый план из [project-brief.md](project-brief.md), с CI и сборкой,
-встроенными в этапы, а не отложенными на конец. Этапы идут по возрастанию
-риска: сначала то, что заведомо получится, и только потом то, где есть
-открытые вопросы.
+Step-by-step plan from [project-brief.md](project-brief.md), with CI and builds
+built into the stages rather than deferred to the end. Stages proceed in
+increasing order of risk: first what's sure to work, and only then what has
+open questions.
 
-Документ **живой, пока план не закрыт**: отметки о статусе ставятся по ходу.
-Что в какой версии появилось — в [../CHANGELOG.md](../CHANGELOG.md); что
-решено по форматам — в [format-coverage.md](format-coverage.md).
+This document is **living while the plan is open**: status markers get updated
+as work proceeds. What landed in which version — see
+[../CHANGELOG.md](../CHANGELOG.md); what's decided per format — see
+[format-coverage.md](format-coverage.md).
 
-## Прогресс
+## Progress
 
-- [x] Этап 0 — Каркас: проект, CI, окно, приём файла
-- [x] Этап 1 — Конвейер + текстовые форматы (0.1)
-- [x] Этап 2 — Office: docx, xlsx, pptx, epub, zip (0.2)
-- [x] Этап 3 — PDF (0.3)
-- [x] Этап 4 — Python-сайдкар на десктопе (0.4)
-- [x] Этап 5 — Windows (0.5)
-- [ ] Этап 6 — Изображения и аудио (0.6) — выпущен в `v0.6.0`: EXIF, OCR, аудио готовы; ручная проверка (п. 4) не отмечена
-- [ ] Этап 7 — Полировка и выкладка (1.0) — в работе: 0.7 снял предел на размер файла
-- [ ] Распознавание речи (0.8) — вне исходного плана, по запросу автора: сделано, ручная проверка (п. 6) не отмечена
+- [x] Stage 0 — Scaffolding: project, CI, window, file intake
+- [x] Stage 1 — Pipeline + text formats (0.1)
+- [x] Stage 2 — Office: docx, xlsx, pptx, epub, zip (0.2)
+- [x] Stage 3 — PDF (0.3)
+- [x] Stage 4 — Python sidecar on desktop (0.4)
+- [x] Stage 5 — Windows (0.5)
+- [ ] Stage 6 — Images and audio (0.6) — released in `v0.6.0`: EXIF, OCR, and audio are done; manual verification (item 4) isn't checked off
+- [ ] Stage 7 — Polish and release (1.0) — in progress: 0.7 removed the file-size limit
+- [ ] Speech recognition (0.8) — outside the original plan, requested by the author: done, manual verification (item 6) isn't checked off
 
-Целевые платформы плана — **Windows и Android**. После закрытия Этапа 4 автор
-сказал: «мне больше нужна на самом деле не мак версия, а windows и android».
-До этого план писался с macOS на первом месте — отсюда в Этапах 0–4 подпись и
-нотаризация macOS; они сделаны, но в приоритете больше не стоят.
+The plan's target platforms are **Windows and Android**. After Stage 4 was
+closed, the author said: "what I actually need isn't really the Mac version,
+it's Windows and Android." Before that, the plan was written with macOS
+first — hence the macOS signing and notarization work in Stages 0–4; it's
+done, but it's no longer a priority.
 
-**macOS — целевая, но вторичная.** Код под неё не удаляется и собирается
-позже на Маке друга, где ставится Xcode; на машине автора Xcode.app не
-ставится (Intel Mac, macOS 12.7.6, см. «Ограничения среды» в
-[../AGENTS.md](../AGENTS.md)). Вкладываться в macOS-специфику — нотаризацию,
-встраивание сайдкара в Xcode-сборку — без отдельного запроса не нужно.
+**macOS is a target platform, but a secondary one.** Code for it isn't
+removed, and gets built later on a friend's Mac, where Xcode can be
+installed; Xcode.app won't install on the author's machine (Intel Mac, macOS
+12.7.6, see "Environment limitations" in [../AGENTS.md](../AGENTS.md)).
+Investing in macOS specifics — notarization, embedding the sidecar into the
+Xcode build — isn't needed without a separate request.
 
-**Windows собирается не здесь.** Разработка идёт на Mac, а Flutter собирает
-Windows только на Windows. Поэтому сборка и тесты под Windows идут в CI на
-GitHub-раннере `windows-latest`, а ручная проверка («бросили файл — увидели
-результат») — на собственном Windows-компьютере автора, на артефакте из CI.
-Android проверяется как раньше: APK и телефон автора, эмулятор не запускается.
+**Windows isn't built here.** Development happens on a Mac, and Flutter only
+builds Windows on Windows. So Windows builds and tests run in CI on the
+GitHub runner `windows-latest`, while manual verification ("dropped a
+file — saw the result") happens on the author's own Windows machine, using
+the CI artifact. Android is verified as before: APK and the author's phone,
+no emulator is run.
 
-iOS заблокирована той же машиной (`ITMS-90111`, см.
-[future-development.md](future-development.md#ios)), Linux отложен. Подробности
-по каждому ограничению — в [future-development.md](future-development.md).
+iOS is blocked by the same machine (`ITMS-90111`, see
+[future-development.md](future-development.md#ios)); Linux is deferred.
+Details on each limitation are in [future-development.md](future-development.md).
 
 ---
 
-## Этап 0 — Каркас
+## Stage 0 — Scaffolding
 
-**Цель:** пустое окно, которое принимает файл и показывает его имя, размер и
-распознанный тип. Нулевой этап про инфраструктуру, не про конвертацию.
+**Goal:** an empty window that accepts a file and shows its name, size, and
+detected type. Stage zero is about infrastructure, not conversion.
 
-1. `flutter create --platforms=macos,android` в `app/`, отдельный
-   Dart-пакет `core/` (без зависимости от `flutter`), подключён в `app/`
-   локальным путём.
+1. `flutter create --platforms=macos,android` in `app/`, a separate
+   Dart package `core/` (with no dependency on `flutter`), wired into `app/`
+   via a local path.
 2. CI (GitHub Actions): `dart format --set-exit-if-changed`,
-   `flutter analyze`, `flutter test` для `app/`, `dart test` для `core/` —
-   на каждый push и PR.
-3. **Проверка «нет сети» в CI с первого дня**: шаг, который падает, если в
-   дереве зависимостей появился сетевой пакет, и если в манифесте Android
-   появилось `android.permission.INTERNET`. Ставить это сразу, а не когда
-   зависимостей станет тридцать — см. [offline-and-privacy.md](offline-and-privacy.md).
-4. `Makefile` с `make verify` (deps, format, analyze, оба набора тестов) —
-   одна команда перед сдачей.
-5. Приём файла: `file_picker` + `desktop_drop` на macOS, `intent-filter` +
-   `receive_sharing_intent` на Android. Все входы сводятся к одному
-   `accept(source)` — см.
-   [client-architecture.md](client-architecture.md#приём-файла-четыре-входа-одна-точка).
-6. Распознавание типа: магические байты + уточнение внутри zip-семьи +
-   расширение как подсказка. Сразу с тестами на «злых» файлах — файл без
-   расширения, `.docx` под именем `.pdf`, нулевая длина.
+   `flutter analyze`, `flutter test` for `app/`, `dart test` for `core/` —
+   on every push and PR.
+3. **A "no network" check in CI from day one**: a step that fails if a
+   networking package shows up in the dependency tree, or if
+   `android.permission.INTERNET` shows up in the Android manifest. Put this
+   in place right away, not once there are thirty dependencies — see
+   [offline-and-privacy.md](offline-and-privacy.md).
+4. A `Makefile` with `make verify` (deps, format, analyze, both test
+   suites) — one command before handing off work.
+5. File intake: `file_picker` + `desktop_drop` on macOS, `intent-filter` +
+   `receive_sharing_intent` on Android. All inputs funnel into a single
+   `accept(source)` — see
+   [client-architecture.md](client-architecture.md#file-intake-four-inputs-one-entry-point).
+6. Type detection: magic bytes + refinement within the zip family + the
+   extension as a hint. With tests for "evil" files from the start — a file
+   with no extension, a `.docx` named `.pdf`, zero length.
 
-**Готово, когда:** в окно можно бросить/открыть `.docx`, и оно скажет «OOXML
-Word, 184 КБ», а не «application/octet-stream». Проверяется сейчас на
-Android (на macOS нет рабочего Xcode — см. «Ограничения среды» в
-[../AGENTS.md](../AGENTS.md)); на macOS — тем же способом, когда это
-решится.
+**Done when:** you can drop/open a `.docx` on the window and it says "OOXML
+Word, 184 KB" instead of "application/octet-stream". Currently verified on
+Android (there's no working Xcode on macOS — see "Environment limitations" in
+[../AGENTS.md](../AGENTS.md)); on macOS — the same way, once that's
+resolved.
 
-## Этап 1 — Конвейер и текстовые форматы (0.1)
+## Stage 1 — Pipeline and Text Formats (0.1)
 
-**Цель:** первый сквозной путь целиком — от файла до буфера обмена.
+**Goal:** the first complete end-to-end path — from file to clipboard.
 
-1. `StreamInfo`, `DocumentConverter`, реестр с приоритетами,
-   `ConversionResult`/`warnings`, `ConversionLimits` — всё по
+1. `StreamInfo`, `DocumentConverter`, a priority-ordered registry,
+   `ConversionResult`/`warnings`, `ConversionLimits` — all per
    [conversion-pipeline.md](conversion-pipeline.md).
-2. Модуль `markdown_writer`: экранирование, таблицы, заголовки, ссылки.
-   **Один** на все конвертеры, с самого начала — повторять его в каждом
-   конвертере нельзя, это тот же способ разойтись, которым в Amicus разошлось
-   правило видимости.
-3. Конвертеры: `plain text` (с определением кодировки), `csv`/`tsv`, `json`,
-   `xml`, `html`. Приоритет `html` и `plain text` — 10.0, остальных — 0.0.
-4. Конвертация в `Isolate.run`, индикатор прогресса в окне.
-5. Экран предпросмотра: сырой Markdown, моноширинным шрифтом; срез для
-   больших результатов.
-6. Копирование через `super_clipboard` в `text/plain` + `text/markdown`,
-   горячая клавиша, «Сохранить как `.md`» (UTF-8 без BOM, `\n`).
-7. Экран ошибки с тремя внятными случаями (не поддерживается / битый файл /
-   превышен лимит), без сырых текстов исключений.
-8. Локализация `en`/`ru` с первого экрана — дописывать её потом дороже.
-9. `test/fixtures/`: по паре «исходник + ожидаемый Markdown» на каждый формат.
+2. A `markdown_writer` module: escaping, tables, headings, links.
+   **One** for all converters, from the very start — duplicating it in every
+   converter isn't allowed; that's the same way the visibility rule in
+   Amicus drifted out of sync.
+3. Converters: `plain text` (with encoding detection), `csv`/`tsv`, `json`,
+   `xml`, `html`. Priority for `html` and `plain text` is 10.0, the rest 0.0.
+4. Conversion runs inside `Isolate.run`, with a progress indicator in the
+   window.
+5. A preview screen: raw Markdown, in a monospace font; a truncated slice for
+   large results.
+6. Copying via `super_clipboard` as `text/plain` + `text/markdown`, a
+   keyboard shortcut, "Save as `.md`" (UTF-8 without BOM, `\n`).
+7. An error screen with three clear cases (unsupported / corrupt file /
+   limit exceeded), with no raw exception text.
+8. Localization for `en`/`ru` from the first screen — adding it later is
+   more expensive.
+9. `test/fixtures/`: a "source + expected Markdown" pair for each format.
 
-**Готово, когда:** CSV из выгрузки превращается в Markdown-таблицу и
-вставляется в чат одной кнопкой, на macOS и на телефоне.
+**Done when:** a CSV export turns into a Markdown table and gets pasted into
+a chat with one button, on macOS and on the phone.
 
-## Этап 2 — Office (0.2)
+## Stage 2 — Office (0.2)
 
-**Цель:** то, ради чего продукт и нужен. Начинается с `docx`, потому что он
-самый частый, и потому что zip+xml каркас после него переиспользуется.
+**Goal:** the whole reason the product exists. It starts with `docx`,
+because it's the most common format, and because the zip+xml scaffolding
+built for it gets reused afterward.
 
-1. Общий слой «OOXML»: `archive` → части пакета → `xml`. На нём:
-2. **`docx`** — `word/document.xml`: абзацы, стили заголовков, списки
-   (включая вложенные — через `numbering.xml`, иначе уровни теряются),
-   таблицы, жирный/курсив, ссылки, сноски. Изображения — заглушками
-   `![alt](имя)`, не base64.
-3. **`xlsx`** — `sharedStrings.xml` + листы: каждый лист отдельной
-   Markdown-таблицей под заголовком с его именем. Формулы отдаются
-   **кэшированным значением**, а не текстом формулы. Объединённые ячейки
-   Markdown не выражает — такой лист уходит HTML-блоком с записью в
-   `warnings`.
-4. **`pptx`** — слайды по порядку, заголовок слайда → `##`, текст блоков,
-   заметки докладчика отдельным блоком (их часто и надо).
-5. **`epub`** — `mimetype`-проверка, `content.opf` для порядка глав, затем
-   каждая глава через html-конвертер этапа 1.
-6. **`zip`** — рекурсия через `recurse` из `ConversionRequest`, с жёсткими
-   лимитами на глубину, число файлов и суммарный распакованный размер.
-7. **`ipynb`** — ячейки кода в fenced-блоках с языком, markdown-ячейки как
-   есть, вывод — текстовый, картинки заглушками.
-8. Набор «злых» фикстур: zip в zip, xlsx с объединёнными ячейками, docx с
-   вложенными списками и таблицей в таблице.
+1. A shared "OOXML" layer: `archive` → package parts → `xml`. Built on it:
+2. **`docx`** — `word/document.xml`: paragraphs, heading styles, lists
+   (including nested ones — via `numbering.xml`, otherwise levels get
+   lost), tables, bold/italic, links, footnotes. Images become placeholders
+   `![alt](name)`, not base64.
+3. **`xlsx`** — `sharedStrings.xml` + sheets: each sheet becomes its own
+   Markdown table under a heading with its name. Formulas are given as
+   their **cached value**, not the formula text. Markdown can't express
+   merged cells — such a sheet goes out as an HTML block, with a note added
+   to `warnings`.
+4. **`pptx`** — slides in order, slide title → `##`, block text, speaker
+   notes as a separate block (they're often exactly what's needed).
+5. **`epub`** — a `mimetype` check, `content.opf` for chapter ordering,
+   then each chapter runs through Stage 1's html converter.
+6. **`zip`** — recursion via `recurse` from `ConversionRequest`, with hard
+   limits on depth, file count, and total unpacked size.
+7. **`ipynb`** — code cells as fenced blocks with a language tag, markdown
+   cells as-is, output as text, images as placeholders.
+8. A set of "evil" fixtures: zip inside zip, xlsx with merged cells, docx
+   with nested lists and a table inside a table.
 
-## Этап 3 — PDF (0.3)
+## Stage 3 — PDF (0.3)
 
-**Цель:** самый частый формат после Office и единственный с открытым вопросом
-по инструменту.
+**Goal:** the most common format after Office, and the only one with an
+open question about which tool to use.
 
-1. **Выбрать движок** — `syncfusion_flutter_pdf` (лицензия) против PDFium
-   через FFI (размер бандла). Решать замером, аргументы — в
-   [format-coverage.md](format-coverage.md#решения-этапа-3). Решено: PDFium —
-   `syncfusion_flutter_pdf` не проходит по архитектурному ограничению
-   (Flutter-пакет в `core/`), не только по лицензии.
-2. Извлечение текста с сохранением порядка чтения; заголовки — по размеру
-   шрифта, если движок его отдаёт, иначе плоским текстом.
-3. **Страницы без текстового слоя** (сканы) — не ошибка: предупреждение
-   «страницы 3–7 выглядят как изображения» в `warnings`, остальной текст
-   отдаётся.
-4. Таблицы в PDF — **не делаем**. Это отдельная задача уровня `pdfplumber`, и
-   честнее отдать текст, чем сломанную сетку.
-5. Замер размера бандла до и после — он попадёт в README.
+1. **Choose an engine** — `syncfusion_flutter_pdf` (licensing) versus
+   PDFium via FFI (bundle size). Decide by measuring; the reasoning is in
+   [format-coverage.md](format-coverage.md#stage-3-decisions). Decided:
+   PDFium — `syncfusion_flutter_pdf` fails on an architectural constraint
+   (a Flutter package inside `core/`), not just on licensing.
+2. Text extraction that preserves reading order; headings based on font
+   size when the engine provides it, otherwise as flat text.
+3. **Pages with no text layer** (scans) aren't an error: a warning
+   "pages 3–7 look like images" goes into `warnings`, and the rest of the
+   text is still returned.
+4. Tables in PDFs — **not doing this**. That's a separate task on the scale
+   of `pdfplumber`, and it's more honest to return plain text than a broken
+   grid.
+5. Measuring bundle size before and after — it'll go into the README.
 
-## Этап 4 — Python-сайдкар (0.4)
+## Stage 4 — Python Sidecar (0.4)
 
-**Цель:** закрыть `.xls`/`.msg`, усилить PDF и получить эталон для сверки.
-Весь этап — по [python-sidecar.md](python-sidecar.md).
+**Goal:** close out `.xls`/`.msg`, strengthen PDF, and get a reference
+implementation to cross-check against. The whole stage follows
+[python-sidecar.md](python-sidecar.md).
 
-**Статус: закрыт, с двумя осознанно непроверенными местами** (п. 3). Что
-сделано и чем подтверждено — по пунктам; хронология — в
+**Status: closed, with two deliberately unverified spots** (item 3). What's
+done and how it's confirmed — item by item; the timeline is in
 [../CHANGELOG.md](../CHANGELOG.md).
 
-**Приоритеты сдвинулись после закрытия этапа:** работа по подписи и
-нотаризации macOS сделана, но в приоритете больше не стоит — целевые платформы
-теперь Windows и Android (см. выше и Этап 5). Оставшиеся непроверенными
-macOS-места лежат в [future-development.md](future-development.md) как
-«вторичная платформа».
+**Priorities shifted after the stage closed:** the macOS signing and
+notarization work is done, but is no longer a priority — the target
+platforms are now Windows and Android (see above and Stage 5). The
+remaining unverified macOS spots are kept in
+[future-development.md](future-development.md) under "secondary platform".
 
-1. **Скрипт сборки сайдкара** — готово. `sidecar/build.sh`:
+1. **Sidecar build script** — done. `sidecar/build.sh`:
    python-build-standalone + `markitdown[pdf,docx,xlsx,xls,pptx,outlook]`,
-   `run.py`, `manifest.json`; версии закреплены lock-файлом с sha256
-   (`make sidecar-lock`). macOS x86_64: 242 МБ, холодный старт ≈1 с. Сборка
-   только под хост, других lock-файлов нет (см.
+   `run.py`, `manifest.json`; versions are pinned via a lock file with
+   sha256 (`make sidecar-lock`). macOS x86_64: 242 MB, cold start ≈1 s.
+   Builds only for the host; there are no other lock files yet (see
    [future-development.md](future-development.md)).
-2. **`SidecarConverter`** — готово. Приоритет −1.0, таймаут 120 с, коды
-   выхода, временный файл с удалением в `finally`; откат на Dart-конвертер
-   при любом провале; регистрируется только на десктопе. Детекция
-   `xls`/`msg`/`doc`/`ppt` — по каталогу Compound File.
-3. **Подпись и нотаризация на macOS** — **проверена частично.** Готово и
-   проверено: `sidecar/sign.sh`, `sidecar.entitlements` (только
-   `disable-library-validation`, без сети), ad-hoc подпись с Hardened Runtime,
-   работа подписанного сайдкара по всем шести форматам, CI-шаг «нет
-   `network.*`». **Не проверено осознанно:** подпись Developer ID и
-   нотаризация (нет сертификата), встраивание сайдкара в Xcode-сборку (Xcode
-   не ставится — Build Phase описана в [operations.md](operations.md), но не
-   написана), поведение сайдкара под песочницей настоящего `.app`. Команды
-   записаны в [operations.md](operations.md), требуют первого прогона на
-   живом сертификате.
-4. **Путь кода без `pandas`** — проверено, не обходится: он нужен
-   `xlsx`/`xls`, а на остальных форматах не импортируется. Вымывание лишнего
-   дало 242 МБ вместо 355 (см. [python-sidecar.md](python-sidecar.md)).
-5. **Сверка двух реализаций** — готово. `make compare-sidecar`
-   (`core/tool/compare_sidecar.dart`) нашла и исправила четыре бага
-   Dart-ядра; остальное записано в
-   [format-coverage.md](format-coverage.md#сверка-с-эталоном-этап-4). Интеграционные
-   тесты с настоящим сайдкаром пропускаются без `MARKITDOWN_SIDECAR_DIR`.
-6. **Android не потолстел** — проверено. В APK нет ничего из сайдкара, нет
-   `android.permission.INTERNET`; цифры —
-   [format-coverage.md](format-coverage.md#android-не-потолстел-этап-4).
+2. **`SidecarConverter`** — done. Priority −1.0, a 120 s timeout, exit
+   codes, a temp file removed in `finally`; falls back to the Dart
+   converter on any failure; only registered on desktop. `xls`/`msg`/
+   `doc`/`ppt` detection goes by the Compound File directory.
+3. **macOS signing and notarization** — **partially verified.** Done and
+   verified: `sidecar/sign.sh`, `sidecar.entitlements` (only
+   `disable-library-validation`, no network), an ad-hoc signature with
+   Hardened Runtime, the signed sidecar working across all six formats, a
+   CI step for "no `network.*`". **Deliberately not verified:** Developer
+   ID signing and notarization (no certificate), embedding the sidecar
+   into the Xcode build (Xcode won't install — the Build Phase is
+   described in [operations.md](operations.md), but not implemented), how
+   the sidecar behaves under a real `.app`'s sandbox. The commands are
+   recorded in [operations.md](operations.md) and need a first run against
+   a real certificate.
+4. **The code path without `pandas`** — checked, can't be avoided: it's
+   needed for `xlsx`/`xls`, and isn't imported for the other formats.
+   Stripping the extra weight brought it down to 242 MB from 355 (see
+   [python-sidecar.md](python-sidecar.md)).
+5. **Cross-checking the two implementations** — done. `make compare-sidecar`
+   (`core/tool/compare_sidecar.dart`) found and fixed four bugs in the
+   Dart core; the rest is recorded in
+   [format-coverage.md](format-coverage.md#reconciliation-with-the-reference-stage-4).
+   Integration tests against a real sidecar are skipped without
+   `MARKITDOWN_SIDECAR_DIR`.
+6. **Android didn't bloat** — checked. The APK has nothing from the
+   sidecar, no `android.permission.INTERNET`; numbers are in
+   [format-coverage.md](format-coverage.md#android-didnt-get-fatter-stage-4).
 
-**Что вылезло и осталось открытым:** сайдкар стоит первым, а на больших
-файлах он на два порядка медленнее Dart (PDF на 300 страниц — 112 с против
-1,2 с). Решение за автором — [future-development.md](future-development.md#производительность-сайдкара-на-больших-файлах).
+**What surfaced and remains open:** the sidecar is tried first, but on
+large files it's two orders of magnitude slower than Dart (a 300-page PDF —
+112 s versus 1.2 s). The decision is the author's —
+[future-development.md](future-development.md#sidecar-performance-on-large-files).
 
-## Этап 5 — Windows (0.5)
+## Stage 5 — Windows (0.5)
 
-**Цель:** то же приложение на втором целевом десктопе — Windows, с тем же
-конвейером и сайдкаром, собранное и проверенное без единой Windows-машины
-разработчика. Собрать Windows-версию Flutter на Маке нельзя, поэтому «собрано»
-здесь значит «собрано в CI на `windows-latest`», а «проверено» — «прогнано
-тестами на раннере и потыкано руками на Windows-компьютере автора на артефакте
-из CI». Репозиторий —
-[tiltozavr2545/mark_it_down_UI](https://github.com/tiltozavr2545/mark_it_down_UI),
-workflow — `.github/workflows/ci.yml`.
+**Goal:** the same app on the second target desktop — Windows, with the
+same pipeline and sidecar, built and verified without a single Windows
+machine on the developer's side. You can't build the Windows version of
+Flutter on a Mac, so "built" here means "built in CI on `windows-latest`",
+and "verified" means "run through tests on the runner and poked by hand on
+the author's Windows machine, using the artifact from CI". The repository
+is [tiltozavr2545/mark_it_down_UI](https://github.com/tiltozavr2545/mark_it_down_UI),
+the workflow is `.github/workflows/ci.yml`.
 
-**Статус:** решения по п. 5 и п. 6 приняты; п. 1–4 и 7 сделаны, CI зелёный
-(`verify`, `windows-sidecar`, `windows`); осталась ручная проверка (п. 8).
-Раннер — `windows-2022`, а не `windows-latest`: тот теперь с VS 2026,
-которую закреплённый Flutter 3.32.8 не знает (см. комментарий в `ci.yml`).
+**Status:** the decisions for items 5 and 6 have been made; items 1–4 and
+7 are done, CI is green (`verify`, `windows-sidecar`, `windows`); manual
+verification (item 8) remains. The runner is `windows-2022`, not
+`windows-latest`: the latter now ships VS 2026, which the pinned Flutter
+3.32.8 doesn't know about (see the comment in `ci.yml`).
 
-Порядок работ: сначала Dart-ядро на Windows (п. 1–3, 7), потому что оно
-проверяется быстро и не зависит от 240-мегабайтного бандла; затем сайдкар
-(п. 4); п. 5 решается автором **до** п. 4, п. 6 — до первой раздачи
-артефакта; п. 8 — на каждом промежуточном артефакте, не только в конце.
+Order of work: first the Dart core on Windows (items 1–3, 7), because it's
+verified quickly and doesn't depend on the 240 MB bundle; then the sidecar
+(item 4); item 5 is decided by the author **before** item 4, item 6 —
+before the first artifact is handed out; item 8 — on every intermediate
+artifact, not just at the end.
 
-1. **`flutter create --platforms=windows .` в `app/`.** Именно с
-   `--platforms`, на существующем проекте: `lib/`, `android/` и `macos/` не
-   затираются, добавляется `app/windows/`. После запуска прочитать
-   `git status` — `flutter create` любит трогать `.metadata`. Проверить, что
-   плагины приложения умеют Windows (`file_picker`, `desktop_drop`,
-   `super_clipboard`, `shared_preferences`); `receive_sharing_intent` —
-   только мобильный и под `Platform.isAndroid` уже закрыт (см.
-   `home_screen.dart`), на Windows его вызывать нельзя. `super_clipboard`
-   собирает Rust-часть на машине сборки — на раннере Rust есть, на машине
-   автора ничего ставить не нужно, потому что собирается в CI. **Нет сетевых
-   capability:** в `windows/` не добавляется ничего, что просит сеть, а
-   `.gitattributes` с `* text=auto eol=lf` заводится сразу — без него
-   чекаут на Windows по умолчанию превращает `\n` в `\r\n`, и побайтные
-   `expected.md`, а заодно бинарная фикстура `windows1251.txt`, рискуют
-   разойтись с ожиданием по причине, к конвертерам не относящейся.
-   **Сделано:** `app/windows/` создан; `.metadata` пришлось вернуть руками
-   (`flutter create` выкинул из него android/macos); плагины — `desktop_drop`
-   и `super_clipboard` нативные под Windows, `file_picker` там на Dart;
-   заголовок окна — «MarkItDown UI». `.gitattributes`: `* text=auto eol=lf`,
-   фикстуры — `-text` (побайтно, без преобразований).
+1. **`flutter create --platforms=windows .` in `app/`.** Specifically with
+   `--platforms`, on the existing project: `lib/`, `android/`, and `macos/`
+   aren't overwritten, and `app/windows/` gets added. After running it,
+   check `git status` — `flutter create` likes to touch `.metadata`.
+   Verify that the app's plugins support Windows (`file_picker`,
+   `desktop_drop`, `super_clipboard`, `shared_preferences`);
+   `receive_sharing_intent` is mobile-only and already gated behind
+   `Platform.isAndroid` (see `home_screen.dart`) — it must not be called
+   on Windows. `super_clipboard` builds a Rust part on the build
+   machine — the runner has Rust, and nothing needs installing on the
+   author's machine, because the build happens in CI. **No network
+   capability:** nothing that requests network access gets added to
+   `windows/`, and a `.gitattributes` with `* text=auto eol=lf` is set up
+   right away — without it, checkout on Windows turns `\n` into `\r\n` by
+   default, and the byte-for-byte `expected.md` files, plus the binary
+   fixture `windows1251.txt`, risk diverging from the expectation for a
+   reason that has nothing to do with the converters.
+   **Done:** `app/windows/` created; `.metadata` had to be restored by
+   hand (`flutter create` dropped android/macos out of it); plugins —
+   `desktop_drop` and `super_clipboard` are native on Windows,
+   `file_picker` there is pure Dart; the window title is "MarkItDown UI".
+   `.gitattributes`: `* text=auto eol=lf`, fixtures marked `-text`
+   (byte-for-byte, no conversion).
 
-2. **CI-джоб на `windows-latest`.** Эквивалент `make verify`: `pub get`,
-   `dart format --set-exit-if-changed`, `flutter analyze`, `flutter test` в
-   `app/`, `dart test` в `core/`; затем `flutter build windows --release` и
-   `actions/upload-artifact` с каталогом `build/windows/x64/runner/Release`
-   (на Windows `dart format` обязан давать то же, что на Linux, — это ещё одна
-   причина для `.gitattributes`). **Решить: гонять `make` или отдельные шаги.**
-   `run:` на Windows-раннере по умолчанию — PowerShell; `shell: bash` даёт
-   Git Bash, где `make` может отсутствовать (ставится `choco install make`), а
-   Makefile и `pdfium/fetch.sh` разбирают `uname -s` и знают только
-   `Darwin`/`Linux` — на Git Bash там `MINGW64_NT-…`, и ветка подставит
-   `libpdfium.so` вместо `pdfium.dll`. Рекомендация: **отдельные шаги в
-   `shell: bash`**, а в Makefile и `fetch.sh` Windows-ветку не вшивать, пока
-   она нужна только CI — меньше движущихся частей на раннере. Цена: список
-   проверок живёт в двух местах (Makefile и `ci.yml`), и расхождение придётся
-   ловить глазами; поэтому в комментарии к `make verify` записать «и
-   Windows-джоб в `ci.yml` — держать одинаковыми».
-   **Сделано:** отдельные шаги в `shell: bash`, комментарий в Makefile есть.
-   Первым шагом — проверка, что чекаут с LF. Артефакт —
-   `markitdown_ui-windows-x64`.
+2. **A CI job on `windows-latest`.** The equivalent of `make verify`:
+   `pub get`, `dart format --set-exit-if-changed`, `flutter analyze`,
+   `flutter test` in `app/`, `dart test` in `core/`; then
+   `flutter build windows --release` and `actions/upload-artifact` with
+   the `build/windows/x64/runner/Release` directory (on Windows,
+   `dart format` must produce the same output as on Linux — one more
+   reason for `.gitattributes`). **Decide: run `make`, or separate
+   steps.** `run:` on a Windows runner defaults to PowerShell;
+   `shell: bash` gives you Git Bash, where `make` may be missing (install
+   via `choco install make`), and the Makefile and `pdfium/fetch.sh`
+   parse `uname -s` and only know about `Darwin`/`Linux` — on Git Bash
+   it's `MINGW64_NT-…`, and the branch would plug in `libpdfium.so`
+   instead of `pdfium.dll`. Recommendation: **separate steps in
+   `shell: bash`**, and don't hardwire a Windows branch into the Makefile
+   or `fetch.sh` while it's only needed by CI — fewer moving parts on the
+   runner. Cost: the list of checks lives in two places (Makefile and
+   `ci.yml`), and drift between them has to be caught by eye; so note in
+   the `make verify` comment that "the Windows job in `ci.yml` must be
+   kept in sync".
+   **Done:** separate steps in `shell: bash`, the Makefile comment is in
+   place. The first step checks that the checkout used LF. The artifact
+   is `markitdown_ui-windows-x64`.
 
-3. **PDFium под Windows.** Три вещи. (а) `pdfium/fetch.sh` учится качать
-   `pdfium-win-x64.tgz` из bblanchon/pdfium-binaries (тот же закреплённый
-   тег, не «latest») и ветке `MINGW*|MSYS*` в `uname -s`; DLL в этом архиве
-   лежит в `bin/`, а не в `lib/`, как у остальных — поправить `fetch()`.
-   (б) В тестах `core/` — `MARKITDOWN_PDFIUM_PATH` на `pdfium.dll` (так же,
-   как для `.dylib`/`.so`). (в) В приложении — `loadPdfiumLibrary()` сейчас
-   Windows не знает и бросает `UnsupportedError`; добавить ветку и положить
-   `pdfium.dll` **рядом с `.exe`**: Windows ищет DLL в первую очередь в
-   каталоге исполняемого файла, а положить её туда в сборке — правилом
-   `install(...)` в `windows/CMakeLists.txt`, по образцу того, что уже
-   делает шаблон Flutter для DLL плагинов. Сам PDFium при этом остаётся не
-   закоммиченным, как и везде.
-   **Сделано:** все три; DLL подтверждена в `bin/` архива. Без
-   `pdfium.dll` CMake падает с понятной ошибкой, а не собирает приложение
-   без PDF. `sidecar_converter_test.dart` (фейк на `/bin/sh`) на Windows
-   пропускается через `@TestOn('!windows')`. Поиск сайдкара рядом с `.exe`
-   и правило `install(DIRECTORY …)` из п. 4 тоже уже на месте —
-   необязательное, без собранного сайдкара выходит Dart-only сборка.
+3. **PDFium on Windows.** Three things. (a) `pdfium/fetch.sh` learns to
+   download `pdfium-win-x64.tgz` from bblanchon/pdfium-binaries (the same
+   pinned tag, not "latest") and gets a `MINGW*|MSYS*` branch in
+   `uname -s`; the DLL in that archive sits in `bin/`, not `lib/` like the
+   others — fix `fetch()` accordingly. (b) In the `core/` tests —
+   `MARKITDOWN_PDFIUM_PATH` pointing at `pdfium.dll` (the same way as for
+   `.dylib`/`.so`). (c) In the app — `loadPdfiumLibrary()` currently
+   doesn't know about Windows and throws `UnsupportedError`; add a branch
+   and put `pdfium.dll` **next to the `.exe`**: Windows looks for DLLs
+   first in the executable's own directory, and placing it there during
+   the build is done via an `install(...)` rule in
+   `windows/CMakeLists.txt`, following the pattern the Flutter template
+   already uses for plugin DLLs. PDFium itself stays uncommitted, same as
+   everywhere else.
+   **Done:** all three; the DLL is confirmed to be in the archive's
+   `bin/`. Without `pdfium.dll`, CMake fails with a clear error instead
+   of building the app without PDF support. `sidecar_converter_test.dart`
+   (a fake at `/bin/sh`) is skipped on Windows via `@TestOn('!windows')`.
+   Looking for the sidecar next to the `.exe` and the
+   `install(DIRECTORY …)` rule from item 4 are also already in place —
+   optional, so without a built sidecar you get a Dart-only build.
 
-4. **Сайдкар под Windows.** Сборка в CI, потому что локально её не на чем
-   прогнать.
-   - **Интерпретатор:** python-build-standalone для
-     `x86_64-pc-windows-msvc`, вариант `install_only`, та же закреплённая
-     версия релиза и CPython 3.12.14; `sidecar/common.sh` получает ветку
-     хоста `windows-x86_64` и sha256 нового ассета (сверить с `SHA256SUMS`
-     релиза, как для остальных). Колёса `numpy`/`onnxruntime`/`pandas`/
-     `lxml`/`cryptography`/`pillow` под `win_amd64` и cp312 существуют — это
-     проверяется самим `lock.sh`, а не на веру.
-   - **Lock-файл:** `sidecar/locks/windows-x86_64.txt`, **сгенерированный на
-     раннере** (`ALLOW_UNLOCKED=1`, затем `make sidecar-lock` — как для любого
-     нового хоста), выложенный артефактом ручного запуска workflow и
-     закоммиченный после чтения diff. Руками его не писать: хеши колёс
-     `win_amd64` другие.
-   - **Сборка в CI:** отдельный джоб, `build.sh` в Git Bash. В скрипте
-     есть mac-специфика (`lipo -thin`, `otool`) — на Windows эти шаги
-     пропускаются по хосту; симлинки в `python/` на Windows не нужны. Не
-     входит в `make verify`, как и на Mac; артефакт — `sidecar/dist/
-     windows-x86_64/`.
-   - **Раскладка и поиск каталога:** интерпретатор — `python/python.exe`
-     вместо `python/bin/python3` (`SidecarConverter.fromDirectory` это уже
-     знает). `discover()` сейчас на Windows смотрит только
-     `MARKITDOWN_SIDECAR_DIR`; научить искать `sidecar/` **рядом с `.exe`**
-     (`Platform.resolvedExecutable`), как на macOS ищется
-     `Contents/Resources/sidecar`. В Release-каталог Flutter сайдкар
-     кладётся там же, в `windows/CMakeLists.txt`, правилом
-     `install(DIRECTORY …)`.
-   - **Тесты:** `core/test/sidecar_converter_test.dart` подсовывает вместо
-     интерпретатора `#!/bin/sh`-скрипт — на Windows он не запустится;
-     такие тесты на Windows пропускать (или переписать на
-     `SidecarCommandBuilder`), а реальные интеграционные
-     (`sidecar_integration_test.dart`, `MARKITDOWN_SIDECAR_DIR`) и
-     `compare-sidecar` гонять на раннере по собранному там же сайдкару.
-     Ожидать расхождений: другие переводы строк в `expected.md`, пути с
-     `\`, и более длинные пути в дереве `site-packages` (лимит 260
-     символов — проверить на глубоко вложенных файлах после установки в
-     итоговый каталог).
-   - Подписи macOS тут нет и быть не может: `sign.sh` и `entitlements` не
-     участвуют. Вместо этого — Authenticode, см. п. 6.
-   - **Сделано:** джоб `windows-sidecar` (`windows-2022`), lock закоммичен
-     после чтения, сборка 308 МБ, самый длинный путь — 95 символов;
-     интеграционные тесты зелёные, сверка с Dart побайтно совпала с macOS
-     (подробно — [python-sidecar.md](python-sidecar.md#windows-этап-5) и
-     [format-coverage.md](format-coverage.md#сверка-на-windows-этап-5)).
-     Джоб `windows` ждёт его и кладёт сайдкар рядом с `.exe`; если он упал —
-     выходит Dart-only сборка, а не отсутствие артефакта.
+4. **The sidecar on Windows.** Built in CI, because there's nothing
+   locally to run it on.
+   - **Interpreter:** python-build-standalone for
+     `x86_64-pc-windows-msvc`, the `install_only` variant, the same pinned
+     release version and CPython 3.12.14; `sidecar/common.sh` gets a host
+     branch for `windows-x86_64` and the sha256 of the new asset (checked
+     against the release's `SHA256SUMS`, same as for the others). Wheels
+     for `numpy`/`onnxruntime`/`pandas`/`lxml`/`cryptography`/`pillow` for
+     `win_amd64` and cp312 exist — this is verified by `lock.sh` itself,
+     not taken on faith.
+   - **Lock file:** `sidecar/locks/windows-x86_64.txt`, **generated on the
+     runner** (`ALLOW_UNLOCKED=1`, then `make sidecar-lock` — same as for
+     any new host), published as an artifact of a manual workflow run,
+     and committed after reading the diff. Don't write it by hand: the
+     `win_amd64` wheel hashes are different.
+   - **Build in CI:** a separate job, `build.sh` under Git Bash. The
+     script has mac-specific bits (`lipo -thin`, `otool`) — on Windows
+     these steps are skipped based on the host; symlinks in `python/`
+     aren't needed on Windows. Not part of `make verify`, same as on Mac;
+     the artifact is `sidecar/dist/windows-x86_64/`.
+   - **Layout and directory discovery:** the interpreter is
+     `python/python.exe` instead of `python/bin/python3`
+     (`SidecarConverter.fromDirectory` already knows this). `discover()`
+     currently only looks at `MARKITDOWN_SIDECAR_DIR` on Windows; teach
+     it to also look for `sidecar/` **next to the `.exe`**
+     (`Platform.resolvedExecutable`), the same way macOS looks for
+     `Contents/Resources/sidecar`. In the Flutter Release directory, the
+     sidecar gets placed there too, via an `install(DIRECTORY …)` rule in
+     `windows/CMakeLists.txt`.
+   - **Tests:** `core/test/sidecar_converter_test.dart` substitutes a
+     `#!/bin/sh` script for the interpreter — that won't run on Windows;
+     such tests should be skipped on Windows (or rewritten against
+     `SidecarCommandBuilder`), while the real integration tests
+     (`sidecar_integration_test.dart`, `MARKITDOWN_SIDECAR_DIR`) and
+     `compare-sidecar` run on the runner against the sidecar built there.
+     Expect differences: different line endings in `expected.md`,
+     `\`-style paths, and longer paths in the `site-packages` tree (the
+     260-character limit — check this against deeply nested files once
+     installed into the final directory).
+   - There's no macOS signing here, and there can't be: `sign.sh` and the
+     entitlements aren't involved. Instead — Authenticode, see item 6.
+   - **Done:** the `windows-sidecar` job (`windows-2022`), the lock
+     committed after review, a 308 MB build, the longest path is 95
+     characters; integration tests are green, and the cross-check against
+     Dart matched macOS byte for byte (details —
+     [python-sidecar.md](python-sidecar.md#windows-stage-5) and
+     [format-coverage.md](format-coverage.md#reconciliation-on-windows-stage-5)).
+     The `windows` job waits on it and places the sidecar next to the
+     `.exe`; if it fails, the result is a Dart-only build, not a missing
+     artifact.
 
-5. **Порядок «сайдкар или Dart» — решение автора, нужно принять в начале
-   этапа. Принято:** рекомендация ниже утверждена, порог — **50 страниц**.
-   Реализовано в `SidecarConverter.appFormats`/`appMaxPdfPages` (применяются
-   в `discover()`, то есть только в приложении): выше порога PDF уходит в Dart
-   с предупреждением, что таблицы извлечены как текст. Вопрос переехал сюда из
-   [future-development.md](future-development.md#производительность-сайдкара-на-больших-файлах),
-   потому что на Windows он встаёт в полный рост. Факты: сайдкар медленный —
-   PDF на 300 страниц 112 с против 1,2 с у Dart, xlsx на 50 тыс. строк 55 с и
-   ~860 МБ ОЗУ против 4,4 с; по сверке (Этап 4) Dart в `docx`/`xlsx`/`pptx` не
-   хуже, а местами чище; сайдкар лучше только в таблицах PDF; `xls`/`msg` умеет
-   только он. **Рекомендация оркестратора, автором не утверждена:** сайдкар
-   первым только для `pdf`/`xls`/`msg`; `docx`/`xlsx`/`pptx` — сразу Dart,
-   сайдкар как эталон для сверки, не как путь; для больших PDF — порог по числу
-   страниц, выше которого сайдкар не спрашивается. Пороговое значение и то,
-   что делать с таблицами PDF выше порога, тоже решение автора. До ответа
-   в реестре остаётся поведение Этапа 4, и это не баг. (Было до решения.)
+5. **The "sidecar or Dart" order — the author's decision, needed at the
+   start of the stage. Decided:** the recommendation below is approved,
+   with a threshold of **50 pages**. Implemented in
+   `SidecarConverter.appFormats`/`appMaxPdfPages` (applied in
+   `discover()`, i.e. only in the app): above the threshold, PDF goes to
+   Dart, with a warning that tables were extracted as text. The question
+   moved here from
+   [future-development.md](future-development.md#sidecar-performance-on-large-files),
+   because on Windows it becomes impossible to ignore. Facts: the sidecar
+   is slow — a 300-page PDF is 112 s versus 1.2 s for Dart; a 50k-row
+   xlsx is 55 s and ~860 MB of RAM versus 4.4 s; per the cross-check
+   (Stage 4), Dart isn't worse for `docx`/`xlsx`/`pptx`, and is in places
+   cleaner; the sidecar is only better for PDF tables; only it can handle
+   `xls`/`msg`. **The orchestrator's recommendation, not yet approved by
+   the author:** try the sidecar first only for `pdf`/`xls`/`msg`; go
+   straight to Dart for `docx`/`xlsx`/`pptx`, keeping the sidecar as a
+   reference for cross-checking, not as the active path; for large
+   PDFs — a threshold on the page count above which the sidecar isn't
+   consulted at all. The threshold value, and what to do with PDF tables
+   above it, are also the author's decision. Until that answer, the
+   registry keeps Stage 4's behavior, and that's not a bug. (This was the
+   state before the decision.)
 
-6. **Упаковка и распространение — решение этапа, принимается автором по
-   критериям. Принято: «zip сейчас, решить позже»** — для проверки и первой
-   раздачи — zip (артефакт CI и есть zip каталога `Release/`), выбор между
-   zip, Inno Setup и MSIX переносится в Этап 7. Эксперимент с MSIX ниже до
-   тех пор не нужен. Варианты: **zip** с каталогом `Release/` (самое дешёвое:
-   распаковал и запустил, ничего не устанавливается и не пишется в реестр),
-   **установщик Inno Setup** (`.exe`, привычный мастер, ярлыки, удаление из
-   «Приложений»), **MSIX** (современный формат, чистая установка и
-   удаление, capability-модель). Критерии: (а) проверяемость «нет сети»;
-   (б) установка без прав администратора; (в) подпись и SmartScreen;
-   (г) размер — бандл с сайдкаром ≈ 250–300 МБ, нужен ли сжатый
-   дистрибутив; (д) где физически лежит сайдкар: MSIX ставит в
-   `C:\Program Files\WindowsApps\…`, каталог только для чтения и с длинным
-   путём — для `-B`-сайдкара это годится, для 260 символов проверять;
-   (е) как автор раздаёт: GitHub Releases или Microsoft Store.
-   - **Аргумент за MSIX с точки зрения «нет сети».** В манифесте MSIX
-     явно перечисляются capability, и отсутствие `internetClient` — прямой
-     аналог отсутствия `android.permission.INTERNET` в APK: видно в
-     манифесте и проверяется грепом. **Но**: обычное Flutter-приложение в
-     MSIX запускается с `runFullTrust`, а полнодоверенные процессы сетевые
-     capability, скорее всего, не ограничивают — манифест будет чистым, а
-     сокет всё равно откроется. Поэтому первым шагом пункта — эксперимент
-     (минимальный MSIX без `internetClient`, попытка соединения из него);
-     если соединение проходит, аргумент слабее, чем у APK, и честно записать
-     это в [offline-and-privacy.md](offline-and-privacy.md). Режим
-     AppContainer для Win32 существует, но совместимость с Flutter и
-     подпроцессом-интерпретатором не проверена.
-   - **Подпись Authenticode и SmartScreen — открытый вопрос: сертификата
-     нет.** Без подписи MSIX не устанавливается вовсе (самоподписанный
-     сертификат придётся добавлять в доверенные на каждой машине — для
-     компьютера автора допустимо, для раздачи нет), а неподписанные `.exe`
-     из zip или установщика получают предупреждение SmartScreen при первом
-     запуске («Windows защитила ваш компьютер» → «Подробнее» → «Выполнить
-     в любом случае»). Решение о покупке сертификата или облачной подписи —
-     за автором и не блокирует пункты 1–5 и 7–8: для проверки на своём
-     компьютере хватит неподписанного zip.
+6. **Packaging and distribution — a stage-level decision, made by the
+   author against criteria. Decided: "zip for now, decide later"** — for
+   verification and the first release, zip (the CI artifact already is a
+   zip of the `Release/` directory); the choice between zip, Inno Setup,
+   and MSIX is deferred to Stage 7. The MSIX experiment below isn't needed
+   until then. Options: **zip** with a `Release/` directory (the cheapest
+   option: unzip and run, nothing gets installed or written to the
+   registry), an **Inno Setup installer** (`.exe`, a familiar wizard,
+   shortcuts, removal from "Apps"), **MSIX** (a modern format, clean
+   install and uninstall, a capability model). Criteria: (a) how
+   verifiable "no network" is; (b) installing without administrator
+   rights; (c) signing and SmartScreen; (d) size — the bundle with the
+   sidecar is ≈250–300 MB, is a compressed distribution needed; (e) where
+   the sidecar physically lives: MSIX installs into
+   `C:\Program Files\WindowsApps\…`, a read-only directory with a long
+   path — fine for the `-B` sidecar, but check against the
+   260-character limit; (f) how the author distributes it: GitHub
+   Releases or the Microsoft Store.
+   - **The case for MSIX from a "no network" standpoint.** The MSIX
+     manifest explicitly lists capabilities, and the absence of
+     `internetClient` is a direct analog to the absence of
+     `android.permission.INTERNET` in an APK: visible in the manifest and
+     checkable with grep. **But**: an ordinary Flutter app packaged as
+     MSIX runs with `runFullTrust`, and fully-trusted processes most
+     likely aren't restricted by network capabilities — the manifest will
+     be clean, but the socket will open anyway. So the first step of this
+     item is an experiment (a minimal MSIX without `internetClient`,
+     attempting a connection from it); if the connection succeeds, the
+     argument is weaker than for the APK, and that should be recorded
+     honestly in [offline-and-privacy.md](offline-and-privacy.md). An
+     AppContainer mode for Win32 exists, but its compatibility with
+     Flutter and a subprocess interpreter hasn't been checked.
+   - **Authenticode signing and SmartScreen — an open question: there's
+     no certificate.** Without a signature, MSIX won't install at all (a
+     self-signed certificate would have to be added to the trusted list
+     on every machine — fine for the author's own computer, not for
+     distribution), while unsigned `.exe` files from a zip or an
+     installer get a SmartScreen warning on first launch ("Windows
+     protected your PC" → "More info" → "Run anyway"). The decision to
+     buy a certificate or use cloud signing is the author's and doesn't
+     block items 1–5 and 7–8: for verification on the author's own
+     computer, an unsigned zip is enough.
 
-7. **Проверка «нет сети» на Windows в CI, по аналогии с APK и
-   entitlements.** Что можно проверить честно: (а) `dart pub deps` без
-   сетевых пакетов — уже есть, дублировать не надо; (б) если выбран MSIX —
-   в итоговом `AppxManifest.xml` нет `internetClient`,
-   `internetClientServer`, `privateNetworkClientServer` (падающий шаг, как
-   grep по `AndroidManifest.xml`); (в) в `windows/` и в сайдкаре нет
-   добавленных сетевых компонент. Чего честно проверить нельзя: по импортам
-   `.exe` (`ws2_32`/`winhttp`) — сам `flutter_windows.dll` и Dart VM тянут
-   сокеты для отладочного сервиса, то есть такая проверка всегда красная. Для
-   zip и Inno-установщика гарантии уровня ОС нет, и в
-   [offline-and-privacy.md](offline-and-privacy.md) строка «Windows» остаётся
-   «ревью зависимостей» — это нужно сказать прямо, а не обещать больше.
-   **Сделано:** (а) уже было; (б) не нужно, пока упаковка zip; (в) — шаг
-   `нет сетевых библиотек в app/windows/` (`ws2_32`/`winhttp`/`wininet`/
-   `urlmon`/`internetClient`); для сайдкара — та же линия, что на macOS
-   (сетевые конвертеры markitdown не ставятся), проверка — в п. 4.
-   `offline-and-privacy.md` говорит прямо: гарантии уровня ОС нет.
+7. **A "no network" check on Windows in CI, by analogy with the APK and
+   entitlements checks.** What can honestly be checked: (a) `dart pub deps`
+   has no networking packages — already in place, no need to duplicate
+   it; (b) if MSIX is chosen — the final `AppxManifest.xml` has no
+   `internetClient`, `internetClientServer`, `privateNetworkClientServer`
+   (a failing step, like the grep over `AndroidManifest.xml`); (c) no
+   networking components have been added in `windows/` or the sidecar.
+   What honestly can't be checked: `.exe` imports (`ws2_32`/`winhttp`) —
+   `flutter_windows.dll` itself and the Dart VM pull in sockets for the
+   debug service, so such a check would always be red. For zip and the
+   Inno installer there's no OS-level guarantee, and in
+   [offline-and-privacy.md](offline-and-privacy.md), the "Windows" line
+   stays "dependency review" — that needs to be stated plainly, not
+   oversold.
+   **Done:** (a) was already there; (b) not needed while packaging is
+   zip; (c) — a step `no networking libraries in app/windows/`
+   (`ws2_32`/`winhttp`/`wininet`/`urlmon`/`internetClient`); for the
+   sidecar — the same line as on macOS (markitdown's networking
+   converters aren't installed), checked in item 4. `offline-and-privacy.md`
+   states plainly: there's no OS-level guarantee.
 
-8. **Ручная проверка на Windows-компьютере автора** (на артефакте из CI,
-   Dart-часть — после п. 3, с сайдкаром — после п. 4). Что потыкать:
-   - запуск без установки Python и без интернета (отключить сеть
-     совсем — приложение не должно заметить);
-   - перетащить файл на окно; открыть через диалог; кириллица в имени
-     файла и в пути, пробел в пути;
-   - `docx`, `xlsx`, `pptx`, `pdf` (с текстом, скан, таблица), `csv` в
-     Windows-1251 — результат появляется, тип распознан верно;
-   - `.xls` и `.msg` — получен Markdown, в `warnings` есть
-     `converterId: sidecar` (на Dart-only сборке — честное «не
-     поддерживается»);
-   - большой PDF и большой `xlsx`: сколько ждём и что видно в окне (это
-     цифры для п. 5);
-   - кнопка копирования и вставка в Блокнот и в браузерный чат: пришёл
-     текст; «Сохранить как `.md`» — UTF-8 без BOM, `\n`;
-   - первый запуск: что показывает SmartScreen и антивирус (Defender
-     проверяет `python.exe` и `.pyd` при первом вызове — первый вызов
-     сайдкара может быть заметно медленнее, таймаут не должен срабатывать);
-   - закрыть окно — в диспетчере задач не остаётся `python.exe`.
+8. **Manual verification on the author's Windows machine** (using the CI
+   artifact, the Dart part — after item 3, with the sidecar — after item
+   4). What to poke at:
+   - launching with no Python installed and no internet (turn off
+     networking entirely — the app shouldn't notice);
+   - dragging a file onto the window; opening it via the dialog; Cyrillic
+     in the file name and the path, a space in the path;
+   - `docx`, `xlsx`, `pptx`, `pdf` (with text, a scan, a table), `csv` in
+     Windows-1251 — a result appears, the type is detected correctly;
+   - `.xls` and `.msg` — Markdown comes back, `warnings` contains
+     `converterId: sidecar` (on a Dart-only build — an honest "not
+     supported");
+   - a large PDF and a large `xlsx`: how long do we wait and what shows
+     up in the window (these are the numbers for item 5);
+   - the copy button and pasting into Notepad and a browser chat: the
+     text arrives; "Save as `.md`" — UTF-8 without BOM, `\n`;
+   - the first launch: what SmartScreen and the antivirus show (Defender
+     scans `python.exe` and `.pyd` on first use — the sidecar's first
+     call might be noticeably slower, and the timeout shouldn't trigger);
+   - closing the window — `python.exe` shouldn't linger in Task Manager.
 
-**Готово, когда:** артефакт из CI скачан на Windows-компьютер автора, `docx`,
-`pdf` и `.xls` из него превращаются в Markdown, который вставляется в чат
-одной кнопкой; решения по п. 5 и п. 6 приняты и записаны; джоб
-`windows-latest` зелёный на каждом PR.
+**Done when:** the CI artifact is downloaded onto the author's Windows
+machine, and `docx`, `pdf`, and `.xls` from it turn into Markdown that gets
+pasted into a chat with one button; the decisions for items 5 and 6 are
+made and recorded; the `windows-latest` job is green on every PR.
 
-**Статус: закрыт.** Ручная проверка (п. 8) — автор, 2026-10-11, на релизе
-`v0.5.0`: «на винде всё работает». Результаты по отдельным пунктам списка не
-записаны; в частности, нет цифр большого PDF и большого `xlsx` на Windows —
-порог 50 страниц (п. 5) по-прежнему стоит на замерах с Mac (см.
-[future-development.md](future-development.md#производительность-сайдкара-на-больших-файлах)).
+**Status: closed.** Manual verification (item 8) — the author, 2026-10-11,
+on release `v0.5.0`: "everything works on Windows." Results for individual
+list items weren't recorded; in particular, there are no numbers for a
+large PDF and a large `xlsx` on Windows — the 50-page threshold (item 5)
+still rests on measurements taken on a Mac (see
+[future-development.md](future-development.md#sidecar-performance-on-large-files)).
 
-## Этап 6 — Изображения и аудио (0.6)
+## Stage 6 — Images and Audio (0.6)
 
-**Цель:** то, где офлайн стоит дороже всего. Делится на три независимых
-куска, и каждый можно закрыть отдельно.
+**Goal:** the area where staying offline costs the most. It splits into
+three independent pieces, each of which can be closed out separately.
 
-1. **EXIF** — дёшево, делается первым: камера, дата, геометка,
-   ориентация. **Сделано** (`ImageConverter`): PNG, JPEG, GIF, BMP, WebP,
-   TIFF, HEIC — формат, размер по заголовку и поля EXIF. Пакет `exif` не
-   взят — свой разбор TIFF, почему — в
-   [format-coverage.md](format-coverage.md#решения-этапа-6).
-2. **OCR** — ~~ML Kit на мобильных, Tesseract на десктопе~~. **Сделано
-   иначе, решение автора:** Tesseract на обеих платформах — ML Kit не знает
-   кириллицы. Через FFI из `core/` (как PDFium), поэтому прямо в
-   конвейере, а не с главного изолята: картинки (JPEG, PNG, BMP) и
-   страницы-сканы PDF. Движок и версия пишутся в `warnings`. Библиотеки —
-   Tesseract4Android на Android и своя сборка без libcurl на десктопе
-   (`tesseract/`), модели `rus+eng` — ассетами. Подробно —
-   [format-coverage.md](format-coverage.md#решения-этапа-6).
-3. **Аудио** — сначала только метаданные и теги (дёшево и сразу полезно).
-   **Сделано:** MP3, FLAC, Ogg (Vorbis, Opus), WAV, M4A/MP4/MOV/3GP —
-   длительность, параметры звука, теги, текст песни; у видео — размер кадра.
-   Транскрипция офлайн (whisper.cpp / sherpa-onnx) уехала в
-   [future-development.md](future-development.md#офлайн-транскрипция-аудио):
-   модель весит от 40 МБ до полутора гигабайт, это решение не этого этапа.
-4. **Ручная проверка** на Windows-компьютере и телефоне автора (на
-   артефактах CI): фото документа с телефона (вертикальное — проверяется
-   поворот по EXIF), скриншот, PDF-скан, голосовое из мессенджера, MP3 с
-   русскими тегами. Цифры — сколько ждём OCR страницы на телефоне и на
-   Windows.
+1. **EXIF** — cheap, done first: camera, date, geotag, orientation.
+   **Done** (`ImageConverter`): PNG, JPEG, GIF, BMP, WebP, TIFF, HEIC —
+   format, size from the header, and EXIF fields. The `exif` package
+   wasn't used — a custom TIFF parser instead; why is explained in
+   [format-coverage.md](format-coverage.md#stage-6-decisions).
+2. **OCR** — ~~ML Kit on mobile, Tesseract on desktop~~. **Done
+   differently, by the author's decision:** Tesseract on both
+   platforms — ML Kit doesn't know Cyrillic. Via FFI from `core/` (like
+   PDFium), so it runs right in the pipeline rather than off the main
+   isolate: images (JPEG, PNG, BMP) and scanned PDF pages. The engine and
+   its version are written to `warnings`. The libraries are
+   Tesseract4Android on Android and a custom build without libcurl on
+   desktop (`tesseract/`); the `rus+eng` models ship as assets. Details —
+   [format-coverage.md](format-coverage.md#stage-6-decisions).
+3. **Audio** — metadata and tags only, to start (cheap and immediately
+   useful). **Done:** MP3, FLAC, Ogg (Vorbis, Opus), WAV,
+   M4A/MP4/MOV/3GP — duration, audio parameters, tags, lyrics; for video,
+   the frame size. Offline transcription (whisper.cpp / sherpa-onnx) moved
+   to [future-development.md](future-development.md#large-audio-and-video):
+   the model weighs anywhere from 40 MB to a gigabyte and a half, and
+   that's a decision for a later stage.
+4. **Manual verification** on the author's Windows machine and phone
+   (using CI artifacts): a photo of a document taken on the phone
+   (portrait — checks EXIF-based rotation), a screenshot, a PDF scan, a
+   voice message from a messenger, an MP3 with Russian tags. Numbers — how
+   long OCR on a page takes on the phone and on Windows.
 
-**Готово, когда:** фото документа и PDF-скан дают распознанный русский
-текст на Windows и на Android; голосовое и MP3 — метаданные; CI зелёный, в
-том числе сборка Tesseract под Windows.
+**Done when:** a photo of a document and a PDF scan produce recognized
+Russian text on Windows and Android; a voice message and MP3 produce
+metadata; CI is green, including the Tesseract build for Windows.
 
-## Распознавание речи (0.8)
+## Speech Recognition (0.8)
 
-Вне исходного плана: после выпуска 0.7 автор попросил «добавить
-faster-whisper» — русский, итальянский и английский, Windows и Android,
-модель small прямо в сборке. Раньше транскрипция стояла в
-[future-development.md](future-development.md#распознавание-речи-что-дальше)
-с вопросом «стоит ли аудио того, чтобы приложение весило в десять раз
-больше» — автор ответил «да». Все «почему» — в
-[format-coverage.md](format-coverage.md#решения-транскрипции-08).
+Outside the original plan: after the 0.7 release, the author asked to "add
+faster-whisper" — Russian, Italian, and English, Windows and Android, the
+small model bundled directly into the build. Transcription used to sit in
+[future-development.md](future-development.md#speech-recognition-whats-next)
+with the question "is audio worth making the app ten times bigger?" — the
+author answered "yes." All the "whys" are in
+[format-coverage.md](format-coverage.md#transcription-decisions-08).
 
-1. **Движок.** ~~faster-whisper~~ — Python, на Android его нет; **решение
-   автора:** whisper.cpp на обеих платформах, своя сборка
-   (`whisper/build.sh`, хост и `--android`), FFI из `core/` через
-   C-прослойку `whisper/shim/`. **Сделано.**
-2. **Модель** — small, многоязычная, в основном бандле (решение автора);
-   q8_0 (264 МБ) + Silero VAD. `whisper/fetch.sh`, опись `models.json`.
-   **Сделано.**
-3. **Декодирование звука в 16 кГц:** WAV, MP3, FLAC, Ogg Vorbis/Opus —
-   переносимо (miniaudio, libopus); AAC (M4A/MP4) — декодер платформы.
-   **Сделано.**
-4. **Приложение:** раздел «Расшифровка» с отметками времени, язык речи,
-   прогресс и «Остановить», копирование модели на диск на Android.
-   **Сделано.**
-5. **CI:** сборка и тесты на Linux и Windows (`speech_test.dart`), сборка
-   `.so` под Android и проверка APK в `release.yml`. **Сделано**, зелёный в
-   PR #4; первый прогон поймал AAC на Windows, расшифровывавшийся в пустоту
-   (формат Media Foundation не перечитывался) — исправлено, M4A теперь
-   проверяется на раннере `windows-2022`.
-6. **Ручная проверка** на Windows-компьютере и телефоне автора:
-   голосовое из Telegram/WhatsApp (Ogg Opus), запись диктофона (M4A),
-   MP3 на итальянском и английском; кнопка «Остановить» на длинной
-   записи. Цифры — сколько минут занимает минута речи на телефоне и на
-   Windows, сколько весит APK.
+1. **Engine.** ~~faster-whisper~~ — Python, not available on Android;
+   **the author's decision:** whisper.cpp on both platforms, a custom
+   build (`whisper/build.sh`, host and `--android`), FFI from `core/`
+   through a C shim at `whisper/shim/`. **Done.**
+2. **Model** — small, multilingual, in the main bundle (the author's
+   decision); q8_0 (264 MB) + Silero VAD. `whisper/fetch.sh`, with a
+   manifest in `models.json`. **Done.**
+3. **Decoding audio to 16 kHz:** WAV, MP3, FLAC, Ogg Vorbis/Opus —
+   portably (miniaudio, libopus); AAC (M4A/MP4) — the platform decoder.
+   **Done.**
+4. **App:** a "Transcript" section with timestamps, detected language,
+   progress and a "Stop" button, copying the model to disk on Android.
+   **Done.**
+5. **CI:** build and tests on Linux and Windows (`speech_test.dart`),
+   building `.so` for Android, and checking the APK in `release.yml`.
+   **Done**, green in PR #4; the first run caught AAC on Windows
+   transcribing to nothing (the Media Foundation format wasn't being
+   re-read) — fixed, and M4A is now checked on the `windows-2022` runner.
+6. **Manual verification** on the author's Windows machine and phone: a
+   voice message from Telegram/WhatsApp (Ogg Opus), a voice-recorder
+   recording (M4A), an MP3 in Italian and English; the "Stop" button on a
+   long recording. Numbers — how many minutes it takes to transcribe a
+   minute of speech on the phone and on Windows, how much the APK weighs.
 
-**Готово, когда:** голосовое и запись диктофона дают расшифровку на
-Windows и на Android; CI зелёный, включая сборку whisper.cpp под Windows и
-Android.
+**Done when:** a voice message and a voice-recorder recording produce a
+transcript on Windows and Android; CI is green, including the whisper.cpp
+build for Windows and Android.
 
-## Этап 7 — Полировка и выкладка (1.0)
+## Stage 7 — Polish and Release (1.0)
 
-1. Горячие клавиши целиком, фокус по Tab, работа без мыши.
-2. Пакетная конвертация: несколько файлов → либо один Markdown с
-   разделителями, либо папка `.md`.
-3. Настройки: язык, тема, выключение истории. ~~Лимиты~~ — **решение
-   автора (0.7):** предела на размер файла нет вовсе, настраивать нечего;
-   лимиты архивов (защита от zip-бомб) — не настройка.
-4. Linux — если появится на чём собирать (Windows к этому моменту уже в
-   Этапе 5).
-5. Выкладка — только GitHub Releases (**решение автора, 14.10.2026:** в
-   Google Play не публикуем): Windows-сборка в формате, выбранном в Этапе 5
-   (п. 6), и APK. Постоянный ключ подписи APK (сейчас debug-ключ раннера,
-   и новая версия не ставится поверх старой). В описании релиза и README
-   про буфер обмена сказано прямо (см.
-   [offline-and-privacy.md](offline-and-privacy.md)).
-   DMG и нотаризация macOS — только если до тех пор появится Mac с Xcode и
-   отдельный запрос.
-6. README со скриншотами и честным размером бандла по платформам.
+1. Keyboard shortcuts throughout, Tab-based focus, fully usable without a
+   mouse.
+2. Batch conversion: multiple files → either a single Markdown file with
+   separators, or a folder of `.md` files.
+3. Settings: language, theme, disabling history. ~~Limits~~ — **the
+   author's decision (0.7):** there's no file-size limit at all, so
+   there's nothing to configure; archive limits (zip-bomb protection)
+   aren't a setting.
+4. Linux — if there's ever something to build it on (Windows will already
+   be past Stage 5 by this point).
+5. Release — GitHub Releases only (**the author's decision, 14.10.2026:**
+   not publishing to Google Play): a Windows build in the format chosen
+   in Stage 5 (item 6), and an APK. A permanent APK signing key (right now
+   it's the runner's debug key, and a new version won't install over an
+   old one). The release notes and README state plainly what's going on
+   with the clipboard (see [offline-and-privacy.md](offline-and-privacy.md)).
+   A DMG and macOS notarization — only if a Mac with Xcode shows up by
+   then, along with a separate request.
+6. A README with screenshots and an honest bundle size per platform.

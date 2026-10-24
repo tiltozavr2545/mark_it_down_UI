@@ -5,11 +5,12 @@ import 'package:markitdown_core/markitdown_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// Обрезанные и испорченные `xls`/`msg`. В отличие от картинок и аудио,
-/// отказ здесь допустим (книгу без таблицы строк не показать), но только
-/// своим конвертером и за конечное время: каталог CFB — дерево, цепочки
-/// секторов и записи BIFF приходят из файла и могут замыкаться или
-/// указывать за конец. Тест ловит зависание и чужой отказ.
+/// Truncated and corrupted `xls`/`msg`. Unlike images and audio, a
+/// failure here is acceptable (a workbook without a row table can't be
+/// shown), but only from its own converter and in finite time: the CFB
+/// directory is a tree, and sector chains and BIFF records come from the
+/// file and can loop or point past the end. The test catches hangs and a
+/// failure attributed to the wrong converter.
 void main() {
   final fixturesDir = p.join(Directory.current.path, 'test', 'fixtures');
   final registry = ConverterRegistry.defaultRegistry();
@@ -43,7 +44,7 @@ void main() {
     final name = p.basename(file.path);
     final full = Uint8List.fromList(file.readAsBytesSync());
 
-    test('$name, обрезанный — свой результат или свой отказ', () async {
+    test('$name, truncated — its own result or its own failure', () async {
       for (var length = 512; length < full.length; length += 61) {
         await expectOwnOutcome(
           Uint8List.sublistView(full, 0, length),
@@ -53,11 +54,12 @@ void main() {
       }
     });
 
-    test('$name с испорченными байтами — без зависания', () async {
+    test('$name with corrupted bytes — no hanging', () async {
       for (var phase = 0; phase < 13; phase++) {
         final bytes = Uint8List.fromList(full);
-        // Заголовок CFB (первые 76 байт) цел, чтобы порча доходила до
-        // каталога, FAT и потоков, а не обрывалась на сигнатуре.
+        // The CFB header (first 76 bytes) stays intact, so the corruption
+        // reaches the directory, FAT and streams instead of stopping at
+        // the signature.
         for (var i = 76 + phase; i < bytes.length; i += 13) {
           bytes[i] ^= 0x5A;
         }

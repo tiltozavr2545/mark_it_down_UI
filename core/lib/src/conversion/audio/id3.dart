@@ -5,8 +5,8 @@ import '../../text_decoding.dart';
 import '../../type_detection/magic_bytes.dart';
 import 'audio_info.dart';
 
-/// Кадры ID3v2, которые переводятся в [AudioTags]. ID3v2.2 пишет те же
-/// кадры трёхбуквенными именами — см. [_v22Names].
+/// ID3v2 frames that get translated into [AudioTags]. ID3v2.2 writes the
+/// same frames with three-letter names — see [_v22Names].
 const _textFrames = {
   'TIT2': 'title',
   'TPE1': 'artist',
@@ -33,9 +33,10 @@ const _v22Names = {
   'TLE': 'TLEN',
 };
 
-/// Читает ID3v2 в начале файла в [info]. Возвращает длину тега — с неё
-/// начинаются кадры MPEG; `0`, если тега нет. Битые кадры пропускаются,
-/// а не обрывают разбор: частичный результат полезнее отказа.
+/// Reads the ID3v2 tag at the start of the file into [info]. Returns the
+/// tag's length — the MPEG frames start right after it; `0` if there's
+/// no tag. Corrupt frames are skipped rather than aborting the parse: a
+/// partial result is more useful than a failure.
 int readId3v2(Uint8List bytes, AudioInfo info) {
   final length = id3v2Length(bytes);
   if (length == null) return 0;
@@ -44,22 +45,23 @@ int readId3v2(Uint8List bytes, AudioInfo info) {
   if (length > bytes.length) info.damaged = true;
 
   var body = Uint8List.sublistView(bytes, 10, length.clamp(10, bytes.length));
-  // Unsynchronisation всего тега (v2.2/v2.3): после каждого 0xFF вставлен
-  // 0x00, чтобы старые плееры не приняли тег за кадр MPEG.
+  // Unsynchronisation of the whole tag (v2.2/v2.3): a 0x00 is inserted
+  // after every 0xFF so old players don't mistake the tag for an MPEG
+  // frame.
   if (major < 4 && flags & 0x80 != 0) body = _deunsync(body);
 
   var offset = 0;
   if (flags & 0x40 != 0 && major >= 3 && body.length >= 4) {
     final view = ByteData.sublistView(body);
-    // Расширенный заголовок: в v2.3 размер без самих 4 байт, в v2.4 — с
-    // ними и synchsafe.
+    // Extended header: in v2.3 the size excludes these 4 bytes
+    // themselves, in v2.4 it includes them and is synchsafe.
     offset = major == 3 ? 4 + view.getUint32(0) : _synchsafe(body, 0);
   }
 
   final headerSize = major == 2 ? 6 : 10;
   final idSize = major == 2 ? 3 : 4;
   while (offset + headerSize <= body.length) {
-    if (body[offset] == 0) break; // паддинг
+    if (body[offset] == 0) break; // padding
     var id = String.fromCharCodes(body, offset, offset + idSize);
     if (!RegExp(r'^[A-Z0-9]+$').hasMatch(id)) {
       info.damaged = true;
@@ -84,23 +86,23 @@ int readId3v2(Uint8List bytes, AudioInfo info) {
       final formatFlags = body[start - 1];
       final skip = major == 3
           ? formatFlags & 0xC0 !=
-                0 // сжатие, шифрование
+                0 // compression, encryption
           : formatFlags & 0x0C != 0;
       if (skip) continue;
       if (major == 3 && formatFlags & 0x20 != 0) {
-        // группировка — байт идентификатора группы перед данными
+        // grouping — a group identifier byte before the data
         if (data.isEmpty) continue;
         data = Uint8List.sublistView(data, 1);
       }
       if (major == 4) {
         if (formatFlags & 0x40 != 0) {
           if (data.isEmpty) continue;
-          data = Uint8List.sublistView(data, 1); // группировка
+          data = Uint8List.sublistView(data, 1); // grouping
         }
         if (formatFlags & 0x02 != 0) data = _deunsync(data);
         if (formatFlags & 0x01 != 0) {
           if (data.length < 4) continue;
-          data = Uint8List.sublistView(data, 4); // длина до сжатия
+          data = Uint8List.sublistView(data, 4); // pre-compression length
         }
       }
     }
@@ -114,7 +116,7 @@ void _applyFrame(String id, Uint8List data, AudioInfo info) {
   final field = _textFrames[id];
   if (field != null) {
     final text = _decodeText(data[0], Uint8List.sublistView(data, 1));
-    // v2.4 разделяет несколько значений нулём.
+    // v2.4 separates multiple values with a null byte.
     final value = text.split('\u0000').where((v) => v.isNotEmpty).join(', ');
     info.tags.set(field, field == 'genre' ? normalizeGenre(value) : value);
     return;
@@ -122,7 +124,7 @@ void _applyFrame(String id, Uint8List data, AudioInfo info) {
   switch (id) {
     case 'COMM':
       final (description, text) = _describedText(data);
-      // iTunes хранит в комментариях служебное (`iTunNORM`, `iTunSMPB`).
+      // iTunes stores internal data in comments (`iTunNORM`, `iTunSMPB`).
       if (!description.startsWith('iTun')) info.tags.set('comment', text);
     case 'USLT':
       info.tags.set('lyrics', _describedText(data).$2);
@@ -136,8 +138,8 @@ void _applyFrame(String id, Uint8List data, AudioInfo info) {
   }
 }
 
-/// `COMM`/`USLT`: кодировка, язык (3 байта), описание до терминатора,
-/// текст.
+/// `COMM`/`USLT`: encoding, language (3 bytes), description up to the
+/// terminator, text.
 (String, String) _describedText(Uint8List data) {
   if (data.length < 4) return ('', '');
   final encoding = data[0];
@@ -160,8 +162,8 @@ void _applyFrame(String id, Uint8List data, AudioInfo info) {
   );
 }
 
-/// Кодировки ID3v2: 0 — «ISO-8859-1» (на деле часто Windows-1251, см.
-/// [decodeLegacyText]), 1 — UTF-16 с BOM, 2 — UTF-16BE, 3 — UTF-8.
+/// ID3v2 encodings: 0 — "ISO-8859-1" (in practice often Windows-1251, see
+/// [decodeLegacyText]), 1 — UTF-16 with a BOM, 2 — UTF-16BE, 3 — UTF-8.
 String _decodeText(int encoding, Uint8List bytes) {
   var text = switch (encoding) {
     1 => _utf16(bytes, bigEndianByDefault: false),
@@ -192,7 +194,7 @@ String _utf16(Uint8List bytes, {required bool bigEndianByDefault}) {
     final unit = bigEndian
         ? (bytes[i] << 8) | bytes[i + 1]
         : bytes[i] | (bytes[i + 1] << 8);
-    // BOM в начале каждого значения из списка v2.4 — не символ.
+    // A BOM at the start of each value in a v2.4 list — not a character.
     if (unit == 0xFEFF) continue;
     units.add(unit);
   }
@@ -216,9 +218,10 @@ Uint8List _deunsync(Uint8List bytes) {
   return out.toBytes();
 }
 
-/// ID3v1 — последние 128 байт файла, `TAG` + поля фиксированной длины,
-/// дополненные нулями или пробелами. Возвращает `true`, если тег есть — тогда
-/// эти 128 байт не звук и не входят в расчёт длительности.
+/// ID3v1 — the file's last 128 bytes, `TAG` + fixed-length fields padded
+/// with nulls or spaces. Returns `true` if the tag is present — in which
+/// case these 128 bytes aren't audio and don't count toward the
+/// duration.
 bool readId3v1(Uint8List bytes, AudioInfo info) {
   if (bytes.length < 128) return false;
   final at = bytes.length - 128;
@@ -238,7 +241,8 @@ bool readId3v1(Uint8List bytes, AudioInfo info) {
     ..set('artist', field(33, 30))
     ..set('album', field(63, 30))
     ..set('year', field(93, 4));
-  // ID3v1.1: ноль в 29-м байте комментария — значит в 30-м номер трека.
+  // ID3v1.1: a zero in the comment's 29th byte means the 30th holds the
+  // track number.
   final hasTrack = bytes[at + 125] == 0 && bytes[at + 126] != 0;
   info.tags.set('comment', field(97, hasTrack ? 28 : 30));
   if (hasTrack) info.tags.set('track', '${bytes[at + 126]}');

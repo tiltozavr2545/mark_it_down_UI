@@ -22,9 +22,10 @@ const _bmpSignature = [0x42, 0x4D]; // BM
 const _tiffLittleEndian = [0x49, 0x49, 0x2A, 0x00]; // II*\0
 const _tiffBigEndian = [0x4D, 0x4D, 0x00, 0x2A]; // MM\0*
 
-/// Марки `ftyp`, под которыми пишутся неподвижные изображения HEIF/AVIF.
-/// Та же коробка `ftyp` открывает и MP4/M4A/MOV — поэтому по марке, а не по
-/// одному слову `ftyp`: иначе видео и аудио с телефона стали бы «картинкой».
+/// `ftyp` brands under which still images for HEIF/AVIF are written. The
+/// same `ftyp` box also opens MP4/M4A/MOV — hence the check is by brand, not
+/// just the `ftyp` word: otherwise video and audio from a phone would turn
+/// into a "picture".
 const _heifBrands = {
   'heic',
   'heix',
@@ -38,9 +39,9 @@ const _heifBrands = {
   'avis',
 };
 
-/// Три варианта сигнатуры zip: обычный, пустой архив, архив из нескольких
-/// дисков. Для распознавания формата различие между ними не важно — дальше
-/// за дело берётся [refineZipFamily].
+/// Three variants of the zip signature: regular, empty archive, multi-disk
+/// archive. The difference between them doesn't matter for format
+/// detection — [refineZipFamily] takes it from there.
 const _zipSignatures = [
   [0x50, 0x4B, 0x03, 0x04],
   [0x50, 0x4B, 0x05, 0x06],
@@ -56,18 +57,19 @@ bool isZipSignature(Uint8List head) =>
 
 bool _isWebp(Uint8List head) => _isRiff(head, 'WEBP');
 
-/// Марка `ftyp` (`heic`, `M4A `, `isom`…) или `null`, если файл не
-/// начинается с коробки `ftyp`.
+/// The `ftyp` brand (`heic`, `M4A `, `isom`…) or `null` if the file doesn't
+/// start with a `ftyp` box.
 String? _ftypBrand(Uint8List head) {
   if (head.length < 12) return null;
   if (String.fromCharCodes(head.sublist(4, 8)) != 'ftyp') return null;
   return String.fromCharCodes(head.sublist(8, 12));
 }
 
-/// `HEIF`: `[размер]ftyp<марка>` в начале файла, см. [_heifBrands].
+/// `HEIF`: `[size]ftyp<brand>` at the start of the file, see [_heifBrands].
 bool _isHeif(Uint8List head) => _heifBrands.contains(_ftypBrand(head));
 
-/// Сигнатуры картинок — дёшево отличить от прочих бинарных форматов.
+/// Image signatures — a cheap way to tell them apart from other binary
+/// formats.
 DetectedType? detectImageSignature(Uint8List head) {
   if (_startsWith(head, _pngSignature)) {
     return const DetectedType(FileKind.png, 'PNG');
@@ -94,13 +96,14 @@ DetectedType? detectImageSignature(Uint8List head) {
   return null;
 }
 
-/// OLE2-контейнер сам по себе не говорит, `.doc`, `.xls`, `.msg` или `.ppt`
-/// перед нами — все они делят одну сигнатуру. Различаются по именам потоков
-/// в каталоге CFB ([readOle2EntryNames]): `Workbook`/`Book` — Excel,
-/// `__properties_version1.0` и `__substg1.0_*` — Outlook `.msg`,
-/// `WordDocument` — Word, `PowerPoint Document` — PowerPoint. Расширение —
-/// только запасная подсказка, когда каталог прочитать не удалось (обрезанный
-/// файл, нестандартный контейнер): оно может и врать.
+/// An OLE2 container alone doesn't tell us whether we're looking at `.doc`,
+/// `.xls`, `.msg`, or `.ppt` — they all share one signature. They're
+/// distinguished by the stream names in the CFB directory
+/// ([readOle2EntryNames]): `Workbook`/`Book` — Excel,
+/// `__properties_version1.0` and `__substg1.0_*` — Outlook `.msg`,
+/// `WordDocument` — Word, `PowerPoint Document` — PowerPoint. The extension
+/// is only a fallback hint for when the directory couldn't be read
+/// (truncated file, nonstandard container): it can lie too.
 DetectedType describeOle2(Uint8List head, String? extension) {
   final names = readOle2EntryNames(head);
   if (names != null) {
@@ -137,9 +140,9 @@ DetectedType describeOle2(Uint8List head, String? extension) {
   );
 }
 
-/// Длина тега ID3v2 вместе с заголовком (и футером, если он есть) или
-/// `null`, если файл с него не начинается. Размер — «synchsafe»: по 7 бит
-/// в каждом из четырёх байтов.
+/// The length of the ID3v2 tag including its header (and footer, if
+/// present), or `null` if the file doesn't start with one. The size is
+/// "synchsafe": 7 bits in each of the four bytes.
 int? id3v2Length(Uint8List head) {
   if (head.length < 10 ||
       head[0] != 0x49 ||
@@ -147,8 +150,8 @@ int? id3v2Length(Uint8List head) {
       head[2] != 0x33) {
     return null;
   }
-  // Версия 2–4: у текстового файла, начинающегося с «ID3», на этом месте
-  // печатный символ.
+  // Version 2-4: a text file starting with "ID3" would have a printable
+  // character in this spot.
   if (head[3] < 2 || head[3] > 4 || head[4] == 0xFF) return null;
   if ((head[6] | head[7] | head[8] | head[9]) >= 0x80) return null;
   final size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9];
@@ -156,29 +159,30 @@ int? id3v2Length(Uint8List head) {
   return 10 + size + (hasFooter ? 10 : 0);
 }
 
-/// Заголовок кадра MPEG-аудио Layer I–III. Проверяется не только
-/// синхрослово (11 единиц), но и запрещённые значения полей: иначе любой
-/// бинарный мусор с `0xFFE…` в начале стал бы «MP3». ADTS (AAC) с тем же
-/// синхрословом отсекается полем layer = 00.
+/// MPEG audio frame header, Layer I-III. Checks not only the sync word (11
+/// set bits) but also forbidden field values: otherwise any binary junk
+/// starting with `0xFFE…` would turn into "MP3". ADTS (AAC) with the same
+/// sync word is excluded by the layer = 00 field.
 bool isMpegAudioFrame(Uint8List bytes, int offset) {
   if (offset < 0 || offset + 4 > bytes.length) return false;
   final b1 = bytes[offset + 1];
   final b2 = bytes[offset + 2];
   return bytes[offset] == 0xFF &&
       b1 & 0xE0 == 0xE0 &&
-      (b1 >> 3) & 3 != 1 && // версия: зарезервировано
-      (b1 >> 1) & 3 != 0 && // layer: зарезервировано (и ADTS)
-      b2 >> 4 != 0x0F && // битрейт: запрещённый индекс
-      (b2 >> 2) & 3 != 3; // частота: зарезервировано
+      (b1 >> 3) & 3 != 1 && // version: reserved
+      (b1 >> 1) & 3 != 0 && // layer: reserved (and ADTS)
+      b2 >> 4 != 0x0F && // bitrate: forbidden index
+      (b2 >> 2) & 3 != 3; // sample rate: reserved
 }
 
-/// Аудио и контейнеры ISO BMFF. Вызывается после картинок: HEIF делит с
-/// MP4 коробку `ftyp`, и отличить их можно только по марке.
+/// Audio and ISO BMFF containers. Called after images: HEIF shares the
+/// `ftyp` box with MP4, and they can only be told apart by brand.
 DetectedType? detectMediaSignature(Uint8List head, String? extension) {
   final id3 = id3v2Length(head);
   if (id3 != null) {
-    // ID3 бывает и перед FLAC. Если тег длиннее прочитанного (большая
-    // обложка), заглянуть за него нельзя — тогда подсказка расширения.
+    // ID3 can also precede FLAC. If the tag is longer than what was read
+    // (a large cover image), we can't look past it — then the extension
+    // is the fallback hint.
     final flacAfterTag = _startsWith(
       Uint8List.sublistView(head, id3.clamp(0, head.length)),
       _flacSignature,

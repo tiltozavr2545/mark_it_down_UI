@@ -11,7 +11,7 @@ import '../document_converter.dart';
 import '../pdf/pdf_text_extraction.dart';
 import 'sidecar_manifest.dart';
 
-/// Что запустить для одного вызова сайдкара.
+/// What to run for a single sidecar invocation.
 class SidecarCommand {
   final String executable;
   final List<String> arguments;
@@ -19,69 +19,74 @@ class SidecarCommand {
   const SidecarCommand(this.executable, this.arguments);
 }
 
-/// Собирает команду запуска: [inputPath] — файл на диске, [formatId] — id
-/// формата (`pdf`, `docx`, …). Единственное место, где известно, как
-/// выглядит вызов; в тестах подставляется фейковый сайдкар.
+/// Builds the launch command: [inputPath] — the file on disk, [formatId] —
+/// the format id (`pdf`, `docx`, …). The only place that knows what the
+/// invocation looks like; tests substitute a fake sidecar here.
 typedef SidecarCommandBuilder =
     SidecarCommand Function(String inputPath, String formatId);
 
-/// Настоящий markitdown на десктопе — просто ещё один конвертер с
-/// приоритетом −1.0, см.
+/// The real markitdown on desktop — just another converter with priority
+/// −1.0, see
 /// `docs/conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер`.
-/// Один вызов — один подпроцесс по протоколу из `docs/python-sidecar.md`:
+/// One call — one subprocess following the protocol from
+/// `docs/python-sidecar.md`:
 ///
 /// ```
 /// <dir>/python/bin/python3 -I -B <dir>/run.py --in <path> --format <id>
 /// stdout: {"markdown": str, "title": str|null, "warnings": [str, ...]}
-/// выход: 0 успех | 2 не поддерживается | 3 битый файл | 1 прочее
+/// exit code: 0 success | 2 unsupported | 3 corrupted file | 1 other
 /// ```
 ///
-/// **Любой отказ — это [ConversionDeclinedException], а не окончательная
-/// ошибка**: реестр тогда пробует следующий конвертер, который принимает тот
-/// же формат (Dart-реализация есть у всех его форматов, у `xls`/`msg` — с
-/// 0.9), а пользователь увидит отказ сайдкара, только если запасной тоже не
-/// справился. Почему так: сайдкар — усиление
-/// поверх Dart-ядра, а не замена; зависший или упавший подпроцесс не должен
-/// отнимать у человека результат, который Dart-ядро отдаёт само («частичный
-/// результат полезнее отказа»). Для кода 3 это тоже верно: `pdfminer`
-/// строже PDFium, а по-настоящему битый файл Dart-конвертер всё равно
-/// отвергнет — со своим, обычно более точным, описанием места повреждения.
+/// **Any decline is a [ConversionDeclinedException], not a final error**:
+/// the registry then tries the next converter that accepts the same format
+/// (a Dart implementation exists for all its formats; for `xls`/`msg` —
+/// since 0.9), and the user only sees the sidecar's decline if the fallback
+/// also fails. Why: the sidecar is an enhancement on top of the Dart core,
+/// not a replacement; a hung or crashed subprocess should not take away from
+/// the person a result the Dart core can produce on its own ("a partial
+/// result is more useful than a failure"). This also holds for code 3:
+/// `pdfminer` is stricter than PDFium, and a genuinely corrupted file is
+/// rejected by the Dart converter anyway — with its own, usually more
+/// precise, description of where the corruption is.
 ///
-/// stderr сайдкара пользователю не показывается никогда — только в
+/// The sidecar's stderr is never shown to the user — only in
 /// [ConversionDeclinedException.diagnostics].
 class SidecarConverter implements DocumentConverter {
-  /// Форматы, на которые сайдкар отзывается (подмножество
+  /// The formats the sidecar responds to (a subset of
   /// [sidecarFormatKinds]).
   final Set<String> formats;
 
   final SidecarCommandBuilder commandBuilder;
 
-  /// После этого подпроцесс убивается, а вызов превращается в обычный отказ
-  /// (с откатом на Dart-конвертер), а не в вечное ожидание. По умолчанию
-  /// запас на большой PDF при холодном старте Python.
+  /// After this the subprocess is killed and the call turns into an
+  /// ordinary decline (falling back to the Dart converter) instead of
+  /// waiting forever. The default leaves headroom for a large PDF on a cold
+  /// Python start.
   final Duration timeout;
 
-  /// Где создавать временные файлы для данных, у которых нет пути на диске.
-  /// По умолчанию — системная временная папка.
+  /// Where to create temp files for data that has no path on disk.
+  /// Defaults to the system temp directory.
   final Directory? tempDirectory;
 
-  /// Предел размера stdout: сайдкар, который выдал больше, убивается — иначе
-  /// мусорный вывод съел бы память процесса приложения.
+  /// The stdout size limit: a sidecar that outputs more than this is
+  /// killed — otherwise the garbage output would eat up the app process's
+  /// memory.
   final int maxOutputBytes;
 
   final String? markitdownVersion;
   final String? pythonVersion;
 
-  /// PDF длиннее этого числа страниц сайдкар отклоняет, не запуская Python, —
-  /// реестр отдаёт файл Dart-конвертеру. `null` — без предела (сверка с
-  /// эталоном, интеграционные тесты). Почему — см. [appFormats].
+  /// A PDF longer than this many pages is declined by the sidecar without
+  /// launching Python — the registry hands the file to the Dart converter.
+  /// `null` means no limit (reference comparison, integration tests). Why —
+  /// see [appFormats].
   final int? maxPdfPages;
 
-  /// PDF, где есть страницы-сканы (без текста, с картинкой), сайдкар
-  /// отклоняет, не запуская Python: pdfminer отдал бы по ним пустоту как
-  /// успех, и до OCR в Dart-ядре дело бы не дошло. Включается в приложении,
-  /// когда OCR доступен (Этап 6): текст сканов важнее таблиц на остальных
-  /// страницах.
+  /// A PDF that has scanned pages (no text, just an image) is declined by
+  /// the sidecar without launching Python: pdfminer would return empty text
+  /// for them as a "success", and OCR in the Dart core would never run.
+  /// Enabled in the app when OCR is available (Stage 6): scanned text
+  /// matters more than tables on the other pages.
   final bool scannedPdfToDart;
 
   SidecarConverter({
@@ -98,13 +103,14 @@ class SidecarConverter implements DocumentConverter {
          formats.where(sidecarFormatKinds.containsKey),
        );
 
-  /// Стандартная раскладка каталога сайдкара. Возвращает `null`, если
-  /// каталога, манифеста, `run.py` или интерпретатора нет, манифест битый или
-  /// с неизвестной `schema` — «сайдкара нет» не ошибка, а штатное состояние
-  /// (мобильные, сборка без него).
+  /// The standard sidecar directory layout. Returns `null` if the
+  /// directory, manifest, `run.py` or interpreter is missing, or the
+  /// manifest is corrupted or has an unknown `schema` — "no sidecar" is not
+  /// an error but a normal state (mobile, a build without it).
   ///
-  /// [onlyFormats] сужает список из манифеста (пустое пересечение — тоже
-  /// `null`: регистрировать нечего); без него — все форматы манифеста.
+  /// [onlyFormats] narrows down the manifest's list (an empty intersection
+  /// also yields `null`: nothing to register); without it, all of the
+  /// manifest's formats are used.
   static SidecarConverter? fromDirectory(
     String directory, {
     Duration timeout = const Duration(seconds: 120),
@@ -153,40 +159,42 @@ class SidecarConverter implements DocumentConverter {
     );
   }
 
-  /// На что сайдкар идёт первым в приложении — решение автора по Этапу 5,
-  /// п. 5 (`docs/implementation-plan.md`). Сайдкар в десятки раз медленнее
-  /// Dart-ядра (PDF на 300 страниц — 112 с против 1,2 с, xlsx на 50 тыс.
-  /// строк — 55 с против 4,4 с), а по сверке Этапа 4 в `docx`/`xlsx`/`pptx`
-  /// Dart не хуже. Поэтому первым он идёт только там, где даёт то, чего у
-  /// Dart не было: `xls`/`msg` (до 0.9 — только он; с 0.9 у Dart свой
-  /// разбор, он остаётся запасным, а убрать их отсюда — решение автора) и
-  /// `pdf` (таблицы) — и для `pdf` лишь до [appMaxPdfPages] страниц.
-  /// `docx`/`xlsx`/`pptx` сайдкар по-прежнему
-  /// умеет — как эталон для `make compare-sidecar`, а не как путь в
-  /// приложении.
+  /// What the sidecar runs first for in the app — the author's decision for
+  /// Stage 5, item 5 (`docs/implementation-plan.md`). The sidecar is tens of
+  /// times slower than the Dart core (a 300-page PDF — 112s vs 1.2s, an
+  /// xlsx with 50k rows — 55s vs 4.4s), and by the Stage 4 comparison the
+  /// Dart core is no worse for `docx`/`xlsx`/`pptx`. So it only runs first
+  /// where it offers something Dart didn't have: `xls`/`msg` (before 0.9 —
+  /// it was the only option; since 0.9 Dart has its own parser and the
+  /// sidecar stays as a fallback — removing them from here is the author's
+  /// call) and `pdf` (tables) — and for `pdf` only up to [appMaxPdfPages]
+  /// pages. The sidecar can still handle `docx`/`xlsx`/`pptx` — as a
+  /// reference for `make compare-sidecar`, not as an app code path.
   static const appFormats = {'pdf', 'xls', 'msg'};
 
-  /// Порог для PDF в приложении: ≈0,37 с на страницу у сайдкара — около
-  /// 20 с в худшем случае. Длиннее — Dart-ядро с предупреждением, что
-  /// таблицы извлечены текстом.
+  /// The PDF threshold for the app: ≈0.37s per page for the sidecar — about
+  /// 20s in the worst case. Longer than that — the Dart core, with a
+  /// warning that tables were extracted as text.
   static const appMaxPdfPages = 50;
 
-  /// Ищет сайдкар там, где он должен лежать на этой платформе:
+  /// Looks for the sidecar where it should live on this platform:
   ///
-  /// 1. `MARKITDOWN_SIDECAR_DIR` — для разработки и тестов (по образцу
-  ///    `MARKITDOWN_PDFIUM_PATH`). Если переменная задана, другие места не
-  ///    смотрятся: неверный путь не должен молча подменяться бандлом.
-  /// 2. macOS: `Contents/Resources/sidecar` рядом с исполняемым файлом
-  ///    бандла (`X.app/Contents/MacOS/X`).
-  /// 3. Windows: `sidecar\` в каталоге `.exe` — туда его кладёт
-  ///    `install(DIRECTORY …)` в `app/windows/CMakeLists.txt`, и так же он
-  ///    лежит в распакованном zip.
+  /// 1. `MARKITDOWN_SIDECAR_DIR` — for development and tests (following the
+  ///    pattern of `MARKITDOWN_PDFIUM_PATH`). If the variable is set, no
+  ///    other locations are checked: a wrong path must not be silently
+  ///    swapped for the bundled one.
+  /// 2. macOS: `Contents/Resources/sidecar` next to the bundle's executable
+  ///    (`X.app/Contents/MacOS/X`).
+  /// 3. Windows: `sidecar\` in the `.exe`'s directory — placed there by
+  ///    `install(DIRECTORY …)` in `app/windows/CMakeLists.txt`, and it sits
+  ///    there the same way in the unpacked zip.
   ///
-  /// На Android и iOS — всегда `null`, даже если переменная задана: сайдкара
-  /// там нет и не будет (нативные колёса под мобильные ABI не существуют).
-  /// Найденный сайдкар ограничен [appFormats] и [appMaxPdfPages] — это
-  /// путь приложения. [scannedPdfToDart] — приложение передаёт `true`, когда
-  /// OCR доступен. Остальные параметры нужны тестам.
+  /// On Android and iOS — always `null`, even if the variable is set: there
+  /// is no sidecar there and never will be (native wheels for mobile ABIs
+  /// don't exist). The discovered sidecar is limited to [appFormats] and
+  /// [appMaxPdfPages] — this is the app's code path. [scannedPdfToDart] —
+  /// the app passes `true` when OCR is available. The remaining parameters
+  /// are for tests.
   static SidecarConverter? discover({
     bool scannedPdfToDart = false,
     Map<String, String>? environment,
@@ -241,8 +249,8 @@ class SidecarConverter implements DocumentConverter {
 
     final maxPages = maxPdfPages;
     if (formatId == 'pdf' && maxPages != null) {
-      // Не открылось — пусть сайдкар попробует сам: откат на Dart при его
-      // отказе всё равно есть.
+      // Couldn't be opened — let the sidecar try itself: there's still a
+      // fallback to Dart if it declines.
       final pages = countPdfPages(request.bytes);
       if (pages != null && pages > maxPages) {
         throw ConversionDeclinedException(
@@ -267,9 +275,9 @@ class SidecarConverter implements DocumentConverter {
       );
     }
 
-    // Временная папка создаётся только если у файла нет пути на диске, и
-    // удаляется здесь же, в finally: владеет файлом вызывающий, а не
-    // сайдкар (иначе непонятно, кто отвечает за удаление).
+    // The temp directory is only created if the file has no path on disk,
+    // and is removed right here, in finally: the caller owns the file, not
+    // the sidecar (otherwise it's unclear who's responsible for deletion).
     Directory? scratch;
     try {
       final String inputPath;
@@ -292,8 +300,8 @@ class SidecarConverter implements DocumentConverter {
         try {
           await scratch.delete(recursive: true);
         } on FileSystemException {
-          // Удалить не вышло (антивирус, занятый файл) — не повод ронять
-          // уже готовый результат.
+          // Deletion failed (antivirus, a locked file) — not a reason to
+          // drop an already-ready result.
         }
       }
     }
@@ -367,8 +375,9 @@ class SidecarConverter implements DocumentConverter {
       converterId: 'sidecar',
       elapsed: Duration.zero,
       warnings: [
-        // По этой строке при разборе «почему у меня вышло не так» видно, что
-        // сработал сайдкар, а не Dart-ядро (результаты могут расходиться).
+        // This line makes it clear, when debugging "why did I get something
+        // different", that the sidecar ran rather than the Dart core
+        // (results can differ).
         ConversionWarning(
           'converterId: sidecar — формат ${info.detectedType.label} '
           'обработан Python-сайдкаром${version.isEmpty ? '' : ' ($version)'}, '
@@ -379,9 +388,9 @@ class SidecarConverter implements DocumentConverter {
     );
   }
 
-  /// Запуск подпроцесса с таймаутом и ограничением вывода. Не бросает —
-  /// всё, что пошло не так, возвращается полями [_Run], а решает
-  /// [_interpret].
+  /// Runs the subprocess with a timeout and an output limit. Doesn't
+  /// throw — anything that goes wrong is returned via [_Run]'s fields, and
+  /// [_interpret] decides what to do.
   Future<_Run> _run(SidecarCommand command) async {
     final Process process;
     try {
@@ -390,7 +399,8 @@ class SidecarConverter implements DocumentConverter {
       return _Run(spawnError: e.message);
     }
 
-    // Сайдкар ничего не читает из stdin; закрываем, чтобы не повис на чтении.
+    // The sidecar never reads stdin; close it so it doesn't hang waiting to
+    // read.
     unawaited(process.stdin.close().catchError((_) {}));
 
     final out = BytesBuilder(copy: false);
@@ -405,8 +415,9 @@ class SidecarConverter implements DocumentConverter {
         process.kill(ProcessSignal.sigkill);
       }
     });
-    // stderr — только для разработчика; первых 16 КБ хватает, остальное
-    // читаем и выбрасываем, иначе подпроцесс встанет на полном канале.
+    // stderr is for developers only; the first 16 KB is enough, the rest is
+    // read and discarded, otherwise the subprocess would block on a full
+    // pipe.
     final stderrDone = process.stderr.forEach((chunk) {
       if (err.length < 16 * 1024) err.add(chunk);
     });
@@ -421,15 +432,15 @@ class SidecarConverter implements DocumentConverter {
       exitCode = await process.exitCode;
     }
 
-    // Потомок, унаследовавший каналы, мог бы держать их открытыми после
-    // смерти процесса — не ждём бесконечно.
+    // A child process that inherited the pipes could keep them open after
+    // the process dies — don't wait forever.
     try {
       await Future.wait([
         stdoutDone,
         stderrDone,
       ]).timeout(const Duration(seconds: 2));
     } on TimeoutException {
-      // Берём то, что успели прочитать.
+      // Take what we managed to read so far.
     }
 
     return _Run(
@@ -468,9 +479,10 @@ class _Output {
   _Output(this.markdown, this.title, this.warnings);
 }
 
-/// Строгий разбор протокола: ровно один JSON-объект, `markdown` — строка,
-/// `title` — строка или `null`, `warnings` — список строк. Любое отклонение
-/// (в том числе лишний текст вокруг JSON из-за `print` в библиотеке) — `null`.
+/// Strict protocol parsing: exactly one JSON object, `markdown` is a string,
+/// `title` is a string or `null`, `warnings` is a list of strings. Any
+/// deviation (including extra text around the JSON caused by a library's
+/// `print`) yields `null`.
 _Output? _parseOutput(Uint8List stdout) {
   try {
     final json = jsonDecode(utf8.decode(stdout));

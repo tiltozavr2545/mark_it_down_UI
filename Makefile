@@ -1,9 +1,10 @@
 .PHONY: verify pub-get format analyze test fetch-pdfium fetch-tesseract tesseract whisper sidecar sidecar-lock sign-sidecar verify-version
 
-# То же гоняет CI: джоб verify — через `make verify`, а джоб windows — теми
-# же шагами, расписанными вручную (в Git Bash раннера нет make, а здесь
-# ветки только Darwin/Linux). Меняешь список проверок — держи одинаковыми
-# и этот файл, и windows-джоб в .github/workflows/ci.yml.
+# CI runs the same thing: the verify job via `make verify`, and the windows
+# job via the same steps spelled out by hand (the runner's Git Bash has no
+# make, and here the branches are Darwin/Linux only). If you change the list
+# of checks, keep both this file and the windows job in
+# .github/workflows/ci.yml in sync.
 verify: pub-get format analyze test
 
 pub-get:
@@ -18,17 +19,17 @@ analyze:
 	cd app && flutter analyze
 	cd core && dart analyze
 
-# Качает shared-библиотеку PDFium для хоста (macOS/Linux) и для Android —
-# см. pdfium/fetch.sh. Не отдельный шаг CI: вызывается из test, тот же
-# make verify гоняет и CI.
+# Downloads the PDFium shared library for the host (macOS/Linux) and for
+# Android — see pdfium/fetch.sh. Not a separate CI step: it's called from
+# test, and CI runs that same make verify.
 fetch-pdfium:
 	./pdfium/fetch.sh
 
-# Модели Tesseract и .so для Android — секунды, поэтому, как и PDFium,
-# качаются из test. Сборка десктопного Tesseract (`make tesseract`) — минуты и
-# в verify не входит: без неё OCR-тесты (core/test/ocr_test.dart)
-# пропускаются, с ней — гоняются. CI Linux берёт Tesseract из пакетов
-# дистрибутива (см. ci.yml).
+# Tesseract models and the Android .so — seconds, so like PDFium they're
+# downloaded from test. Building desktop Tesseract (`make tesseract`) takes
+# minutes and isn't part of verify: without it the OCR tests
+# (core/test/ocr_test.dart) are skipped, with it they run. CI on Linux takes
+# Tesseract from distro packages (see ci.yml).
 fetch-tesseract:
 	./tesseract/fetch.sh
 
@@ -37,9 +38,10 @@ tesseract:
 
 TESSERACT_HOST_DIR := $(CURDIR)/tesseract/native/host
 
-# Распознавание речи (0.8): сборка whisper.cpp — минуты, модели — 265 МБ,
-# поэтому, как `make tesseract`, в verify не входит: без него тесты
-# транскрипции (core/test/speech_test.dart) пропускаются, с ним — гоняются.
+# Speech recognition (0.8): building whisper.cpp takes minutes, the models
+# are 265 MB, so like `make tesseract` it isn't part of verify: without it
+# the transcription tests (core/test/speech_test.dart) are skipped, with it
+# they run.
 whisper:
 	./whisper/build.sh
 	./whisper/fetch.sh
@@ -50,16 +52,18 @@ test: fetch-pdfium fetch-tesseract
 	cd app && flutter test
 	cd core && $(if $(wildcard $(TESSERACT_HOST_DIR)/*),MARKITDOWN_TESSERACT_DIR=$(TESSERACT_HOST_DIR)) $(if $(wildcard $(WHISPER_HOST_DIR)/*),MARKITDOWN_WHISPER_DIR=$(WHISPER_HOST_DIR)) MARKITDOWN_PDFIUM_PATH=$(CURDIR)/pdfium/native/host/libpdfium.$(if $(filter Darwin,$(shell uname -s)),dylib,so) dart test
 
-# Собирает Python-сайдкар для хоста в sidecar/dist/<host>/ — см.
-# docs/python-sidecar.md. Намеренно НЕ входит в verify/test: качает сотни МБ
-# и нужна только для Этапа 4 (сверка с эталоном, упаковка десктопа).
-# FORCE=1 make sidecar — пересобрать принудительно.
+# Builds the Python sidecar for the host into sidecar/dist/<host>/ — see
+# docs/python-sidecar.md. Deliberately NOT part of verify/test: it
+# downloads hundreds of MB and is only needed for Stage 4 (comparison
+# against the reference, desktop packaging).
+# FORCE=1 make sidecar — force a rebuild.
 sidecar:
 	./sidecar/build.sh
 
-# Сверка Dart-ядра с сайдкаром на всех фикстурах (Этап 4, пункт 5): отчёт в
-# core/build/sidecar-compare/summary.md. НЕ входит в verify: в CI сайдкара нет.
-# Сначала `make sidecar`. Другой каталог сайдкара: SIDECAR_DIR=/путь make ...
+# Compares the Dart core against the sidecar across all fixtures (Stage 4,
+# item 5): report in core/build/sidecar-compare/summary.md. NOT part of
+# verify: CI has no sidecar. Run `make sidecar` first. A different sidecar
+# directory: SIDECAR_DIR=/path make ...
 SIDECAR_HOST := $(if $(filter Darwin,$(shell uname -s)),macos,linux)-$(if $(filter arm64 aarch64,$(shell uname -m)),$(if $(filter Darwin,$(shell uname -s)),arm64,aarch64),x86_64)
 SIDECAR_DIR ?= $(CURDIR)/sidecar/dist/$(SIDECAR_HOST)
 
@@ -67,21 +71,23 @@ SIDECAR_DIR ?= $(CURDIR)/sidecar/dist/$(SIDECAR_HOST)
 compare-sidecar: fetch-pdfium
 	cd core && dart pub get && MARKITDOWN_SIDECAR_DIR=$(SIDECAR_DIR) MARKITDOWN_PDFIUM_PATH=$(CURDIR)/pdfium/native/host/libpdfium.$(if $(filter Darwin,$(shell uname -s)),dylib,so) dart run tool/compare_sidecar.dart
 
-# Пересоздаёт sidecar/locks/<host>.txt (версии и sha256 всех зависимостей
-# сайдкара). Только при осознанном обновлении — см. docs/python-sidecar.md.
+# Regenerates sidecar/locks/<host>.txt (versions and sha256 of all of the
+# sidecar's dependencies). Only on a deliberate update — see
+# docs/python-sidecar.md.
 sidecar-lock:
 	./sidecar/lock.sh
 
-# Подпись собранного сайдкара под macOS (Developer ID или ad-hoc: IDENTITY=-).
-# Должна идти ПОСЛЕ `make sidecar` и последней правки дерева — см.
-# docs/operations.md. ENTITLEMENTS по умолчанию sidecar/sidecar.entitlements.
+# Signs the built sidecar on macOS (Developer ID or ad-hoc: IDENTITY=-).
+# Must run AFTER `make sidecar` and the last edit to the tree — see
+# docs/operations.md. ENTITLEMENTS defaults to sidecar/sidecar.entitlements.
 sign-sidecar:
 	@test -n "$(IDENTITY)" || { echo "make sign-sidecar IDENTITY='Developer ID Application: …' (или IDENTITY=- для ad-hoc)"; exit 1; }
 	./sidecar/sign.sh sidecar/dist/macos-$$(uname -m) "$(IDENTITY)" $(ENTITLEMENTS)
 
-# Бамп версии в PR (docs/operations.md#версия): app/pubspec.yaml сверяется с
-# BASE_REF — формат MAJOR.MINOR.PATCH+BUILD, версия изменена, build вырос.
-# НЕ входит в verify: локально сравнивать с origin/main бессмысленно, гоняется
-# отдельным шагом CI только на pull_request.
+# Version bump in a PR (docs/operations.md#version): app/pubspec.yaml is
+# compared against BASE_REF — format MAJOR.MINOR.PATCH+BUILD, the version
+# changed, the build number went up. NOT part of verify: comparing against
+# origin/main locally is pointless; it runs as a separate CI step only on
+# pull_request.
 verify-version:
 	./tool/verify_version.sh $(or $(BASE_REF),origin/main)

@@ -1,20 +1,22 @@
-/// Общее для `xlsx` и `xls`: лист → Markdown и даты Excel. Два формата
-/// хранят одно и то же (сетку ячеек, серийные даты, коды числовых форматов)
-/// по-разному, а отдавать обязаны одинаково — иначе один и тот же лист,
-/// сохранённый в 2003 и 2007 форматах, читался бы по-разному.
+/// Shared between `xlsx` and `xls`: sheet → Markdown and Excel dates.
+/// The two formats store the same thing (the cell grid, date serials,
+/// number format codes) differently, but must render it identically —
+/// otherwise the same sheet, saved in the 2003 and 2007 formats, would
+/// read differently.
 library;
 
 import '../../markdown_writer.dart' as md;
 import '../conversion_result.dart';
 
-/// Диапазон объединения `(startRow, startCol, rowSpan, colSpan)`, индексы с
-/// нуля — то, что принимает [md.htmlTable].
+/// A merge range `(startRow, startCol, rowSpan, colSpan)`, zero-based
+/// indices — what [md.htmlTable] accepts.
 typedef MergeRange = (int, int, int, int);
 
-/// Заголовок — буквы столбцов (A, B, C…), а не первая строка данных: на
-/// листе она не обязана быть заголовком. Объединённые ячейки Markdown не
-/// выражает — такой лист целиком уходит HTML-таблицей с предупреждением.
-/// [grid] — строка → столбец → значение, индексы с нуля.
+/// The header is the column letters (A, B, C…), not the first row of
+/// data: on a sheet, that row isn't necessarily a header. Markdown can't
+/// express merged cells — such a sheet is rendered entirely as an HTML
+/// table with a warning. [grid] is row → column → value, zero-based
+/// indices.
 String renderSheet(
   String name,
   Map<int, Map<int, String>> grid,
@@ -50,13 +52,13 @@ String renderSheet(
     return '$heading\n\n${md.htmlTable(headers, body, merges)}';
   }
 
-  // `md.table` заканчивается собственным `\n` после последней строки —
-  // обрезаем, чтобы не плодить лишнюю пустую строку между листами при
-  // склейке через `\n\n`.
+  // `md.table` ends with its own `\n` after the last row — trim it so
+  // we don't get an extra blank line between sheets when joining with
+  // `\n\n`.
   return '$heading\n\n${md.table(headers, body).trimRight()}';
 }
 
-/// Индекс столбца с нуля → буквы (`0` → `A`, `26` → `AA`).
+/// A zero-based column index → letters (`0` → `A`, `26` → `AA`).
 String columnLetter(int index) {
   var n = index + 1;
   final letters = <String>[];
@@ -68,10 +70,10 @@ String columnLetter(int index) {
   return letters.reversed.join();
 }
 
-/// Встроенные форматы дат/времени Excel (14–22, 27–36, 45–47, 50–58) и
-/// пользовательские коды, где вне кавычек и скобок встречаются `y`, `m`, `d`,
-/// `h`, `s` (`[h]`, `[mm]`, `[ss]` — тоже время). `General` и числовые
-/// форматы этих букв не содержат.
+/// Excel's built-in date/time formats (14–22, 27–36, 45–47, 50–58) and
+/// custom codes where `y`, `m`, `d`, `h`, `s` occur outside quotes and
+/// brackets (`[h]`, `[mm]`, `[ss]` are also time). `General` and numeric
+/// formats don't contain these letters.
 bool isExcelDateFormat(int id, String? code) {
   if ((id >= 14 && id <= 22) ||
       (id >= 27 && id <= 36) ||
@@ -87,14 +89,16 @@ bool isExcelDateFormat(int id, String? code) {
   return RegExp(r'[ymdhs]', caseSensitive: false).hasMatch(stripped);
 }
 
-/// `yyyy-MM-dd` для целого числа дней, `HH:mm:ss` для доли суток,
-/// `yyyy-MM-dd HH:mm:ss` для остального; `null` — число не похоже на
-/// дату (отрицательное, не конечное), тогда остаётся как есть.
-/// [date1904] — эпоха книги (`date1904` в `workbook.xml`, `DATEMODE` в xls).
+/// `yyyy-MM-dd` for a whole number of days, `HH:mm:ss` for a fraction of
+/// a day, `yyyy-MM-dd HH:mm:ss` for the rest; `null` — the number
+/// doesn't look like a date (negative, not finite), in which case it's
+/// left as-is. [date1904] is the workbook's epoch (`date1904` in
+/// `workbook.xml`, `DATEMODE` in xls).
 String? formatExcelDate(double serial, {required bool date1904}) {
   if (!serial.isFinite || serial < 0) return null;
-  // Excel считает 1900 високосным: до 1 марта 1900 серийные номера
-  // сдвинуты на день относительно «честной» эпохи 30.12.1899.
+  // Excel treats 1900 as a leap year: before March 1, 1900, serial
+  // numbers are shifted by a day relative to the "honest" epoch of
+  // 1899-12-30.
   final epoch = date1904
       ? DateTime.utc(1904)
       : serial < 60

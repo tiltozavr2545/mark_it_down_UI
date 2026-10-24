@@ -21,18 +21,20 @@ const _mediaKinds = {
   FileKind.mp4,
 };
 
-/// Аудио (и видео в MP4/MOV/3GP) → список метаданных: формат, длительность,
-/// параметры звука, теги, текст песни, а с [transcription] — и расшифровка
-/// речи (whisper.cpp, офлайн). Отказа, как и у картинок, не бывает:
-/// сигнатура опознана, формат сказать можно всегда, а всё, что не вышло с
-/// распознаванием, — в `warnings`. См.
-/// `docs/format-coverage.md#решения-этапа-6` и
+/// Audio (and video in MP4/MOV/3GP) → a list of metadata: format,
+/// duration, sound parameters, tags, lyrics, and with [transcription] —
+/// also a speech transcript (whisper.cpp, offline). As with images, there
+/// is no hard failure: once the signature is recognized, the format can
+/// always be stated, and anything that didn't work out with recognition
+/// goes into `warnings`. See
+/// `docs/format-coverage.md#решения-этапа-6` and
 /// `docs/format-coverage.md#решения-транскрипции-08`.
 class AudioConverter implements DocumentConverter {
   const AudioConverter({this.transcription});
 
-  /// Где модель и библиотеки Whisper; `null` — только метаданные (так
-  /// гоняются фикстуры: их вывод не должен зависеть от движка на машине).
+  /// Where the Whisper model and libraries are; `null` means metadata
+  /// only (that's how fixtures are run: their output must not depend on
+  /// the engine available on the machine).
   final TranscriptionSettings? transcription;
 
   @override
@@ -41,9 +43,9 @@ class AudioConverter implements DocumentConverter {
   @override
   double get priority => 0.0;
 
-  /// Берёт ли конвертер файлы этого вида — а значит, и распознаёт ли в
-  /// них речь. Приложение по нему решает, кому нужны прогресс и
-  /// «Остановить».
+  /// Whether this converter handles files of this kind — and therefore
+  /// whether it transcribes speech in them. The app uses this to decide
+  /// which ones need progress and a "Stop" control.
   static bool handles(FileKind kind) => _mediaKinds.contains(kind);
 
   @override
@@ -58,8 +60,8 @@ class AudioConverter implements DocumentConverter {
     try {
       _read(bytes, kind, info);
     } on RangeError {
-      // Разборы проверяют границы сами; где не проверили — не повод терять
-      // уже прочитанное.
+      // Parsers check bounds themselves; where they didn't, that's no
+      // reason to lose what's already been read.
       info.damaged = true;
     }
 
@@ -69,8 +71,9 @@ class AudioConverter implements DocumentConverter {
           'структура файла повреждена — показано то, что удалось прочитать',
         ),
     ];
-    // Видео без звуковой дорожки распознавать нечего; если дорожек не
-    // нашли вовсе (битый заголовок) — пробуем: декодер скажет сам.
+    // There's nothing to transcribe in video with no audio track; if no
+    // tracks were found at all (a corrupted header), we still try — the
+    // decoder will tell us itself.
     final speech = info.hasAudio || !info.hasVideo
         ? _transcribe(request, kind, info.duration, warnings)
         : null;
@@ -127,8 +130,8 @@ class AudioConverter implements DocumentConverter {
     );
   }
 
-  /// Расшифровка или `null`; всё, что пошло не так, — в [warnings], не
-  /// исключением: метаданные уже есть.
+  /// The transcript, or `null`; anything that went wrong goes into
+  /// [warnings], not an exception: the metadata is already there.
   Transcript? _transcribe(
     ConversionRequest request,
     FileKind kind,
@@ -198,7 +201,7 @@ class AudioConverter implements DocumentConverter {
   }
 }
 
-/// Расширение файла для декодера платформы — по сигнатуре, не по имени.
+/// File extension for the platform decoder — by signature, not by name.
 const _extensions = {
   FileKind.mp3: 'mp3',
   FileKind.flac: 'flac',
@@ -207,12 +210,13 @@ const _extensions = {
   FileKind.mp4: 'm4a',
 };
 
-/// Сегменты Whisper (по фразе-две) → абзацы с отметкой времени начала.
-/// Новый абзац — после паузы от двух секунд или когда текущий перевалил за
-/// ~600 знаков и кончился на конце предложения (не рвать фразу посередине;
-/// без знаков препинания — не длиннее 1200): стена текста на час записи
-/// нечитаема, а абзац на каждую фразу — шум для того, кто вставит это в
-/// промпт.
+/// Whisper segments (a phrase or two each) → paragraphs with a start
+/// timestamp. A new paragraph starts after a pause of two seconds or more,
+/// or when the current one has gone past ~600 characters and ended at a
+/// sentence boundary (don't break a phrase mid-way; with no punctuation —
+/// no longer than 1200): a wall of text for an hour-long recording is
+/// unreadable, while a paragraph per phrase is noise for whoever pastes
+/// this into a prompt.
 List<String> _transcriptParagraphs(List<TranscriptSegment> segments) {
   const pause = Duration(seconds: 2);
   const maxLength = 600;
@@ -247,12 +251,12 @@ List<String> _transcriptParagraphs(List<TranscriptSegment> segments) {
   return paragraphs;
 }
 
-/// `0:05`, `12:34`, `1:02:03` — как длительность, но и для нуля.
+/// `0:05`, `12:34`, `1:02:03` — like duration, but works for zero too.
 String _timestamp(Duration time) =>
     _duration(time) ?? '0:${(time.inSeconds % 60).toString().padLeft(2, '0')}';
 
-/// Код языка Whisper → по-русски. Неизвестный — кодом: лучше `ka`, чем
-/// ничего.
+/// Whisper language code → Russian display name. An unknown one falls
+/// back to the code: better `ka` than nothing.
 String _languageName(String code) => switch (code) {
   'ru' => 'русский',
   'en' => 'английский',
@@ -291,8 +295,9 @@ void _read(Uint8List bytes, FileKind kind, AudioInfo info) {
   }
 }
 
-/// `MP4` с одной звуковой дорожкой — это аудио, даже если марка `isom`: так
-/// пишут диктофоны и мессенджеры. Уточняем, чтобы не звать его «видео».
+/// `MP4` with a single audio track is audio, even with the `isom` brand:
+/// that's how voice recorders and messengers write it. We clarify this so
+/// as not to call it "video".
 String _format(DetectedType type, AudioInfo info) {
   if (type.kind != FileKind.mp4) return type.label;
   if (info.hasVideo) return '${type.label} (видео)';
@@ -302,7 +307,7 @@ String _format(DetectedType type, AudioInfo info) {
   return type.label;
 }
 
-/// `3:07`, `1:02:03`; доли секунды отбрасываются.
+/// `3:07`, `1:02:03`; fractions of a second are dropped.
 String? _duration(Duration? duration) {
   if (duration == null || duration <= Duration.zero) return null;
   final hours = duration.inHours;
@@ -313,7 +318,8 @@ String? _duration(Duration? duration) {
       : '$minutes:$seconds';
 }
 
-/// `MPEG 1 Layer III, 44,1 кГц, стерео, 192 кбит/с`.
+/// `MPEG 1 Layer III, 44,1 кГц, стерео, 192 кбит/с` (example of the
+/// Russian-language output format).
 String? _sound(AudioInfo info) {
   final parts = <String>[
     if (info.codec != null) info.codec!,
@@ -330,7 +336,8 @@ String? _sound(AudioInfo info) {
   return parts.isEmpty ? null : parts.join(', ');
 }
 
-/// `44100` → `44,1`, `22050` → `22,05`, `48000` → `48`.
+/// `44100` → `44.1`, `22050` → `22.05`, `48000` → `48` (comma is the
+/// decimal separator used in the Russian-language output).
 String _khz(int hertz) {
   var text = (hertz / 1000).toStringAsFixed(3);
   text = text.replaceFirst(RegExp(r'\.?0+$'), '');
@@ -340,8 +347,8 @@ String _khz(int hertz) {
 String _oneLine(String value) =>
     value.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' ').trim();
 
-/// Текст песни: строки куплета остаются строками (жёсткий перенос — два
-/// пробела в конце), куплеты разделены пустой строкой.
+/// Lyrics: the lines of a verse stay lines (a hard break — two trailing
+/// spaces), verses are separated by a blank line.
 String _paragraphs(String text) => text
     .replaceAll('\r\n', '\n')
     .replaceAll('\r', '\n')

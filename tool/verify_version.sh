@@ -1,13 +1,14 @@
 #!/bin/sh
-# Проверка бампа версии в PR — см. docs/operations.md#версия.
+# Checks the version bump in a PR — see docs/operations.md#version.
 #
-#   tool/verify_version.sh [BASE_REF]      (по умолчанию origin/main)
+#   tool/verify_version.sh [BASE_REF]      (defaults to origin/main)
 #
-# Версия app/pubspec.yaml в рабочем дереве сравнивается с версией в BASE_REF.
-# Падает, если: формат не MAJOR.MINOR.PATCH+BUILD; версия не изменилась;
-# build не вырос строго. name при этом может не меняться — допустим бамп
-# одного build. core/pubspec.yaml версию с build не несёт и не проверяется.
-# Только POSIX sh + sed/grep/git: одинаково работает на macOS (BSD) и в CI.
+# The version in the working tree's app/pubspec.yaml is compared against
+# the version at BASE_REF. Fails if: the format isn't
+# MAJOR.MINOR.PATCH+BUILD; the version hasn't changed; the build didn't
+# strictly increase. The name may stay the same — a build-only bump is
+# fine. core/pubspec.yaml carries no build number and isn't checked.
+# POSIX sh + sed/grep/git only: works the same on macOS (BSD) and in CI.
 set -eu
 
 BASE_REF=${1:-origin/main}
@@ -16,8 +17,8 @@ FORMAT='^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$'
 
 cd "$(dirname "$0")/.."
 
-# Достаёт значение `version:` из pubspec на stdin: без кавычек, комментария
-# и пробелов по краям.
+# Extracts the `version:` value from a pubspec on stdin: no quotes,
+# comment, or surrounding whitespace.
 read_version() {
   sed -n 's/^version:[[:space:]]*//p' | head -n 1 \
     | sed -e 's/[[:space:]]*#.*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//' -e 's/[[:space:]]*$//'

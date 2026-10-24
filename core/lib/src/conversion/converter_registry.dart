@@ -29,8 +29,9 @@ import 'ocr/tesseract_ocr.dart';
 import 'speech/whisper_transcriber.dart';
 import '../web/web_fetcher.dart';
 
-/// Итог прогона через реестр: либо результат, либо один из трёх понятных
-/// отказов. См. `docs/conversion-pipeline.md#ошибки`.
+/// The outcome of a run through the registry: either a result, or one
+/// of three clear declines. See
+/// `docs/conversion-pipeline.md#ошибки`.
 sealed class ConversionOutcome {
   const ConversionOutcome();
 }
@@ -47,8 +48,8 @@ class ConversionError extends ConversionOutcome {
   const ConversionError(this.failure);
 }
 
-/// Хранит конвертеры, отсортированные по [DocumentConverter.priority], и
-/// отдаёт файл первому, чей `accepts()` сказал «да». См.
+/// Holds converters sorted by [DocumentConverter.priority], and hands
+/// the file to the first one whose `accepts()` said "yes". See
 /// `docs/conversion-pipeline.md#2-реестр-конвертеров`.
 class ConverterRegistry {
   final List<DocumentConverter> _converters;
@@ -57,17 +58,19 @@ class ConverterRegistry {
     : _converters = [...converters]
         ..sort((a, b) => a.priority.compareTo(b.priority));
 
-  /// Пять текстовых конвертеров Этапа 1, шесть форматов Этапа 2, `pdf`
-  /// Этапа 3, изображения и аудио Этапа 6, в правильном порядке приоритетов. [extra] — то, что реестр не
-  /// хардкодит: на десктопе сюда приезжает `SidecarConverter` (Этап 4),
-  /// на мобильных список пуст.
+  /// The five text converters from Stage 1, the six formats from Stage
+  /// 2, `pdf` from Stage 3, images and audio from Stage 6, in the right
+  /// priority order. [extra] is what the registry doesn't hardcode: on
+  /// desktop, `SidecarConverter` (Stage 4) arrives here; on mobile the
+  /// list is empty.
   ///
-  /// [ocr] — где лежат модели Tesseract; без него картинки и PDF-сканы
-  /// отдаются без распознанного текста (так гоняются фикстуры: их вывод не
-  /// должен зависеть от версии движка на машине). [transcription] — то же
-  /// для речи в аудио (whisper.cpp). [web] — сеть для режима «ссылка»:
-  /// субтитры YouTube; конвертеры YouTube и Wikipedia берут только
-  /// страницы, скачанные по ссылке (`StreamInfo.url`), и без [web].
+  /// [ocr] is where the Tesseract models live; without it, images and
+  /// scanned PDFs come out with no recognized text (that's how the
+  /// fixtures are run: their output must not depend on the engine
+  /// version on the machine). [transcription] is the same for speech in
+  /// audio (whisper.cpp). [web] is the network for "link" mode: YouTube
+  /// captions; the YouTube and Wikipedia converters only act on pages
+  /// downloaded via a link (`StreamInfo.url`), captions need [web].
   factory ConverterRegistry.defaultRegistry({
     List<DocumentConverter> extra = const [],
     OcrSettings? ocr,
@@ -109,10 +112,11 @@ class ConverterRegistry {
     budget: _RecursionBudget(),
   );
 
-  /// Делает всё то же, что [convert], но делит один [_RecursionBudget] со
-  /// всеми вложенными вызовами через `recurse` — иначе `maxFilesInArchive` и
-  /// суммарный распакованный объём считались бы заново на каждом уровне
-  /// вложенности, а не по всему дереву (`zip` в `zip`). См.
+  /// Does everything [convert] does, but shares one [_RecursionBudget]
+  /// with all nested calls via `recurse` — otherwise `maxFilesInArchive`
+  /// and the total extracted volume would be counted afresh at every
+  /// nesting level instead of across the whole tree (a `zip` inside a
+  /// `zip`). See
   /// `docs/conversion-pipeline.md#3-конвертация`.
   Future<ConversionOutcome> _convert(
     Uint8List bytes,
@@ -138,8 +142,8 @@ class ConverterRegistry {
       );
     }
 
-    // Сам файл верхнего уровня не считается: предела на его размер нет,
-    // бюджет — только на то, что из него распаковано.
+    // The top-level file itself isn't counted: there's no limit on its
+    // own size, the budget is only for what's extracted from it.
     if (depth > 0) budget.extractedBytes += info.lengthBytes;
     if (budget.extractedBytes > limits.maxExtractedBytes) {
       return ConversionError(
@@ -168,12 +172,12 @@ class ConverterRegistry {
       ),
     );
 
-    // Обычно отвечает первый подошедший конвертер, и его отказ окончателен.
-    // Исключение — [ConversionDeclinedException] (так отказывается сайдкар):
-    // тогда идём к следующему подошедшему, а если он справился — добавляем в
-    // результат пометку, что сработал запасной путь. Если запасного нет или
-    // он тоже не справился, возвращается отказ первого, а не безликая
-    // ошибка последнего.
+    // Normally the first matching converter answers, and its decline is
+    // final. The exception is [ConversionDeclinedException] (the way a
+    // sidecar declines): then we move to the next match, and if it
+    // succeeds, we add a note to the result that the fallback path
+    // kicked in. If there's no fallback, or it fails too, the first
+    // one's decline is returned, not the last one's faceless error.
     ConversionDeclinedException? declined;
     final stopwatch = Stopwatch()..start();
     for (final converter in candidates) {
@@ -209,7 +213,8 @@ class ConverterRegistry {
   }
 }
 
-/// Общий на всё дерево рекурсии счётчик — см. [ConverterRegistry._convert].
+/// A counter shared across the whole recursion tree — see
+/// [ConverterRegistry._convert].
 class _RecursionBudget {
   int filesVisited = 0;
   int extractedBytes = 0;

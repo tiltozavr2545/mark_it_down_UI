@@ -1,44 +1,45 @@
-/// Отказ — тоже результат, и он обязан быть понятным. Три случая, ровно по
-/// `docs/conversion-pipeline.md#ошибки`; сырой текст исключения пользователю
-/// никогда не показывается — он остаётся внутри конвертера/логов, сюда
-/// попадает только то, что уже сформулировано по-человечески.
+/// A failure is a result too, and it must be understandable. Three cases,
+/// exactly per `docs/conversion-pipeline.md#ошибки`; the raw exception
+/// text is never shown to the user — it stays inside the converter/logs,
+/// only what has already been phrased in human terms ends up here.
 sealed class ConversionFailure {
   const ConversionFailure();
 }
 
-/// Формат не поддерживается ни одним конвертером в реестре.
+/// The format isn't supported by any converter in the registry.
 class UnsupportedFormatFailure extends ConversionFailure {
-  /// Человекочитаемая метка распознанного типа (`DetectedType.label`), чтобы
-  /// показать «какой это формат».
+  /// Human-readable label of the detected type (`DetectedType.label`), to
+  /// show "what format this is".
   final String detectedTypeLabel;
 
   const UnsupportedFormatFailure(this.detectedTypeLabel);
 }
 
-/// Конвертер опознал формат, но файл повреждён.
+/// The converter recognized the format, but the file is corrupted.
 class CorruptedFileFailure extends ConversionFailure {
   final String converterId;
 
-  /// Короткое, уже человекочитаемое описание места повреждения — не стек и
-  /// не текст исключения.
+  /// A short, already human-readable description of where the corruption
+  /// is — not a stack trace and not exception text.
   final String reason;
 
   const CorruptedFileFailure({required this.converterId, required this.reason});
 }
 
-/// Превышен один из [ConversionLimits].
+/// One of the [ConversionLimits] has been exceeded.
 class LimitExceededFailure extends ConversionFailure {
-  /// Какой именно лимит превышен, человекочитаемо («число файлов в архиве
-  /// превышает предел 2000»).
+  /// Which limit exactly was exceeded, human-readably ("the number of
+  /// files in the archive exceeds the limit of 2000").
   final String description;
 
   const LimitExceededFailure(this.description);
 }
 
-/// Режим «ссылка»: страницу или файл не удалось скачать (нет сети, сервер
-/// ответил ошибкой, ссылка не http). Файлов с диска не касается.
+/// "Link" mode: the page or file could not be downloaded (no network, the
+/// server returned an error, the link isn't http). Does not concern files
+/// from disk.
 class NetworkFailure extends ConversionFailure {
-  /// Что случилось, человекочитаемо («нет соединения с сервером…»).
+  /// What happened, human-readably ("no connection to the server…").
   final String description;
 
   const NetworkFailure(this.description);

@@ -1,8 +1,9 @@
-/// FFI-биндинги на `markitdown_whisper` — нашу C-прослойку над whisper.cpp
-/// (`whisper/shim/mdw.h`). Не на `whisper.h` напрямую: `whisper_full_params`
-/// — структура на сотню полей, меняющаяся от версии к версии, и повторять её
-/// раскладку в Dart значит молча читать мусор после обновления. Почему
-/// whisper.cpp и откуда библиотеки — `docs/format-coverage.md#решения-транскрипции-08`.
+/// FFI bindings onto `markitdown_whisper` — our C shim over whisper.cpp
+/// (`whisper/shim/mdw.h`). Not onto `whisper.h` directly: `whisper_full_params`
+/// is a struct with about a hundred fields that changes from version to
+/// version, and repeating its layout in Dart would mean silently reading
+/// garbage after an update. For why whisper.cpp and where the libraries
+/// come from, see `docs/format-coverage.md#решения-транскрипции-08`.
 library;
 
 import 'dart:ffi';
@@ -10,12 +11,13 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
-/// Переменная окружения с каталогом, где лежат `markitdown_whisper`,
-/// `whisper`, `ggml*` и варианты `ggml-cpu-*`. Нужна для `dart test` и для
-/// любой машины, где библиотеки не на стандартном месте платформы.
+/// Environment variable with the directory holding `markitdown_whisper`,
+/// `whisper`, `ggml*` and the `ggml-cpu-*` variants. Needed for
+/// `dart test` and for any machine where the libraries aren't in the
+/// platform's standard location.
 const whisperLibDirEnvVar = 'MARKITDOWN_WHISPER_DIR';
 
-/// Коды возврата `mdw_*` (`mdw.h`).
+/// `mdw_*` return codes (`mdw.h`).
 abstract final class MdwStatus {
   static const ok = 0;
   static const unsupported = 1;
@@ -28,8 +30,9 @@ abstract final class MdwStatus {
   static const model = 8;
 }
 
-/// `mdw_control`: общая память изолята конвертации и главного изолята —
-/// главный пишет [cancel], нативный код пишет [progress].
+/// `mdw_control`: memory shared between the conversion isolate and the
+/// main isolate — the main isolate writes [cancel], the native code
+/// writes [progress].
 final class MdwControl extends Struct {
   @Int32()
   external int cancel;
@@ -38,8 +41,8 @@ final class MdwControl extends Struct {
   external int progress;
 }
 
-/// Открытая библиотека и каталог, где искать варианты CPU-бэкенда (`null`
-/// — по голым именам, так на Android).
+/// The opened library and the directory to look for CPU-backend variants
+/// in (`null` — by bare names, as on Android).
 class WhisperLibrary {
   final DynamicLibrary library;
   final String? backendDir;
@@ -47,21 +50,22 @@ class WhisperLibrary {
   const WhisperLibrary(this.library, this.backendDir);
 }
 
-/// Находит и открывает библиотеки. `null`, если их нет: распознавание речи
-/// — необязательная часть конвейера, его отсутствие не ошибка конвертации.
+/// Finds and opens the libraries. `null` if they're missing: speech
+/// recognition is an optional part of the pipeline, its absence isn't a
+/// conversion error.
 ///
-/// 1. [libraryDir] или [whisperLibDirEnvVar] — явный каталог.
-/// 2. Android: голые имена — `.so` лежат в `jniLibs/arm64-v8a/` и находятся
-///    сами (сборка `whisper/build.sh --android`).
-/// 3. Windows и Linux: рядом с исполняемым файлом (`install(...)` в
+/// 1. [libraryDir] or [whisperLibDirEnvVar] — an explicit directory.
+/// 2. Android: bare names — the `.so` files live in `jniLibs/arm64-v8a/`
+///    and are found on their own (built by `whisper/build.sh --android`).
+/// 3. Windows and Linux: next to the executable (`install(...)` in
 ///    `app/windows/CMakeLists.txt`).
 WhisperLibrary? loadWhisperLibrary([String? libraryDir]) {
   try {
     final dir = libraryDir ?? Platform.environment[whisperLibDirEnvVar];
     if (dir != null && dir.isNotEmpty) return _openFromDirectory(dir);
     if (Platform.isAndroid) {
-      // Зависимости (libwhisper.so, libggml*.so) линкер Android подтянет
-      // сам из того же APK.
+      // Dependencies (libwhisper.so, libggml*.so) are pulled in by the
+      // Android linker on its own from the same APK.
       return WhisperLibrary(
         DynamicLibrary.open('libmarkitdown_whisper.so'),
         null,
@@ -71,7 +75,7 @@ WhisperLibrary? loadWhisperLibrary([String? libraryDir]) {
       return _openFromDirectory(File(Platform.resolvedExecutable).parent.path);
     }
   } on ArgumentError {
-    return null; // DynamicLibrary.open: файла нет или не грузится
+    return null; // DynamicLibrary.open: file missing or fails to load
   }
   return null;
 }
@@ -79,9 +83,9 @@ WhisperLibrary? loadWhisperLibrary([String? libraryDir]) {
 WhisperLibrary? _openFromDirectory(String dir) {
   String path(String name) => '$dir${Platform.pathSeparator}$name';
   if (Platform.isWindows) {
-    // Зависимости — первыми и по порядку: LoadLibrary ищет импорты DLL
-    // рядом с .exe процесса (у `dart test` это dart.exe), а уже
-    // загруженный модуль с тем же именем находит всегда.
+    // Dependencies first and in order: LoadLibrary looks for DLL imports
+    // next to the process's .exe (for `dart test` that's dart.exe), but
+    // it always finds an already-loaded module with the same name.
     for (final name in ['ggml-base.dll', 'ggml.dll', 'whisper.dll']) {
       if (!File(path(name)).existsSync()) return null;
       DynamicLibrary.open(path(name));
@@ -90,7 +94,8 @@ WhisperLibrary? _openFromDirectory(String dir) {
     if (!File(shim).existsSync()) return null;
     return WhisperLibrary(DynamicLibrary.open(shim), dir);
   }
-  // macOS/Linux: соседей находит rpath (@loader_path / $ORIGIN).
+  // macOS/Linux: neighboring libraries are found via rpath
+  // (@loader_path / $ORIGIN).
   final name = Platform.isMacOS
       ? 'libmarkitdown_whisper.dylib'
       : 'libmarkitdown_whisper.so';
@@ -190,8 +195,8 @@ typedef _LanguageNative = Pointer<Utf8> Function(Pointer<Void> model);
 typedef _ProcessedNative = Int64 Function(Pointer<Void> session);
 typedef _ProcessedDart = int Function(Pointer<Void> session);
 
-/// Функции `mdw.h`. Отсутствие любой — `ArgumentError` из `lookup`: не та
-/// сборка библиотеки.
+/// The functions from `mdw.h`. If any is missing — an `ArgumentError`
+/// from `lookup`: wrong library build.
 class WhisperBindings {
   WhisperBindings(DynamicLibrary lib)
     : version = lib.lookupFunction<_VersionNative, _VersionNative>(
@@ -240,8 +245,8 @@ class WhisperBindings {
         'mdw_processed_ms',
       );
 
-  // Типы полей — развёрнутые, а не typedef-ы выше: те приватные, а
-  // привязки читаются из соседнего файла.
+  // Field types are spelled out rather than using the typedefs above:
+  // those are private, and the bindings are read from a neighboring file.
   final Pointer<Utf8> Function() version;
   final int Function(Pointer<Utf8> dir) init;
   final int Function(

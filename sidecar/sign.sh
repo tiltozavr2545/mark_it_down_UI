@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Подписывает собранный сайдкар (macOS) изнутри наружу.
+# Signs the built sidecar (macOS) from the inside out.
 #
 #   sidecar/sign.sh <dir> <identity> [entitlements]
 #
-#   <dir>          — sidecar/dist/<host>/ (или уже скопированный в .app каталог)
-#   <identity>     — "Developer ID Application: Имя (TEAMID)" или "-" (ad-hoc)
-#   [entitlements] — plist для интерпретатора; по умолчанию
+#   <dir>          — sidecar/dist/<host>/ (or already copied into the .app directory)
+#   <identity>     — "Developer ID Application: Name (TEAMID)" or "-" (ad-hoc)
+#   [entitlements] — plist for the interpreter; defaults to
 #                    sidecar/sidecar.entitlements
 #
-# ПОРЯДОК ВАЖЕН. Подпись хеширует содержимое файла, поэтому sign.sh запускается
-# строго ПОСЛЕ build.sh целиком — после compileall, после всех чисток и lipo
-# (любая правка подписанного файла ломает его подпись), и строго ДО подписи
-# внешнего .app, чей ресурсный seal охватывает этот каталог. Сам sign.sh в
-# дерево ничего кроме подписей не пишет.
+# ORDER MATTERS. Signing hashes the file's contents, so sign.sh runs strictly
+# AFTER build.sh in full — after compileall, after all cleanup and lipo (any
+# edit to a signed file breaks its signature) — and strictly BEFORE signing
+# the outer .app, whose resource seal covers this directory. sign.sh itself
+# writes nothing into the tree besides the signatures.
 #
-# Что подписывается: каждый Mach-O внутри каталога (.so/.dylib в lib/ и
-# python/lib/, интерпретатор python/bin/python3.12) — не по расширению, а по
-# магическим байтам: так не проскочит ни .so с нестандартным именем, ни
-# бинарник, о котором build.sh не знает. Библиотеки — первыми, исполняемый
-# файл — последним и с entitlements (у библиотек entitlements не читаются).
-# `--options runtime` включает Hardened Runtime, без него нотаризация
-# отказывает. Неподписанный Mach-O — отказ нотаризации одной строкой среди
-# многих, поэтому в конце каждый файл проверяется отдельно.
+# What gets signed: every Mach-O inside the directory (.so/.dylib in lib/
+# and python/lib/, the python/bin/python3.12 interpreter) — identified not
+# by extension but by magic bytes: that way no .so with a nonstandard name
+# slips through, nor any binary build.sh doesn't know about. Libraries are
+# signed first, the executable last and with entitlements (libraries don't
+# get their entitlements read). `--options runtime` enables Hardened
+# Runtime; without it notarization is refused. An unsigned Mach-O is just
+# one line of refusal among many during notarization, so at the end each
+# file is verified individually.
 SIDECAR_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
@@ -39,21 +40,21 @@ ENTITLEMENTS="${3:-${SIDECAR_SRC}/sidecar.entitlements}"
 [[ -x "${DIR}/python/bin/python3" && -f "${DIR}/run.py" ]] \
   || { echo "sign: ${DIR} не похож на собранный сайдкар (нет python/bin/python3 или run.py)" >&2; exit 1; }
 
-# Сеть в entitlements — ровно то, чего быть не должно (docs/offline-and-privacy.md).
+# Network in entitlements is exactly what must not be there (docs/offline-and-privacy.md).
 if grep -q '<key>com.apple.security.network' "${ENTITLEMENTS}"; then
   echo "sign: в ${ENTITLEMENTS} есть com.apple.security.network.* — нельзя" >&2
   exit 1
 fi
 
-# Временная метка — с сервера Apple, нужна нотаризации; для ad-hoc её нет.
+# Timestamp — from Apple's server, needed for notarization; ad-hoc has none.
 if [[ "${IDENTITY}" == "-" ]]; then
   TS=(--timestamp=none)
 else
   TS=(--timestamp)
 fi
 
-# Поиск Mach-O по магическим байтам (fat и thin, оба порядка байт). Используется
-# python из самого сайдкара: -I -B — ни окружения, ни записи .pyc.
+# Finding Mach-O files by magic bytes (fat and thin, both byte orders). Uses
+# the sidecar's own python: -I -B — no environment, no writing .pyc.
 MACHO_LIST="$(mktemp)"
 trap 'rm -f "${MACHO_LIST}"' EXIT
 "${DIR}/python/bin/python3" -I -B - "${DIR}" > "${MACHO_LIST}" <<'PYEOF'
@@ -70,8 +71,8 @@ for root, _dirs, files in os.walk(sys.argv[1]):
                 head = fh.read(4)
         except OSError:
             continue
-        # 0xCAFEBABE — ещё и класс Java; у нас таких нет, но лишнюю подпись
-        # ему codesign не простит, поэтому отсеиваем по расширению.
+        # 0xCAFEBABE is also a Java class; we have none, but codesign
+        # wouldn't forgive signing one anyway, so we filter by extension.
         if head in MAGIC and not name.endswith(".class"):
             print(path)
 PYEOF
@@ -85,10 +86,11 @@ while IFS= read -r f; do
   if [[ "${f}" == "${DIR}/python/bin/"* ]]; then EXECS+=("${f}"); else LIBS+=("${f}"); fi
 done < "${MACHO_LIST}"
 
-# 1. Библиотеки — без entitlements. --force: lipo/сборка оставляют недействительную
-# подпись, а у ad-hoc-подписи в колёсах её перезапись обязательна.
-# codesign на каждом файле пишет "replacing existing signature" — сотни строк
-# шума; вывод показывается только при ошибке.
+# 1. Libraries — without entitlements. --force: lipo/the build leave an
+# invalid signature behind, and an ad-hoc signature in wheels must be
+# overwritten.
+# codesign prints "replacing existing signature" for every file — hundreds
+# of lines of noise; the output is shown only on failure.
 sign_one() {
   local out
   if ! out="$(codesign --force --sign "${IDENTITY}" --options runtime "${TS[@]}" "$@" 2>&1)"; then
@@ -101,13 +103,13 @@ for f in "${LIBS[@]}"; do
 done
 echo "sign: подписано библиотек: ${#LIBS[@]}"
 
-# 2. Исполняемые файлы — с entitlements.
+# 2. Executables — with entitlements.
 for f in "${EXECS[@]}"; do
   sign_one --entitlements "${ENTITLEMENTS}" "${f}"
 done
 echo "sign: подписано исполняемых: ${#EXECS[@]}"
 
-# 3. Проверка: каждый файл отдельно (--strict), интерпретатор ещё и --deep.
+# 3. Verification: each file individually (--strict), the interpreter also --deep.
 FAILED=0
 while IFS= read -r f; do
   if ! out="$(codesign --verify --strict "${f}" 2>&1)"; then
@@ -120,7 +122,7 @@ for f in "${EXECS[@]}"; do
 done
 [[ "${FAILED}" -eq 0 ]] || { echo "sign: провалено проверок: ${FAILED}" >&2; exit 1; }
 
-# 4. Итоговые entitlements интерпретатора — глазами и без сети.
+# 4. The interpreter's final entitlements — eyeballed, and no network.
 for f in "${EXECS[@]}"; do
   echo "sign: entitlements ${f#"${DIR}"/}:"
   codesign -d --entitlements - --xml "${f}" 2>/dev/null | plutil -p - 2>/dev/null | sed 's/^/  /' || true
@@ -130,8 +132,8 @@ for f in "${EXECS[@]}"; do
   fi
 done
 
-# 5. Дымовой прогон подписанного сайдкара: если Hardened Runtime что-то
-# запретил (библиотека не загрузилась), узнаём здесь, а не у пользователя.
+# 5. A smoke run of the signed sidecar: if Hardened Runtime blocked
+# something (a library failed to load), we find out here, not the user.
 if [[ -z "${SKIP_SMOKE:-}" ]]; then
   "${DIR}/python/bin/python3" -I -B "${DIR}/run.py" --self-check
 fi

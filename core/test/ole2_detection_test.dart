@@ -6,7 +6,7 @@ import 'package:test/test.dart';
 import 'support/cfb_builder.dart';
 
 void main() {
-  group('OLE2: различение по именам потоков каталога CFB', () {
+  group('OLE2: distinguishing by CFB directory stream names', () {
     test('Workbook → xls', () {
       final bytes = buildCfb(['Workbook', '\u0005SummaryInformation']);
       expect(detectType(bytes).kind, FileKind.xls);
@@ -26,7 +26,7 @@ void main() {
       expect(detectType(bytes).kind, FileKind.msg);
     });
 
-    test('WordDocument → doc: распознаётся, но это отдельный вид', () {
+    test('WordDocument → doc: recognized, but a separate kind', () {
       final result = detectType(buildCfb(['WordDocument', '1Table']));
       expect(result.kind, FileKind.doc);
       expect(result.label, contains('.doc'));
@@ -37,44 +37,44 @@ void main() {
       expect(detectType(bytes).kind, FileKind.ppt);
     });
 
-    test('расширение врёт: msg под именем .xls остаётся msg', () {
+    test('extension lies: msg named .xls stays msg', () {
       final bytes = buildCfb(['__properties_version1.0']);
       expect(detectType(bytes, extension: 'xls').kind, FileKind.msg);
     });
 
-    test('каталог в нескольких секторах (цепочка по FAT)', () {
-      // 12 записей при 4 на сектор = 3 сектора каталога; нужный поток — в
-      // последнем.
+    test('directory spanning several sectors (FAT chain)', () {
+      // 12 entries at 4 per sector = 3 directory sectors; the needed
+      // stream is in the last one.
       final names = [for (var i = 0; i < 11; i++) 'Stream$i', 'Workbook'];
       expect(detectType(buildCfb(names)).kind, FileKind.xls);
     });
 
-    test('сектор 4096 байт (CFB версии 4)', () {
+    test('4096-byte sector (CFB version 4)', () {
       final bytes = buildCfb(['Workbook'], sectorShift: 12);
       expect(detectType(bytes).kind, FileKind.xls);
     });
 
-    test('неизвестные потоки — прежнее поведение: контейнер + подсказка', () {
+    test('unknown streams — old behavior: container + hint', () {
       final bytes = buildCfb(['Something']);
       final result = detectType(bytes, extension: 'xls');
       expect(result.kind, FileKind.ole2Compound);
       expect(result.label, contains('похоже на .xls'));
     });
 
-    test('обрезанный файл: каталог недоступен → подсказка по расширению', () {
+    test('truncated file: directory unavailable → extension hint', () {
       final full = buildCfb(['Workbook']);
       final truncated = Uint8List.sublistView(full, 0, 600);
       final result = detectType(truncated, extension: 'xls');
       expect(result.kind, FileKind.ole2Compound);
     });
 
-    test('цепочка каталога зациклена — не зависаем', () {
+    test('directory chain loops — we don\'t hang', () {
       final names = [for (var i = 0; i < 8; i++) 'Stream$i'];
       final bytes = buildCfb(names, loopDirectory: true);
       expect(detectType(bytes).kind, FileKind.ole2Compound);
     });
 
-    test('мусор после сигнатуры не роняет детектор', () {
+    test('garbage after the signature doesn\'t crash the detector', () {
       final bytes = Uint8List(1024)
         ..setAll(0, [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
         ..fillRange(8, 1024, 0xFF);
@@ -82,10 +82,10 @@ void main() {
     });
   });
 
-  group('xls/msg/doc через реестр без сайдкара', () {
+  group('xls/msg/doc through the registry without the sidecar', () {
     final registry = ConverterRegistry.defaultRegistry();
 
-    test('doc — честное «не поддерживается» с названием формата', () async {
+    test('doc — an honest "not supported" with the format name', () async {
       final bytes = buildCfb(['WordDocument']);
       final info = StreamInfo.fromHead(bytes, filename: 'file.doc');
       final outcome = await registry.convert(bytes, info);
@@ -98,9 +98,9 @@ void main() {
       );
     });
 
-    // С 0.9 у xls и msg есть Dart-разбор.
+    // Since 0.9, xls and msg have Dart parsing.
     test(
-      'xls с пустым потоком книги — «повреждён», а не «не поддерживается»',
+      'xls with an empty workbook stream — "corrupted", not "not supported"',
       () async {
         final bytes = buildCfb(['Workbook']);
         final info = StreamInfo.fromHead(bytes, filename: 'file.xls');
@@ -110,7 +110,7 @@ void main() {
       },
     );
 
-    test('msg без свойств — пустой шаблон письма, как у markitdown', () async {
+    test('msg with no properties — empty email template, like markitdown', () async {
       final bytes = buildCfb(['__properties_version1.0']);
       final info = StreamInfo.fromHead(bytes, filename: 'file.msg');
       final outcome = await registry.convert(bytes, info);

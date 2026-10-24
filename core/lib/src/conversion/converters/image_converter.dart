@@ -23,19 +23,21 @@ const _imageKinds = {
   FileKind.heic,
 };
 
-/// Форматы, которые декодирует Leptonica обеих сборок (Android и десктоп,
-/// см. `tesseract/build.sh`), — их байты уходят в OCR как есть.
+/// Formats that Leptonica decodes in both builds (Android and desktop, see
+/// `tesseract/build.sh`) — their bytes go into OCR as-is.
 const _ocrKinds = {FileKind.jpeg, FileKind.png, FileKind.bmp};
 
-/// Их Leptonica наших сборок не знает (без giflib, libwebp, libtiff), а
-/// декодирует чистый Dart (`package:image`): первый кадр перекодируется в
-/// PNG и идёт тем же путём. HEIC не декодирует никто из них.
+/// Our builds' Leptonica doesn't know these (no giflib, libwebp, libtiff),
+/// so pure Dart (`package:image`) decodes them: the first frame is
+/// re-encoded to PNG and goes down the same path. Neither of them decodes
+/// HEIC.
 const _dartDecodedKinds = {FileKind.gif, FileKind.webp, FileKind.tiff};
 
-/// Изображение → список метаданных: формат, размер и то, что есть в EXIF
-/// (камера, дата, параметры съёмки, геометка, подписи), а с [ocr] — и
-/// распознанный текст. Отказа здесь не бывает: формат опознан по
-/// сигнатуре, и даже без EXIF и с битым заголовком есть что сказать. См.
+/// An image → a list of metadata: format, size, and whatever is in the
+/// EXIF (camera, date, shooting parameters, geotag, captions), and with
+/// [ocr] — also the recognized text. There's no hard failure here: the
+/// format is recognized by its signature, and even without EXIF and with a
+/// corrupted header there's something to say. See
 /// `docs/format-coverage.md#решения-этапа-6`.
 class ImageConverter implements DocumentConverter {
   const ImageConverter({this.ocr});
@@ -67,8 +69,9 @@ class ImageConverter implements DocumentConverter {
         exifDamaged = exif == null || exif.damaged;
       }
     } on RangeError {
-      // Разбор контейнера и TIFF проверяет границы сам; если где-то не
-      // проверил — это не повод терять формат и размер, которые уже есть.
+      // Container and TIFF parsing checks bounds itself; if it missed a
+      // check somewhere, that's no reason to lose the format and size we
+      // already have.
       exif = null;
       exifDamaged = true;
     }
@@ -118,8 +121,9 @@ class ImageConverter implements DocumentConverter {
     );
   }
 
-  /// Абзацы распознанного текста; `null` — OCR не запускался. Всё, что
-  /// пошло не так, — в [warnings], не исключением: метаданные уже есть.
+  /// Paragraphs of recognized text; `null` means OCR wasn't run. Anything
+  /// that went wrong goes into [warnings], not an exception: the metadata
+  /// is already there.
   List<String>? _recognize(
     Uint8List bytes,
     FileKind kind,
@@ -197,9 +201,10 @@ class ImageConverter implements DocumentConverter {
   }
 }
 
-/// Первый кадр GIF/WebP/TIFF → PNG для Leptonica. Прозрачность кладётся
-/// на белый фон: иначе прозрачный фон стикера или анимации Tesseract видит
-/// чёрным, и чёрный текст на нём пропадает. `null` — не декодировалось.
+/// The first GIF/WebP/TIFF frame → PNG for Leptonica. Transparency is
+/// composited onto a white background: otherwise Tesseract sees a
+/// sticker's or animation's transparent background as black, and black
+/// text on it disappears. `null` means it didn't decode.
 Uint8List? _pngForOcr(Uint8List bytes) {
   final img.Image? decoded;
   try {
@@ -217,8 +222,8 @@ Uint8List? _pngForOcr(Uint8List bytes) {
     )..clear(img.ColorRgb8(255, 255, 255));
     frame = img.compositeImage(background, frame);
   }
-  // Сжатие минимальное: PNG живёт до конца распознавания, а время на
-  // упаковку крупного кадра в чистом Dart заметно.
+  // Minimal compression: the PNG only lives until recognition finishes,
+  // and the time to pack a large frame in pure Dart is noticeable.
   return img.encodePng(frame, level: 1);
 }
 
@@ -227,9 +232,9 @@ String _kindName(FileKind kind) => switch (kind) {
   _ => 'этого формата',
 };
 
-/// EXIF `Orientation` → сколько раз повернуть на 90° по часовой, чтобы
-/// текст встал ровно. Зеркальные варианты (2, 4, 5, 7) у фото документов не
-/// встречаются — для них только поворот без отражения.
+/// EXIF `Orientation` → how many times to rotate 90° clockwise so the
+/// text sits upright. Mirrored variants (2, 4, 5, 7) don't occur in
+/// document photos — for those only a rotation without a flip is applied.
 int _quarterTurns(List<int>? orientation) => switch (_first(orientation)) {
   3 || 4 => 2,
   5 || 6 => 1,
@@ -237,7 +242,7 @@ int _quarterTurns(List<int>? orientation) => switch (_first(orientation)) {
   _ => 0,
 };
 
-// Теги основного IFD.
+// Main IFD tags.
 const _imageWidth = 0x0100;
 const _imageLength = 0x0101;
 const _imageDescription = 0x010E;
@@ -252,7 +257,7 @@ const _xpComment = 0x9C9C;
 const _xpAuthor = 0x9C9D;
 const _xpKeywords = 0x9C9E;
 
-// Теги IFD Exif.
+// Exif IFD tags.
 const _exposureTime = 0x829A;
 const _fNumber = 0x829D;
 const _iso = 0x8827;
@@ -265,7 +270,7 @@ const _pixelXDimension = 0xA002;
 const _pixelYDimension = 0xA003;
 const _lensModel = 0xA434;
 
-// Теги IFD GPS.
+// GPS IFD tags.
 const _gpsLatitudeRef = 0x0001;
 const _gpsLatitude = 0x0002;
 const _gpsLongitudeRef = 0x0003;
@@ -273,7 +278,8 @@ const _gpsLongitude = 0x0004;
 const _gpsAltitudeRef = 0x0005;
 const _gpsAltitude = 0x0006;
 
-/// Подписи, которые камеры ставят сами, — это не описание снимка, а шум.
+/// Captions that cameras set on their own are not a photo description —
+/// just noise.
 const _cameraDefaultDescriptions = {
   'OLYMPUS DIGITAL CAMERA',
   'SONY DSC',
@@ -282,9 +288,9 @@ const _cameraDefaultDescriptions = {
   'DEFAULT',
 };
 
-/// По заголовку, а если у формата его негде взять (`TIFF`) или он
-/// битый — из EXIF: сначала размер основного изображения TIFF, потом
-/// `PixelXDimension`/`PixelYDimension`.
+/// From the header, and if the format has nowhere to take it from
+/// (`TIFF`) or it's corrupted — from EXIF: first the TIFF main image size,
+/// then `PixelXDimension`/`PixelYDimension`.
 ImageSize? _size(Uint8List bytes, FileKind kind, ExifData? exif) {
   final fromHeader = readImageSize(bytes, kind);
   if (fromHeader != null || exif == null) return fromHeader;
@@ -339,8 +345,8 @@ List<(String, String?)> _exifFields(ExifData exif) {
 }
 
 /// `Canon` + `Canon EOS 5D` → `Canon EOS 5D`; `Apple` + `iPhone 12` →
-/// `Apple iPhone 12`. Сравнивается первое слово марки: `NIKON CORPORATION`
-/// пишет модель как `NIKON D750`.
+/// `Apple iPhone 12`. The first word of the make is compared: `NIKON
+/// CORPORATION` writes the model as `NIKON D750`.
 String? _camera(String? make, String? model) {
   if (make == null) return model;
   if (model == null) return make;
@@ -348,9 +354,9 @@ String? _camera(String? make, String? model) {
   return model.toLowerCase().startsWith(brand) ? model : '$make $model';
 }
 
-/// `2024:07:14 18:32:05` → `2024-07-14 18:32:05`, со смещением от UTC, если
-/// оно записано. Нулевую дату (`0000:00:00 …`) камеры пишут вместо
-/// «не задана».
+/// `2024:07:14 18:32:05` → `2024-07-14 18:32:05`, with the UTC offset if
+/// it was recorded. Cameras write a zero date (`0000:00:00 …`) instead of
+/// "not set".
 String? _date(String? raw, String? offset) {
   if (raw == null) return null;
   final match = RegExp(r'^(\d{4}):(\d{2}):(\d{2})(.*)$').firstMatch(raw);
@@ -360,8 +366,9 @@ String? _date(String? raw, String? offset) {
   return offset == null ? date : '$date (UTC$offset)';
 }
 
-/// Выдержка, диафрагма, ISO, фокусное расстояние — одной строкой, как их
-/// пишут фотографы: `1/250 с, f/2.8, ISO 200, 50 мм`.
+/// Exposure time, aperture, ISO, focal length — on one line, the way
+/// photographers write them: `1/250 с, f/2.8, ISO 200, 50 мм` (output
+/// stays in the Russian-language format).
 String? _shooting(Map<int, ExifEntry> details) {
   final parts = <String>[];
 
@@ -387,8 +394,8 @@ String? _shooting(Map<int, ExifEntry> details) {
   return parts.isEmpty ? null : parts.join(', ');
 }
 
-/// Значение тега `Orientation` — как повернуть сохранённые пиксели, чтобы
-/// показать снимок правильно. `1` (как есть) не пишется.
+/// The `Orientation` tag's value — how to rotate the stored pixels to
+/// display the photo correctly. `1` (as-is) is not written out.
 String? _orientationText(List<int>? value) => switch (_first(value)) {
   2 => 'отразить по горизонтали',
   3 => 'повернуть на 180°',
@@ -400,9 +407,9 @@ String? _orientationText(List<int>? value) => switch (_first(value)) {
   _ => null,
 };
 
-/// Широта и долгота в десятичных градусах (6 знаков — около 10 см), и
-/// высота, если есть. `0, 0` — так пишут «спутников не нашли», а не
-/// координаты в Гвинейском заливе.
+/// Latitude and longitude in decimal degrees (6 digits — about 10 cm),
+/// and altitude if present. `0, 0` is how "no satellites found" gets
+/// written, not a coordinate in the Gulf of Guinea.
 String? _location(Map<int, ExifEntry> gps) {
   final latitude = _degrees(gps[_gpsLatitude], gps[_gpsLatitudeRef], 'S');
   final longitude = _degrees(gps[_gpsLongitude], gps[_gpsLongitudeRef], 'W');
@@ -418,7 +425,7 @@ String? _location(Map<int, ExifEntry> gps) {
   return '$position, высота ${(belowSeaLevel ? -altitude : altitude).round()} м';
 }
 
-/// Градусы, минуты, секунды тремя дробями → десятичные градусы со знаком.
+/// Degrees, minutes, seconds as three fractions → signed decimal degrees.
 double? _degrees(ExifEntry? value, ExifEntry? ref, String negativeRef) {
   final parts = value?.rationals ?? const [];
   if (parts.length != 3 || parts.any((p) => p.$2 == 0)) return null;
@@ -438,7 +445,7 @@ double? _ratio(List<(int, int)>? values) {
   return value.$1 / value.$2;
 }
 
-/// `2.8` → `2.8`, `50.0` → `50`: лишний `.0` в `f/4.0` выглядит машинно.
+/// `2.8` → `2.8`, `50.0` → `50`: a stray `.0` in `f/4.0` looks machine-made.
 String _decimal(double value) {
   final rounded = (value * 10).round() / 10;
   return rounded == rounded.roundToDouble()

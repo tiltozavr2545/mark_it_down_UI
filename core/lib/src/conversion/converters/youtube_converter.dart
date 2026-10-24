@@ -15,15 +15,17 @@ import '../conversion_result.dart';
 import '../document_converter.dart';
 import 'html_converter.dart';
 
-/// Страница видео YouTube (режим «ссылка») → название, просмотры, ключевые
-/// слова, длительность, описание и субтитры. Порт `YouTubeConverter`
-/// markitdown — тот же вид Markdown. Субтитры markitdown берёт пакетом
-/// `youtube_transcript_api`; здесь — тот же путь руками: ключ InnerTube со
-/// страницы, запрос `player` от имени Android-клиента (ответ веб-клиента
-/// без токена субтитры не отдаёт), XML дорожки. Это не официальный API:
-/// YouTube его меняет, поэтому сбой субтитров — предупреждение, а не отказ.
+/// A YouTube video page ("link" mode) → title, view count, keywords,
+/// duration, description and captions. A port of markitdown's
+/// `YouTubeConverter` — the same Markdown shape. markitdown gets captions
+/// via the `youtube_transcript_api` package; here it's the same path done
+/// by hand: the InnerTube key from the page, a `player` request posing as
+/// the Android client (the web client's response won't give up captions
+/// without a token), the caption track's XML. This isn't an official API:
+/// YouTube changes it, so a caption failure is a warning, not a decline.
 ///
-/// Без [web] (тесты, файл `.html` с диска) субтитры не запрашиваются.
+/// Without [web] (tests, an `.html` file read from disk) captions aren't
+/// requested.
 class YouTubeConverter implements DocumentConverter {
   const YouTubeConverter({this.web});
 
@@ -89,7 +91,8 @@ class YouTubeConverter implements DocumentConverter {
     }
 
     if (out.isEmpty) {
-      // Не страница видео (капча, заглушка) — как у markitdown, обычный HTML.
+      // Not a video page (a CAPTCHA, a placeholder) — plain HTML, as with
+      // markitdown.
       return const HtmlConverter().convert(request);
     }
     return ConversionResult(
@@ -102,8 +105,8 @@ class YouTubeConverter implements DocumentConverter {
   }
 }
 
-/// Номер видео из ссылки YouTube (`watch?v=`, `youtu.be/`, `shorts/`,
-/// `embed/`) или `null`.
+/// The video id from a YouTube link (`watch?v=`, `youtu.be/`, `shorts/`,
+/// `embed/`), or `null`.
 String? youtubeVideoId(String url) {
   final uri = Uri.tryParse(url);
   if (uri == null) return null;
@@ -124,7 +127,7 @@ String? youtubeVideoId(String url) {
   return null;
 }
 
-/// HTML по ответу сервера, расширению или содержимому.
+/// HTML by the server response, the extension, or the content.
 bool isHtml(StreamInfo info, Uint8List head) {
   final mime = (info.mimeType ?? '').toLowerCase();
   if (mime.startsWith('text/html') || mime.startsWith('application/xhtml')) {
@@ -135,8 +138,8 @@ bool isHtml(StreamInfo info, Uint8List head) {
   return const HtmlConverter().accepts(info, head);
 }
 
-/// `<title>` и `<meta>` с `itemprop`/`property`/`name` — как словарь у
-/// markitdown: более поздний тег с тем же ключом перекрывает ранний.
+/// `<title>` and `<meta>` with `itemprop`/`property`/`name` — a dict like
+/// markitdown's: a later tag with the same key overrides an earlier one.
 Map<String, String> _metadata(dom.Document document) {
   final metadata = <String, String>{};
   final title = document.querySelector('title')?.text;
@@ -161,9 +164,9 @@ String? _first(Map<String, String> metadata, List<String> keys) {
   return null;
 }
 
-/// JSON-объект, который на странице идёт сразу после [marker]
-/// (`var ytInitialData = {…};`). Конец ищется по балансу скобок с учётом
-/// строк — регулярное выражение на мегабайтном JSON ненадёжно.
+/// The JSON object that follows [marker] on the page right away
+/// (`var ytInitialData = {…};`). The end is found by brace balance,
+/// accounting for strings — a regex is unreliable on megabyte-sized JSON.
 Map<String, dynamic>? _jsonAfter(String html, String marker) {
   final start = html.indexOf(marker);
   if (start < 0) return null;
@@ -175,7 +178,7 @@ Map<String, dynamic>? _jsonAfter(String html, String marker) {
     final c = html.codeUnitAt(i);
     if (inString) {
       if (c == 0x5C) {
-        i++; // экранированный символ
+        i++; // an escaped character
       } else if (c == 0x22) {
         inString = false;
       }
@@ -197,7 +200,8 @@ Map<String, dynamic>? _jsonAfter(String html, String marker) {
   return null;
 }
 
-/// Первое значение по ключу где угодно в дереве JSON — обход стеком.
+/// The first value for a key anywhere in the JSON tree — a stack-based
+/// traversal.
 Object? _findKey(Object? json, String key) {
   final stack = <Object?>[json];
   while (stack.isNotEmpty) {
@@ -212,8 +216,8 @@ Object? _findKey(Object? json, String key) {
   return null;
 }
 
-/// Текст субтитров одной строкой, как у markitdown, или `null` (причина —
-/// в [warnings]).
+/// Caption text as a single line, as with markitdown, or `null` (the
+/// reason goes into [warnings]).
 Future<String?> _transcript(
   WebFetcher fetcher,
   String html,
@@ -267,8 +271,8 @@ Future<String?> _transcript(
     final document = XmlDocument.parse(utf8.decode(xml.body));
     final parts = [
       for (final text in document.findAllElements('text'))
-        // В XML сущности экранированы дважды (`&amp;#39;`): после разбора
-        // XML остаётся HTML-сущность.
+        // Entities in the XML are escaped twice (`&amp;#39;`): after XML
+        // parsing, an HTML entity is left over.
         html_parser
             .parseFragment(text.innerText)
             .text!
@@ -300,10 +304,10 @@ Future<String?> _transcript(
   }
 }
 
-/// Какую дорожку брать. Язык самого видео — у автоматической (`asr`):
-/// YouTube распознаёт речь на языке оригинала. Лучше всего — ручные
-/// субтитры на этом языке; дальше ручные русские, английские; затем
-/// автоматические; затем любая.
+/// Which track to pick. The video's own language shows up on the
+/// automatic (`asr`) track: YouTube recognizes speech in the original
+/// language. Best is manual captions in that language; next, manual
+/// Russian, then English; then automatic; then anything.
 Map? _pickTrack(List<Map> tracks) {
   bool manual(Map t) => t['kind'] != 'asr';
   String language(Map t) =>

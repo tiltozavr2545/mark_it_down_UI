@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import '../../type_detection/detected_type.dart';
 import 'image_container.dart';
 
-/// Ширина и высота изображения в пикселях.
+/// An image's width and height in pixels.
 class ImageSize {
   final int width;
   final int height;
@@ -14,10 +14,11 @@ class ImageSize {
   String toString() => '$width × $height';
 }
 
-/// Размер по заголовку файла, без декодирования пикселей — картинку на
-/// сотни МБ не нужно разжимать, чтобы сказать «4032 × 3024». `null`, если
-/// заголовок обрезан, нестандартный или у формата его негде взять
-/// (`TIFF` — размер приходит из EXIF, см. `ImageConverter`).
+/// Size from the file header, without decoding the pixels — a hundreds-
+/// of-MB image shouldn't need unpacking just to say "4032 × 3024". `null`
+/// if the header is truncated, non-standard, or the format has nowhere
+/// to take it from (`TIFF` — the size comes from EXIF, see
+/// `ImageConverter`).
 ImageSize? readImageSize(Uint8List bytes, FileKind kind) {
   try {
     final size = switch (kind) {
@@ -32,22 +33,23 @@ ImageSize? readImageSize(Uint8List bytes, FileKind kind) {
     if (size == null || size.width <= 0 || size.height <= 0) return null;
     return size;
   } on RangeError {
-    // Обрезанный файл: заголовок обещал больше байтов, чем есть.
+    // A truncated file: the header promised more bytes than there are.
     return null;
   }
 }
 
 ByteData _view(Uint8List bytes) => ByteData.sublistView(bytes, 0, bytes.length);
 
-/// `IHDR` — всегда первый чанк сразу за сигнатурой: ширина и высота, big
-/// endian, по смещениям 16 и 20.
+/// `IHDR` is always the first chunk right after the signature: width and
+/// height, big endian, at offsets 16 and 20.
 ImageSize? _png(Uint8List bytes) {
   if (String.fromCharCodes(bytes.sublist(12, 16)) != 'IHDR') return null;
   final view = _view(bytes);
   return ImageSize(view.getUint32(16), view.getUint32(20));
 }
 
-/// Logical Screen Descriptor сразу за `GIF87a`/`GIF89a`, little endian.
+/// The Logical Screen Descriptor right after `GIF87a`/`GIF89a`, little
+/// endian.
 ImageSize? _gif(Uint8List bytes) {
   final view = _view(bytes);
   return ImageSize(
@@ -56,9 +58,10 @@ ImageSize? _gif(Uint8List bytes) {
   );
 }
 
-/// `BITMAPINFOHEADER` и его потомки: ширина и высота — int32 по смещениям
-/// 18 и 22; отрицательная высота значит «строки сверху вниз», а не размер.
-/// Старый `BITMAPCOREHEADER` (размер заголовка 12) — uint16.
+/// `BITMAPINFOHEADER` and its descendants: width and height — int32 at
+/// offsets 18 and 22; a negative height means "rows top to bottom", not
+/// the size itself. The old `BITMAPCOREHEADER` (header size 12) uses
+/// uint16.
 ImageSize? _bmp(Uint8List bytes) {
   final view = _view(bytes);
   final headerSize = view.getUint32(14, Endian.little);
@@ -74,7 +77,7 @@ ImageSize? _bmp(Uint8List bytes) {
   );
 }
 
-/// Первый `SOFn` — в нём точность, высота и ширина.
+/// The first `SOFn` — holds the precision, height and width.
 ImageSize? _jpeg(Uint8List bytes) {
   for (final segment in jpegSegments(bytes)) {
     final marker = segment.marker;
@@ -82,7 +85,7 @@ ImageSize? _jpeg(Uint8List bytes) {
         marker >= 0xC0 &&
         marker <= 0xCF &&
         marker != 0xC4 && // DHT
-        marker != 0xC8 && // JPG (зарезервирован)
+        marker != 0xC8 && // JPG (reserved)
         marker != 0xCC; // DAC
     if (isSof && segment.length >= 5) {
       final view = _view(bytes);
@@ -95,25 +98,27 @@ ImageSize? _jpeg(Uint8List bytes) {
   return null;
 }
 
-/// `RIFF....WEBP` и первый чанк: `VP8 ` (с потерями), `VP8L` (без потерь)
-/// или `VP8X` (расширенный — с EXIF, альфой, анимацией).
+/// `RIFF....WEBP` and the first chunk: `VP8 ` (lossy), `VP8L` (lossless)
+/// or `VP8X` (extended — with EXIF, alpha, animation).
 ImageSize? _webp(Uint8List bytes) {
   final view = _view(bytes);
   final chunk = String.fromCharCodes(bytes.sublist(12, 16));
   switch (chunk) {
     case 'VP8 ':
-      // Кадр-ключ: 3 байта тега кадра, 3 байта стартового кода, затем
-      // ширина и высота по 14 бит.
+      // A key frame: 3 bytes of frame tag, 3 bytes of start code, then
+      // width and height, 14 bits each.
       return ImageSize(
         view.getUint16(26, Endian.little) & 0x3FFF,
         view.getUint16(28, Endian.little) & 0x3FFF,
       );
     case 'VP8L':
-      // Байт сигнатуры 0x2F, затем ширина-1 и высота-1 по 14 бит подряд.
+      // A signature byte 0x2F, then width-1 and height-1, 14 bits each
+      // in sequence.
       final bits = view.getUint32(21, Endian.little);
       return ImageSize((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1);
     case 'VP8X':
-      // Ширина-1 и высота-1 — по 24 бита после флагов и резерва.
+      // Width-1 and height-1 — 24 bits each after the flags and reserved
+      // bytes.
       int uint24(int at) =>
           bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16);
       return ImageSize(uint24(24) + 1, uint24(27) + 1);
@@ -121,19 +126,19 @@ ImageSize? _webp(Uint8List bytes) {
   return null;
 }
 
-/// HEIF: размеры элементов лежат свойствами `ispe` внутри коробки `meta`.
-/// У снимка с iPhone их несколько — плитки 512 × 512, миниатюра и сама
-/// сетка; честно сопоставить их с основным элементом — это разбор
-/// `pitm`/`iprp`/`ipma`. Берём наибольший: основное изображение больше и
-/// своих плиток, и миниатюры.
+/// HEIF: item sizes sit as `ispe` properties inside the `meta` box. An
+/// iPhone photo has several of them — 512 × 512 tiles, a thumbnail, and
+/// the grid itself; properly matching them to the primary item means
+/// parsing `pitm`/`iprp`/`ipma`. We take the largest: the primary image is
+/// bigger than both its own tiles and the thumbnail.
 ImageSize? _heif(Uint8List bytes) {
   final view = _view(bytes);
   var offset = 0;
   while (offset + 8 <= bytes.length) {
     final size = view.getUint32(offset);
     final type = String.fromCharCodes(bytes, offset + 4, offset + 8);
-    // 0 — «до конца файла», 1 — 64-битный размер дальше; `meta` стоит до
-    // `mdat`, так что до таких коробок дело обычно не доходит.
+    // 0 means "to the end of the file", 1 means a 64-bit size follows;
+    // `meta` sits before `mdat`, so such boxes usually aren't an issue.
     if (size < 8) return null;
     if (type == 'meta') {
       final end = offset + size > bytes.length ? bytes.length : offset + size;
@@ -143,7 +148,7 @@ ImageSize? _heif(Uint8List bytes) {
             String.fromCharCodes(bytes, i, i + 4) != 'ispe') {
           continue;
         }
-        // За именем: версия и флаги (4 байта), ширина, высота.
+        // After the name: version and flags (4 bytes), width, height.
         final candidate = ImageSize(
           view.getUint32(i + 8),
           view.getUint32(i + 12),

@@ -6,18 +6,18 @@ import 'package:markitdown_core/markitdown_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// Пара «исходник + ожидаемый markdown» — см. `AGENTS.md#конвенции-работы` и
-/// `docs/format-coverage.md#эталонные-файлы`. Список явный, а не обход
-/// директории: источник без расширения (`no_extension_sample`) делает
-/// автоматическое сопоставление по имени неоднозначным.
+/// A "source + expected markdown" pair — see `AGENTS.md#конвенции-работы`
+/// and `docs/format-coverage.md#эталонные-файлы`. The list is explicit
+/// rather than a directory walk: a source with no extension
+/// (`no_extension_sample`) makes automatic matching by name ambiguous.
 class _Fixture {
   final String source;
   final String expected;
   final String? filenameOverride;
 
-  /// Если задано — после сравнения markdown проверяется, что среди
-  /// [ConversionResult.warnings] есть хотя бы одно, содержащее эту
-  /// подстроку (например, предупреждение про объединённые ячейки `xlsx`).
+  /// If set — after comparing the markdown, checks that among
+  /// [ConversionResult.warnings] there is at least one containing this
+  /// substring (e.g. the warning about merged cells in `xlsx`).
   final String? expectedWarningContains;
 
   const _Fixture(
@@ -44,16 +44,16 @@ const _fixtures = [
   _Fixture('json/empty.json', 'json/empty.expected.md'),
   _Fixture('xml/simple.xml', 'xml/simple.expected.md'),
   _Fixture('html/article.html', 'html/article.expected.md'),
-  // Этап 2 — Office.
+  // Stage 2 — Office.
   _Fixture('docx/simple.docx', 'docx/simple.expected.md'),
   _Fixture(
     'docx/evil_nested.docx',
     'docx/evil_nested.expected.md',
-  ), // вложенные списки + таблица в таблице
+  ), // nested lists + a table inside a table
   _Fixture(
     'docx/nested_numbered.docx',
     'docx/nested_numbered.expected.md',
-  ), // отступ вложенных пунктов = ширина маркера нумерованного родителя
+  ), // nested item indent = marker width of the numbered parent
   _Fixture('xlsx/simple.xlsx', 'xlsx/simple.expected.md'),
   _Fixture(
     'xlsx/merged_cells.xlsx',
@@ -63,109 +63,110 @@ const _fixtures = [
   _Fixture(
     'xlsx/types_and_gaps.xlsx',
     'xlsx/types_and_gaps.expected.md',
-  ), // даты, булевы, пропуски; пакет от openpyxl с абсолютными Target в rels
-  _Fixture('pptx/simple.pptx', 'pptx/simple.expected.md'), // от python-pptx
+  ), // dates, booleans, gaps; a package from openpyxl with absolute Target in rels
+  _Fixture('pptx/simple.pptx', 'pptx/simple.expected.md'), // from python-pptx
   _Fixture(
     'pptx/no_sppr.pptx',
     'pptx/no_sppr.expected.md',
-  ), // фигуры без <p:spPr>: невалидно для python-pptx, Dart терпит
+  ), // shapes without <p:spPr>: invalid for python-pptx, Dart tolerates it
   _Fixture('epub/simple.epub', 'epub/simple.expected.md'),
   _Fixture('zip/simple.zip', 'zip/simple.expected.md'),
-  _Fixture('zip/nested.zip', 'zip/nested.expected.md'), // zip в zip
+  _Fixture('zip/nested.zip', 'zip/nested.expected.md'), // zip in zip
   _Fixture('ipynb/simple.ipynb', 'ipynb/simple.expected.md'),
-  // Excel 97–2003 и Outlook: Dart-разбор OLE2 (0.9). Эталон simple.xls для
-  // Dart — свой (заголовок — буквы столбцов, как у xlsx); simple.msg —
-  // общий с сайдкаром: вывод повторяет markitdown символ в символ.
+  // Excel 97–2003 and Outlook: Dart OLE2 parsing (0.9). The expected
+  // simple.xls for Dart is its own (header is column letters, like xlsx);
+  // simple.msg is shared with the sidecar: the output matches markitdown
+  // character for character.
   _Fixture('xls/simple.xls', 'xls/simple_dart.expected.md'),
   _Fixture(
     'xls/evil.xls',
     'xls/evil.expected.md',
     expectedWarningContains: 'объединённые ячейки',
-  ), // SST через CONTINUE с разрывом посреди символов, даты, RK, пустой лист
+  ), // SST via CONTINUE split mid-character, dates, RK, an empty sheet
   _Fixture('xls/biff5.xls', 'xls/biff5.expected.md'), // Excel 95, cp1251
   _Fixture('msg/simple.msg', 'msg/simple.expected.md'),
-  _Fixture('msg/ansi.msg', 'msg/ansi.expected.md'), // 001E, cp1251, не мини
+  _Fixture('msg/ansi.msg', 'msg/ansi.expected.md'), // 001E, cp1251, not mini
   _Fixture(
     'msg/html_only.msg',
     'msg/html_only.expected.md',
     expectedWarningContains: 'HTML-версии',
   ),
-  // Ленты (0.9): порт RssConverter markitdown; тела записей — html2md.
+  // Feeds (0.9): a port of markitdown's RssConverter; entry bodies use html2md.
   _Fixture('rss/news.rss', 'rss/news.expected.md'), // CDATA, xml:base
   _Fixture(
     'rss/updates.atom',
     'rss/updates.expected.md',
-  ), // text с отступами, html, xhtml, бинарный content
+  ), // indented text, html, xhtml, binary content
   _Fixture(
     'rss/feed_no_extension',
     'rss/news.expected.md',
     filenameOverride: 'feed_no_extension',
-  ), // корень <rss> узнаётся без расширения
-  // Этап 3 — PDF.
+  ), // the <rss> root is recognized with no extension
+  // Stage 3 — PDF.
   _Fixture('pdf/simple.pdf', 'pdf/simple.expected.md'),
-  // ИЗВЕСТНОЕ ОТСТАВАНИЕ: таблицу PDFium-конвертер не распознаёт, ячейки
-  // строки склеиваются в одну (а строки таблицы — в абзац), тогда как
-  // pdfplumber в сайдкаре отдаёт настоящую Markdown-таблицу. Ожидаемый вывод
-  // фиксирует текущее поведение; при появлении таблиц в PDF — обновить.
+  // KNOWN GAP: the PDFium converter does not recognize tables; row cells
+  // get glued into one (and table rows into a paragraph), whereas
+  // pdfplumber in the sidecar produces a real Markdown table. The expected
+  // output locks in the current behavior; update it if PDF tables appear.
   _Fixture('pdf/table.pdf', 'pdf/table.expected.md'),
   _Fixture(
     'pdf/scanned.pdf',
     'pdf/scanned.expected.md',
     expectedWarningContains: 'выглядят как изображения',
-  ), // страницы 2–3 — картинка без текста, похоже на скан
+  ), // pages 2–3 are an image with no text, looks like a scan
   _Fixture(
     'pdf/blank.pdf',
     'pdf/blank.expected.md',
     expectedWarningContains: 'не найдено текста',
-  ), // страница есть, текста и объектов на ней нет вовсе
-  // Этап 6 — изображения: метаданные без OCR.
+  ), // the page exists, but has no text or objects at all
+  // Stage 6 — images: metadata without OCR.
   _Fixture(
     'image/photo.jpg',
     'image/photo.expected.md',
     expectedWarningContains: 'геометка',
-  ), // EXIF «с камеры»: GPS, UTF-8-кириллица, символы разметки в описании
+  ), // "from a camera" EXIF: GPS, UTF-8 Cyrillic, markup characters in the description
   _Fixture('image/photo.heic', 'image/photo_heic.expected.md'), // sips
-  _Fixture('image/screenshot.png', 'image/screenshot.expected.md'), // без EXIF
-  _Fixture('image/sticker.webp', 'image/sticker.expected.md'), // EXIF в RIFF
-  _Fixture('image/scan.tiff', 'image/scan.expected.md'), // XP*-теги Windows
+  _Fixture('image/screenshot.png', 'image/screenshot.expected.md'), // no EXIF
+  _Fixture('image/sticker.webp', 'image/sticker.expected.md'), // EXIF in RIFF
+  _Fixture('image/scan.tiff', 'image/scan.expected.md'), // Windows XP* tags
   _Fixture('image/animation.gif', 'image/animation.expected.md'),
   _Fixture('image/icon.bmp', 'image/icon.expected.md'),
   _Fixture(
     'image/evil_loop.jpg',
     'image/evil_loop.expected.md',
     expectedWarningContains: 'EXIF повреждены',
-  ), // IFD указывает сам на себя, смещение за пределы блока, 65535 записей
-  // Этап 6 — аудио: метаданные без транскрипции.
+  ), // the IFD points at itself, an offset past the block, 65535 entries
+  // Stage 6 — audio: metadata without transcription.
   _Fixture(
     'audio/song.mp3',
     'audio/song.expected.md',
     expectedWarningContains: 'речь не распознаётся',
-  ), // ID3v2.3 UTF-16, жанр «(17)», COMM iTunNORM, текст песни, Xing VBR
+  ), // ID3v2.3 UTF-16, genre "(17)", COMM iTunNORM, lyrics, Xing VBR
   _Fixture(
     'audio/legacy.mp3',
     'audio/legacy.expected.md',
-  ), // «Latin-1», который на деле Windows-1251, + ID3v1; Motörhead — Latin-1
+  ), // "Latin-1" that is actually Windows-1251, + ID3v1; Motörhead — Latin-1
   _Fixture('audio/voice.ogg', 'audio/voice.expected.md'), // Opus
   _Fixture('audio/music.ogg', 'audio/music.expected.md'), // Vorbis
   _Fixture('audio/track.flac', 'audio/track.expected.md'),
   _Fixture('audio/recording.wav', 'audio/recording.expected.md'), // LIST/INFO
-  _Fixture('audio/memo.m4a', 'audio/memo.expected.md'), // afconvert + теги
+  _Fixture('audio/memo.m4a', 'audio/memo.expected.md'), // afconvert + tags
   _Fixture(
     'audio/clip.mp4',
     'audio/clip.expected.md',
-  ), // синтетика: только moov с видеодорожкой
+  ), // synthetic: only a moov with a video track
 ];
 
 void main() {
-  // `dart test` (как и `make verify`) запускается из корня пакета, поэтому
-  // путь строится от текущей директории, а не от `Platform.script` — у него
-  // под тест-раннером путь указывает на скомпилированный kernel во временной
-  // папке, а не на исходники.
+  // `dart test` (like `make verify`) runs from the package root, so the
+  // path is built from the current directory rather than from
+  // `Platform.script` — under the test runner that points at a compiled
+  // kernel in a temp folder, not at the sources.
   final fixturesDir = p.join(Directory.current.path, 'test', 'fixtures');
   final registry = ConverterRegistry.defaultRegistry();
 
   for (final fixture in _fixtures) {
-    test('фикстура ${fixture.source}', () async {
+    test('fixture ${fixture.source}', () async {
       final sourcePath = p.join(fixturesDir, fixture.source);
       final expectedPath = p.join(fixturesDir, fixture.expected);
       final bytes = Uint8List.fromList(File(sourcePath).readAsBytesSync());
@@ -191,11 +192,11 @@ void main() {
     });
   }
 
-  group('ошибки конвертации', () {
-    test('неподдерживаемый формат — нет совпавшего конвертера', () async {
-      // Ни одна сигнатура не совпадает, и доля управляющих байт достаточно
-      // высока, чтобы не быть принятым за текст (`_looksBinary`) — файл
-      // уходит в FileKind.unknown, как `.sketch` в примере из
+  group('conversion errors', () {
+    test('unsupported format — no matching converter', () async {
+      // No signature matches, and the share of control bytes is high
+      // enough not to be mistaken for text (`_looksBinary`) — the file
+      // goes to FileKind.unknown, like `.sketch` in the example from
       // docs/conversion-pipeline.md#ошибки.
       final bytes = Uint8List.fromList(List.generate(64, (i) => i % 32));
       final info = StreamInfo.fromHead(bytes, filename: 'file.sketch');
@@ -209,9 +210,9 @@ void main() {
       );
     });
 
-    test('битый PDF — распознанный формат, нечитаемые байты', () async {
-      // `%PDF-` узнаётся по магическим байтам, но дальше не PDF вовсе —
-      // PDFium не откроет документ.
+    test('corrupted PDF — recognized format, unreadable bytes', () async {
+      // `%PDF-` is recognized by magic bytes, but what follows isn't PDF
+      // at all — PDFium won't open the document.
       final bytes = Uint8List.fromList('%PDF-1.4\nне PDF дальше'.codeUnits);
       final info = StreamInfo.fromHead(bytes, filename: 'broken.pdf');
 
@@ -223,7 +224,7 @@ void main() {
       expect((failure as CorruptedFileFailure).converterId, 'pdf');
     });
 
-    test('битый файл — распознанный формат, сломанное содержимое', () async {
+    test('corrupted file — recognized format, broken content', () async {
       final bytes = Uint8List.fromList('{not valid json'.codeUnits);
       final info = StreamInfo.fromHead(bytes, filename: 'broken.json');
 
@@ -235,7 +236,7 @@ void main() {
       expect((failure as CorruptedFileFailure).converterId, 'json');
     });
 
-    test('предела на размер файла нет', () async {
+    test('there is no limit on file size', () async {
       final bytes = Uint8List.fromList('hello'.codeUnits);
       final info = StreamInfo.fromHead(
         bytes,
@@ -248,7 +249,7 @@ void main() {
       expect(outcome, isA<ConversionSuccess>());
     });
 
-    test('превышен суммарный распакованный объём архива — хард-фейл', () async {
+    test('total unpacked archive size exceeded — hard fail', () async {
       final bytes = _buildZip({'a.txt': 'A' * 600, 'b.txt': 'B' * 600});
       final info = StreamInfo.fromHead(bytes, filename: 'big.zip');
 
@@ -263,7 +264,7 @@ void main() {
     });
 
     test(
-      'превышен лимит числа файлов в архиве — хард-фейл, не warning',
+      'file count limit in archive exceeded — hard fail, not a warning',
       () async {
         final bytes = _buildZip({'a.txt': 'A', 'b.txt': 'B', 'c.txt': 'C'});
         final info = StreamInfo.fromHead(bytes, filename: 'many.zip');
@@ -283,12 +284,12 @@ void main() {
     );
 
     test(
-      'превышен лимит глубины рекурсии в zip-в-zip — хард-фейл всего архива',
+      'recursion depth limit exceeded in zip-in-zip — hard fail for the whole archive',
       () async {
-        // zip/nested.zip: nested.zip → inner.zip → deep.txt — три уровня
-        // (0, 1, 2). При maxRecursionDepth: 1 третий уровень превышает
-        // предел, и это должно провалить всю конвертацию, а не осесть
-        // warning-ом на вложенном файле.
+        // zip/nested.zip: nested.zip → inner.zip → deep.txt — three levels
+        // (0, 1, 2). With maxRecursionDepth: 1 the third level exceeds the
+        // limit, and that must fail the whole conversion rather than
+        // settle as a warning on the nested file.
         final sourcePath = p.join(fixturesDir, 'zip', 'nested.zip');
         final bytes = Uint8List.fromList(File(sourcePath).readAsBytesSync());
         final info = StreamInfo.fromHead(bytes, filename: 'nested.zip');

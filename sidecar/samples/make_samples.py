@@ -1,36 +1,41 @@
-"""Генератор фикстур, которые нельзя написать руками: .xls, .msg, валидный
-.pptx и .xlsx с типами данных и пропусками, .pdf с таблицей, изображения с
-настоящим EXIF (Pillow) и злой JPEG с петлёй в IFD, аудио с тегами
-(libsndfile через soundfile + mutagen).
+"""Generator for fixtures that can't be written by hand: .xls, .msg, a valid
+.pptx and .xlsx with data types and gaps, a .pdf with a table, images with
+real EXIF (Pillow) and an evil JPEG with a loop in the IFD, audio with tags
+(libsndfile via soundfile + mutagen).
 
-Зачем: .xls и .msg руками не написать, поэтому исходник пары «исходник +
-ожидаемый Markdown» (core/test/fixtures/{xls,msg}/) берётся отсюда; .pptx,
-написанный руками под Dart-парсер, настоящим python-pptx не открывается (нет
-<p:spPr> в фигуре) и живёт как злая фикстура pptx/no_sppr.pptx, а валидный
-pptx/simple.pptx порождается здесь. Образцы собираются скриптом, а не берутся
-«откуда-то», чтобы их происхождение было воспроизводимо и объяснимо.
-Ожидаемый Markdown для xls/simple.xls и msg/simple.msg — вывод сайдкара
-(эталон интеграционного теста), для остальных — вывод Dart-ядра после сверки
+Why: .xls and .msg can't be written by hand, so the source of the "source +
+expected Markdown" pair (core/test/fixtures/{xls,msg}/) comes from here;
+a .pptx handwritten for the Dart parser doesn't open in real python-pptx
+(no <p:spPr> in the shape) and lives on as the evil fixture
+pptx/no_sppr.pptx, while the valid pptx/simple.pptx is generated here.
+Samples are built by a script rather than sourced "from somewhere" so their
+origin is reproducible and explainable. The expected Markdown for
+xls/simple.xls and msg/simple.msg is the sidecar's output (the integration
+test's reference), for the rest it's the Dart core's output after review
 (make compare-sidecar).
 
-Запуск (интерпретатором из собранного сайдкара; xlwt нужен только здесь, в
-сайдкар не ставится — кладётся в отдельный каталог):
+Invocation (with the interpreter from the built sidecar; xlwt is only
+needed here, it isn't installed into the sidecar — it's placed in a
+separate directory):
 
-    python3 -m pip install --target /tmp/xlwt_lib xlwt    # любой Python, только скачать xlwt
+    python3 -m pip install --target /tmp/xlwt_lib xlwt    # any Python, just to download xlwt
     sidecar/dist/<host>/python/bin/python3 -I sidecar/samples/make_samples.py \
         --lib sidecar/dist/<host>/lib --extra-path /tmp/xlwt_lib
 
-Без xlwt можно собрать остальное: `--only pptx xlsx msg pdf image` (тогда
---extra-path не нужен). `audio` требует soundfile и mutagen — их, как xlwt,
-ставить в отдельный каталог и передавать через --extra-path:
+Without xlwt you can still build the rest: `--only pptx xlsx msg pdf image`
+(then --extra-path isn't needed). `audio` requires soundfile and mutagen —
+install them, like xlwt, into a separate directory and pass via
+--extra-path:
 
     python3 -m pip install --target /tmp/audio_lib --python-version 3.12 \
         --only-binary=:all: --no-deps soundfile mutagen
 
-M4A делает системная `afconvert` (только macOS). `image` на macOS заодно делает HEIC системной `sips`
-(Pillow HEIC не пишет); на другой ОС photo.heic просто не пересоздаётся. Результат — файлы в core/test/fixtures/. Это синтетика: .msg собран ниже простым
-писателем CFB, а не Outlook'ом, так что он проверяет путь olefile ->
-OutlookMsgConverter, но не разнообразие настоящих писем.
+M4A is produced by the system `afconvert` (macOS only). `image` on macOS
+also produces HEIC via the system `sips` (Pillow doesn't write HEIC); on
+another OS photo.heic simply isn't regenerated. The result is files under
+core/test/fixtures/. This is synthetic: .msg is assembled below by a plain
+CFB writer, not by Outlook, so it exercises the olefile ->
+OutlookMsgConverter path, but not the variety of real messages.
 """
 
 import argparse
@@ -47,7 +52,7 @@ FREESECT = 0xFFFFFFFF
 NOSTREAM = 0xFFFFFFFF
 
 
-# --- минимальный писатель Compound File Binary (v3, сектор 512, мини 64) -----
+# --- minimal Compound File Binary writer (v3, 512-byte sectors, 64-byte mini) ---
 
 
 def _dir_entry(name, kind, left, right, child, start, size):
@@ -55,24 +60,27 @@ def _dir_entry(name, kind, left, right, child, start, size):
     assert len(raw) + 2 <= 64
     entry = raw + b"\x00" * (64 - len(raw))
     entry += struct.pack("<H", len(raw) + 2)
-    entry += struct.pack("<BB", kind, 1)  # тип, цвет «чёрный» (олефайл не проверяет)
+    entry += struct.pack("<BB", kind, 1)  # type, color "black" (olefile doesn't check)
     entry += struct.pack("<III", left, right, child)
-    entry += b"\x00" * 16 + b"\x00" * 4 + b"\x00" * 16  # CLSID, state, времена
+    entry += b"\x00" * 16 + b"\x00" * 4 + b"\x00" * 16  # CLSID, state, timestamps
     entry += struct.pack("<IQ", start, size)
     assert len(entry) == 128
     return entry
 
 
 def build_cfb(streams, storages):
-    """streams: {имя: bytes}; storages: [имя] (пустые). Всё — прямые дети корня."""
+    """streams: {name: bytes}; storages: [name] (empty). Everything is a
+    direct child of the root."""
     SECTOR, MINI, CUTOFF = 512, 64, 4096
 
-    # Порядок записей в каталоге: по длине имени, затем по имени (требование
-    # спецификации к дереву); дерево делаем вырожденным — цепочка правых братьев.
+    # Order of directory entries: by name length, then by name (a
+    # specification requirement for the tree); we make the tree degenerate —
+    # a chain of right siblings.
     names = sorted(list(streams) + list(storages), key=lambda n: (len(n), n.upper()))
-    index = {n: i + 1 for i, n in enumerate(names)}  # 0 — корень
+    index = {n: i + 1 for i, n in enumerate(names)}  # 0 is the root
 
-    # Мини-поток: маленькие потоки склеиваются по 64 байта, цепочки — в miniFAT.
+    # The mini stream: small streams are glued together in 64-byte chunks,
+    # their chains go into the miniFAT.
     mini_data = bytearray()
     mini_fat = []
     mini_start = {}
@@ -96,7 +104,7 @@ def build_cfb(streams, storages):
     large = {n: streams[n] for n in names if n in streams and len(streams[n]) >= CUTOFF}
     n_large = {n: sectors_for(len(d)) for n, d in large.items()}
 
-    # Раскладка секторов: [FAT][каталог][miniFAT][мини-поток][большие потоки].
+    # Sector layout: [FAT][directory][miniFAT][mini stream][large streams].
     total = 1 + n_dir + n_minifat + n_mini + sum(n_large.values())
     assert total <= 128, "образец должен помещаться в один сектор FAT"
     pos = 1
@@ -141,7 +149,7 @@ def build_cfb(streams, storages):
         else:
             entries.append(_dir_entry(n, 2, NOSTREAM, right, NOSTREAM, mini_start[n], len(streams[n])))
     dir_bytes = b"".join(entries)
-    # Свободные слоты каталога: нули, но sid-ы левого/правого/дочернего — NOSTREAM.
+    # Free directory slots: zeros, but the left/right/child sids are NOSTREAM.
     empty = b"\x00" * 68 + struct.pack("<III", NOSTREAM, NOSTREAM, NOSTREAM) + b"\x00" * 48
     while len(dir_bytes) < n_dir * SECTOR:
         dir_bytes += empty
@@ -151,13 +159,13 @@ def build_cfb(streams, storages):
 
     header = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 16
     header += struct.pack("<HHHHH", 0x3E, 3, 0xFFFE, 9, 6) + b"\x00" * 6
-    header += struct.pack("<I", 0)  # число секторов каталога (для v3 — 0)
-    header += struct.pack("<I", 1)  # число секторов FAT
+    header += struct.pack("<I", 0)  # number of directory sectors (0 for v3)
+    header += struct.pack("<I", 1)  # number of FAT sectors
     header += struct.pack("<I", dir_start)
     header += struct.pack("<I", 0)  # transaction signature
     header += struct.pack("<I", CUTOFF)
     header += struct.pack("<II", minifat_start, n_minifat)
-    header += struct.pack("<II", ENDOFCHAIN, 0)  # DIFAT: нет
+    header += struct.pack("<II", ENDOFCHAIN, 0)  # DIFAT: none
     difat = [0] + [FREESECT] * 108
     header += b"".join(struct.pack("<I", x) for x in difat)
     assert len(header) == SECTOR
@@ -177,8 +185,8 @@ def make_msg(path):
     def u(text):
         return text.encode("utf-16-le")
 
-    # Заголовок свойств верхнего уровня — 32 байта; затем записи по 16 байт.
-    # Одна запись: PR_MESSAGE_CODEPAGE (0x3FFD, PT_LONG) = 1252.
+    # Top-level properties header — 32 bytes; followed by 16-byte entries.
+    # One entry: PR_MESSAGE_CODEPAGE (0x3FFD, PT_LONG) = 1252.
     props = b"\x00" * 32 + struct.pack("<IIII", 0x3FFD0003, 0x6, 1252, 0)
     streams = {
         "__properties_version1.0": props,
@@ -195,9 +203,10 @@ def make_msg(path):
 
 
 def make_msg_ansi(path):
-    """Письмо в старом, не-Unicode формате: строки PT_STRING8 (001E) в
-    кодовой странице письма (PR_MESSAGE_CODEPAGE = 1251), а тело длиннее
-    4096 байт — лежит обычными секторами, а не в мини-потоке."""
+    """A message in the old, non-Unicode format: PT_STRING8 (001E) strings
+    in the message's codepage (PR_MESSAGE_CODEPAGE = 1251), with a body
+    longer than 4096 bytes — stored in regular sectors, not the mini
+    stream."""
     props = b"\x00" * 32 + struct.pack("<IIII", 0x3FFD0003, 0x6, 1251, 0)
     paragraph = "Строка тела письма с кириллицей и пробелами в конце.   \r\n"
     body = "Здравствуйте!\r\n\r\n\r\n\r\n" + paragraph * 90 + "До свидания.\r\n"
@@ -215,8 +224,8 @@ def make_msg_ansi(path):
 
 
 def make_msg_html(path):
-    """Тело только в HTML (PR_HTML, PT_BINARY): markitdown отдаёт пустой
-    раздел, Dart-ядро — HTML, переведённый в Markdown."""
+    """Body in HTML only (PR_HTML, PT_BINARY): markitdown returns an empty
+    section, the Dart core returns the HTML converted to Markdown."""
     props = b"\x00" * 32 + struct.pack("<IIII", 0x3FDE0003, 0x6, 65001, 0)
     html = (
         "<html><body><h1>Новости</h1><p>Первый <b>абзац</b> и "
@@ -234,7 +243,7 @@ def make_msg_html(path):
 
 
 def make_xls(path):
-    import xlwt  # только для генерации; в сайдкар не ставится
+    import xlwt  # generation only; not installed into the sidecar
 
     wb = xlwt.Workbook(encoding="utf-8")
     ws = wb.add_sheet("Данные")
@@ -253,20 +262,22 @@ def make_xls(path):
 
 
 def make_xls_evil(path):
-    """То, на чём ломается рукописный разбор BIFF8: таблица строк SST длиннее
-    одной записи (продолжение в CONTINUE, разрыв посреди символов, и строка
-    то сжатая Latin-1, то UTF-16), даты/время/булевы, числа RK и IEEE,
-    объединённые ячейки, пустой лист, разметка Markdown в тексте."""
+    """What breaks a handwritten BIFF8 parser: an SST string table longer
+    than one record (continuation in CONTINUE, a split mid-character, and a
+    string that's sometimes compressed Latin-1, sometimes UTF-16),
+    dates/times/booleans, RK and IEEE numbers, merged cells, an empty
+    sheet, Markdown markup in the text."""
     import datetime
 
-    import xlwt  # только для генерации; в сайдкар не ставится
+    import xlwt  # generation only; not installed into the sidecar
 
     wb = xlwt.Workbook(encoding="utf-8")
 
     ws = wb.add_sheet("Строки")
     for r in range(120):
-        # Чередуются строки только из Latin-1 (xlwt пишет их сжатыми) и с
-        # кириллицей (UTF-16) — на границе CONTINUE флаг сжатия меняется.
+        # Alternating Latin-1-only strings (xlwt writes them compressed)
+        # and Cyrillic (UTF-16) ones — the compression flag flips at the
+        # CONTINUE boundary.
         latin = "latin %03d " % r + "x" * (40 + r % 17)
         cyrillic = "строка %03d " % r + "я" * (30 + r % 13)
         ws.write(r, 0, latin)
@@ -311,9 +322,10 @@ def make_xls_evil(path):
 
 
 def make_xls_biff5(path):
-    """Excel 95 (BIFF5, поток `Book`): строки однобайтовые в кодовой странице
-    книги (CODEPAGE = 1251), а не UTF-16. xlwt BIFF5 не пишет — записи
-    собраны вручную; xlrd их читает, это и есть проверка образца."""
+    """Excel 95 (BIFF5, the `Book` stream): single-byte strings in the
+    workbook's codepage (CODEPAGE = 1251), not UTF-16. xlwt doesn't write
+    BIFF5 — the records are assembled by hand; xlrd reads them, which is
+    exactly what this sample tests."""
 
     def rec(rid, data=b""):
         return struct.pack("<HH", rid, len(data)) + data
@@ -328,13 +340,13 @@ def make_xls_biff5(path):
     def number(row, col, value):
         return rec(0x0203, struct.pack("<HHHd", row, col, 0x0F, value))
 
-    # 16 XF: xlrd ждёт хотя бы стиль по умолчанию под индексом 15.
+    # 16 XF: xlrd expects at least a default style at index 15.
     xf = rec(0x00E0, struct.pack("<HHHBBBBII", 0, 0, 0xFFF5, 0x20, 0, 0, 0, 0, 0))
     font = rec(0x0031, struct.pack("<HHHHHBBBB", 200, 0, 0x7FFF, 400, 0, 0, 0, 0, 0) + b"\x05Arial")
     sheet_name = "Лист".encode("cp1251")
 
     globals_head = bof(0x0005) + rec(0x0042, struct.pack("<H", 1251)) + font * 5 + xf * 16
-    boundsheet_len = 4 + 4 + 1 + 1 + 1 + len(sheet_name)  # заголовок записи + поля
+    boundsheet_len = 4 + 4 + 1 + 1 + 1 + len(sheet_name)  # record header + fields
     sheet_offset = len(globals_head) + boundsheet_len + 4  # + EOF
     globals_ = globals_head + rec(
         0x0085, struct.pack("<IBBB", sheet_offset, 0, 0, len(sheet_name)) + sheet_name
@@ -350,7 +362,7 @@ def make_xls_biff5(path):
         + rec(0x000A)
     )
     stream = globals_ + sheet
-    stream += b"\x00" * max(0, 4096 - len(stream))  # не в мини-поток: так пишет Excel
+    stream += b"\x00" * max(0, 4096 - len(stream))  # not the mini stream: this is how Excel writes it
     with open(path, "wb") as fh:
         fh.write(build_cfb({"Book": stream}, []))
 
@@ -370,7 +382,7 @@ def make_pptx(path):
 
 
 def make_xlsx_types(path):
-    """Типы данных и пропуски: то, на чём расходятся pandas и наш разбор."""
+    """Data types and gaps: where pandas and our parsing diverge."""
     import datetime
 
     from openpyxl import Workbook
@@ -392,9 +404,9 @@ def make_xlsx_types(path):
 
 
 def make_pdf_table(path):
-    """PDF с таблицей: линии сетки и текст по колонкам (Helvetica, без шрифтов
-    в файле). Нужен, чтобы отставание Dart-ядра на таблицах PDF было
-    зафиксировано фикстурой, а не словами."""
+    """A PDF with a table: grid lines and text laid out in columns
+    (Helvetica, no fonts embedded in the file). Needed so that the Dart
+    core's gap on PDF tables is pinned down by a fixture, not just words."""
     rows = [
         ["City", "Population", "Country"],
         ["Berlin", "3700000", "Germany"],
@@ -439,19 +451,20 @@ def make_pdf_table(path):
         fh.write(out)
 
 
-# --- изображения (Этап 6, EXIF) ---------------------------------------------
+# --- images (Stage 6, EXIF) -------------------------------------------------
 
 
 def _photo_exif():
-    """EXIF «как с камеры»: всё, что читает ImageConverter, включая GPS,
-    кириллицу в UTF-8 (так пишут телефоны и Windows) и символы разметки."""
+    """EXIF "as from a camera": everything ImageConverter reads, including
+    GPS, UTF-8 Cyrillic (how phones and Windows write it), and markup
+    characters."""
     from PIL import Image
     from PIL.TiffImagePlugin import IFDRational
 
     exif = Image.Exif()
     exif[0x010F] = "Canon"  # Make
     exif[0x0110] = "Canon EOS 5D Mark IV"  # Model
-    exif[0x0112] = 6  # Orientation: повернуть на 90° по часовой
+    exif[0x0112] = 6  # Orientation: rotate 90° clockwise
     exif[0x0131] = "Firmware 1.2.3"  # Software
     exif[0x010E] = "Закат над *рекой* | вид с моста".encode("utf-8")  # ImageDescription
     exif[0x013B] = "Иван Петров".encode("utf-8")  # Artist
@@ -481,7 +494,7 @@ def make_photo_jpeg(path):
 
 
 def make_photo_heic(path):
-    """HEIC с тем же EXIF — из photo.jpg системной sips (только macOS)."""
+    """HEIC with the same EXIF — produced from photo.jpg by the system sips (macOS only)."""
     import subprocess
 
     source = os.path.join(FIXTURES, "image", "photo.jpg")
@@ -492,14 +505,14 @@ def make_photo_heic(path):
 
 
 def make_screenshot_png(path):
-    """Скриншот: EXIF нет вовсе — самый частый случай."""
+    """A screenshot: no EXIF at all — the most common case."""
     from PIL import Image
 
     Image.new("RGB", (120, 80), (255, 255, 255)).save(path)
 
 
 def make_sticker_webp(path):
-    """WebP с минимальным EXIF (дата, программа) — чанк EXIF в RIFF и VP8X."""
+    """WebP with minimal EXIF (date, software) — an EXIF chunk inside RIFF and VP8X."""
     from PIL import Image
 
     exif = Image.Exif()
@@ -509,8 +522,9 @@ def make_sticker_webp(path):
 
 
 def make_scan_tiff(path):
-    """TIFF: размер берётся из основного IFD; подписи от Windows в XP*-тегах
-    (UTF-16LE) — так их пишут «Свойства» → «Подробно» в Проводнике."""
+    """TIFF: the size comes from the main IFD; Windows captions live in the
+    XP* tags (UTF-16LE) — that's how Explorer's "Properties" -> "Details"
+    writes them."""
     from PIL import Image
 
     exif = Image.Exif()
@@ -533,26 +547,27 @@ def make_icon_bmp(path):
 
 
 def _evil_tiff():
-    """TIFF-блок EXIF с ловушками: ExifIFD и «следующий IFD» указывают на сам
-    IFD0 (петля), у Model смещение далеко за пределы блока, у GPS-IFD
-    65535 записей, которых нет. Make при этом валиден — его и надо отдать."""
+    """A TIFF EXIF block full of traps: ExifIFD and the "next IFD" both
+    point back at IFD0 itself (a loop), Model's offset is far outside the
+    block, and the GPS IFD claims 65535 entries that don't exist. Make
+    itself stays valid — and that's what should be returned."""
     entry_count = 4
     make_at = 8 + 2 + 12 * entry_count + 4
     gps_at = make_at + 6
     out = bytearray(b"II*\0" + struct.pack("<I", 8))
     out += struct.pack("<H", entry_count)
     out += struct.pack("<HHII", 0x010F, 2, 6, make_at)  # Make
-    out += struct.pack("<HHII", 0x0110, 2, 40, 0x7FFF0000)  # Model — за пределами
+    out += struct.pack("<HHII", 0x0110, 2, 40, 0x7FFF0000)  # Model — out of bounds
     out += struct.pack("<HHII", 0x8769, 4, 1, 8)  # ExifIFD -> IFD0
-    out += struct.pack("<HHII", 0x8825, 4, 1, gps_at)  # GPS IFD -> битый
-    out += struct.pack("<I", 8)  # следующий IFD -> снова IFD0
+    out += struct.pack("<HHII", 0x8825, 4, 1, gps_at)  # GPS IFD -> broken
+    out += struct.pack("<I", 8)  # next IFD -> back to IFD0
     out += b"Nokia\0"
     out += struct.pack("<H", 0xFFFF)
     return bytes(out)
 
 
 def make_evil_jpeg(path):
-    """Настоящий JPEG (Pillow), в который вклеен APP1 с [_evil_tiff]."""
+    """A real JPEG (Pillow) with an APP1 containing [_evil_tiff] spliced in."""
     import io
 
     from PIL import Image
@@ -566,7 +581,7 @@ def make_evil_jpeg(path):
         fh.write(jpeg[:2] + app1 + jpeg[2:])
 
 
-# --- аудио (Этап 6, метаданные) ---------------------------------------------
+# --- audio (Stage 6, metadata) ----------------------------------------------
 
 
 def _tone(seconds, rate, channels=1):
@@ -578,8 +593,8 @@ def _tone(seconds, rate, channels=1):
 
 
 def make_song_mp3(path):
-    """MP3 с ID3v2.3 в UTF-16 (так пишет Windows и большинство тегеров):
-    кириллица, жанр номером «(17)», трек «3/12», комментарий, текст песни."""
+    """MP3 with ID3v2.3 in UTF-16 (how Windows and most taggers write it):
+    Cyrillic, a genre by number "(17)", a track "3/12", a comment, lyrics."""
     import soundfile as sf
     from mutagen.id3 import COMM, ID3, TALB, TCON, TDRC, TIT2, TPE1, TRCK, USLT
 
@@ -599,14 +614,15 @@ def make_song_mp3(path):
 
 
 def make_legacy_mp3(path):
-    """MP3 из «старой» коллекции: ID3v2.3 с кодировкой 0 (объявлена
-    ISO-8859-1), а байты — Windows-1251; и ID3v1 тоже в Windows-1251.
-    Плюс название с латиницей и диакритикой — оно должно остаться Latin-1."""
+    """MP3 from an "old" collection: ID3v2.3 with encoding 0 (declared as
+    ISO-8859-1), but the bytes are Windows-1251; ID3v1 is in Windows-1251
+    too. Plus a title with Latin letters and diacritics — it should stay
+    Latin-1."""
     import soundfile as sf
     from mutagen.id3 import ID3, TALB, TIT2, TPE1
 
     def cp1251(text):
-        # mutagen кодирует encoding=0 как latin-1 — подсовываем байты 1251
+        # mutagen encodes encoding=0 as latin-1 — we feed it 1251 bytes
         return text.encode("cp1251").decode("latin-1")
 
     sf.write(path, _tone(1.5, 22050), 22050, format="MP3")
@@ -618,7 +634,7 @@ def make_legacy_mp3(path):
 
 
 def make_voice_opus(path):
-    """Голосовое сообщение: Ogg Opus, моно, 48 кГц, как у мессенджеров."""
+    """A voice message: Ogg Opus, mono, 48 kHz, like messaging apps use."""
     import soundfile as sf
     from mutagen.oggopus import OggOpus
 
@@ -643,8 +659,8 @@ def make_music_vorbis(path):
 
 
 def make_track_flac(path):
-    """FLAC: STREAMINFO (точная длительность) + Vorbis comment с
-    TRACKNUMBER/TRACKTOTAL и текстом песни."""
+    """FLAC: STREAMINFO (exact duration) + a Vorbis comment with
+    TRACKNUMBER/TRACKTOTAL and lyrics."""
     import soundfile as sf
     from mutagen.flac import FLAC
 
@@ -661,7 +677,7 @@ def make_track_flac(path):
 
 
 def make_recording_wav(path):
-    """Диктофон: WAV PCM 16 бит, моно, 16 кГц, с LIST/INFO."""
+    """A voice recorder: WAV PCM 16-bit, mono, 16 kHz, with LIST/INFO."""
     import soundfile as sf
 
     with sf.SoundFile(path, "w", 16000, 1, subtype="PCM_16", format="WAV") as f:
@@ -673,7 +689,7 @@ def make_recording_wav(path):
 
 
 def make_memo_m4a(path):
-    """M4A (AAC) — так пишут диктофоны iPhone и Android; теги iTunes."""
+    """M4A (AAC) — how iPhone and Android voice-recorder apps write it; iTunes tags."""
     import subprocess
     import tempfile
 
@@ -694,9 +710,10 @@ def make_memo_m4a(path):
 
 
 def make_clip_mp4(path):
-    """Синтетическое MP4-видео: только структура moov (mvhd, trak с tkhd и
-    hdlr «vide»), без кадров. Кодировщика видео под рукой нет, а проверяется
-    именно разбор коробок — как .msg выше, это синтетика, а не съёмка."""
+    """A synthetic MP4 video: just the moov structure (mvhd, trak with tkhd
+    and an hdlr of "vide"), with no frames. There's no video encoder at
+    hand, and what's being tested is box parsing anyway — like .msg above,
+    this is synthetic, not a real recording."""
 
     def box(kind, payload):
         return struct.pack(">I", 8 + len(payload)) + kind + payload
@@ -713,7 +730,7 @@ def make_clip_mp4(path):
         fh.write(ftyp + moov + box(b"mdat", b""))
 
 
-# --- OCR (Этап 6): картинки и скан с настоящим текстом ---------------------
+# --- OCR (Stage 6): images and a scan with real text -----------------------
 
 OCR_LINES = [
     "Счёт № 42 от 14 июля 2024 года",
@@ -723,9 +740,10 @@ OCR_LINES = [
 
 
 def _text_image(width=1400, height=420):
-    """Чёрный текст на белом, 40 pt — как скриншот или хороший скан. Шрифт —
-    Arial из macOS (на Linux — DejaVu Sans); фикстура генерируется один раз и
-    коммитится, так что от шрифтов машины тест не зависит."""
+    """Black text on white, 40 pt — like a screenshot or a good scan. The
+    font is macOS's Arial (DejaVu Sans on Linux); the fixture is generated
+    once and committed, so the test doesn't depend on the machine's
+    fonts."""
     from PIL import Image, ImageDraw, ImageFont
 
     for font_path in ("/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -745,8 +763,8 @@ def make_ocr_png(path):
 
 
 def _transparent_text_image():
-    """Текст на прозрачном фоне — как стикер или анимация: белое стало
-    прозрачным, буквы непрозрачные чёрные."""
+    """Text on a transparent background — like a sticker or animation: white
+    became transparent, the letters stay opaque black."""
     gray = _text_image()
     rgba = gray.convert("RGBA")
     rgba.putalpha(gray.point(lambda v: 255 - v))
@@ -754,8 +772,9 @@ def _transparent_text_image():
 
 
 def make_ocr_gif(path):
-    """GIF с прозрачным фоном: Leptonica наших сборок GIF не читает, кадр
-    декодирует Dart (package:image) и кладёт на белый фон."""
+    """A GIF with a transparent background: the Leptonica in our builds
+    doesn't read GIF, Dart (package:image) decodes the frame and places it
+    on a white background."""
     _transparent_text_image().save(path, transparency=0, optimize=False)
 
 
@@ -768,9 +787,10 @@ def make_ocr_tiff(path):
 
 
 def make_ocr_rotated_jpeg(path):
-    """Тот же текст, но пиксели лежат «боком» (повёрнуты на 90° против
-    часовой), а EXIF Orientation = 6 велит показать их повёрнутыми по
-    часовой — так телефон сохраняет снимок документа, сделанный вертикально."""
+    """The same text, but the pixels lie "sideways" (rotated 90°
+    counter-clockwise), while EXIF Orientation = 6 says to display them
+    rotated clockwise — this is how a phone saves a photo of a document
+    shot in portrait orientation."""
     from PIL import Image
 
     img = _text_image().rotate(90, expand=True)
@@ -780,7 +800,7 @@ def make_ocr_rotated_jpeg(path):
 
 
 def make_ocr_scan_pdf(path):
-    """PDF из одной картинки — без текстового слоя, как у сканера."""
+    """A PDF made of a single image — no text layer, like a scanner's output."""
     _text_image(width=1654, height=2339).convert("RGB").save(path, resolution=200)
 
 

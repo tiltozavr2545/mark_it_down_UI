@@ -1,7 +1,7 @@
 /*
- * Склейка с whisper.cpp и ggml: выбор CPU-бэкенда, модель, распознавание
- * кусками по мере декодирования. Декодирование звука — mdw_decode.c и
- * mdw_platform_*.
+ * Glue with whisper.cpp and ggml: CPU backend selection, the model,
+ * transcription in chunks as decoding proceeds. Audio decoding lives in
+ * mdw_decode.c and mdw_platform_*.
  */
 #include "mdw.h"
 #include "mdw_internal.h"
@@ -16,9 +16,9 @@
 
 const char *mdw_version(void) { return whisper_version(); }
 
-/* whisper.cpp и ggml пишут в stderr процесса приложения всё подряд —
- * загрузку модели, тайминги, системную информацию. Пользователю это не
- * показывается, а консоль Windows-сборки засоряет. */
+/* whisper.cpp and ggml write everything to the app process's stderr —
+ * model loading, timings, system info. None of this is shown to the user,
+ * and it clutters the console of a Windows build. */
 static void mdw_quiet_log(enum ggml_log_level level, const char *text,
                           void *user_data) {
   (void)level;
@@ -28,10 +28,10 @@ static void mdw_quiet_log(enum ggml_log_level level, const char *text,
 
 static int mdw_initialized = 0;
 
-/* Варианты CPU-бэкенда для Android от самого способного к базовому (имена —
- * ggml_add_cpu_backend_variant в ggml/src/CMakeLists.txt). Загрузчик ggml
- * отказывается от варианта, который процессор не тянет
- * (ggml_backend_score() == 0), поэтому первый загрузившийся — лучший. */
+/* CPU backend variants for Android, from the most capable to the baseline
+ * (names from ggml_add_cpu_backend_variant in ggml/src/CMakeLists.txt). The
+ * ggml loader rejects a variant the processor can't handle
+ * (ggml_backend_score() == 0), so the first one that loads is the best. */
 static const char *const mdw_android_variants[] = {
     "libggml-cpu-android_armv9.2_2.so", "libggml-cpu-android_armv9.2_1.so",
     "libggml-cpu-android_armv9.0_1.so", "libggml-cpu-android_armv8.6_1.so",
@@ -45,13 +45,14 @@ int mdw_init(const char *dir) {
     whisper_log_set(mdw_quiet_log, NULL);
     ggml_log_set(mdw_quiet_log, NULL);
     if (dir != NULL && dir[0] != '\0') {
-      /* Перебирает ggml-cpu-*.dll / libggml-cpu-*.so в каталоге и берёт
-       * вариант с наибольшим ggml_backend_score(). Путь — UTF-8 (внутри
-       * fs::u8path), кириллица в пути на Windows не мешает. */
+      /* Iterates ggml-cpu-*.dll / libggml-cpu-*.so in the directory and
+       * picks the variant with the highest ggml_backend_score(). The path
+       * is UTF-8 (inside fs::u8path); Cyrillic in the path on Windows is
+       * not a problem. */
       ggml_backend_load_all_from_path(dir);
     } else {
-      /* Android: .so лежат в APK несжатыми и открываются по имени, каталога
-       * для перебора на диске нет. */
+      /* Android: the .so files sit uncompressed inside the APK and are
+       * opened by name — there's no directory on disk to enumerate. */
       size_t count = sizeof(mdw_android_variants) / sizeof(*mdw_android_variants);
       for (size_t i = 0; i < count; i++) {
         if (ggml_backend_load(mdw_android_variants[i]) != NULL) break;
@@ -67,15 +68,15 @@ typedef struct mdw_segment {
   char *text;
 } mdw_segment;
 
-/* Сеанс: модель (грузится при первом куске) и накопленный по кускам
- * результат последнего распознавания. */
+/* A session: the model (loaded on the first chunk) and the result of the
+ * last transcription, accumulated across chunks. */
 typedef struct mdw_session {
   char *model_path;
   struct whisper_context *ctx;
   mdw_segment *segments;
   int count;
   int capacity;
-  int64_t processed; /* отсчётов прошло через распознавание */
+  int64_t processed; /* samples that went through transcription */
   char language[16];
 } mdw_session;
 
@@ -118,8 +119,9 @@ static int mdw_session_load(mdw_session *session) {
   if (session->ctx != NULL) return MDW_OK;
   struct whisper_context_params cparams = whisper_context_default_params();
   cparams.use_gpu = false;
-  /* whisper.cpp сам переводит путь из UTF-8 в UTF-16 на MSVC — модель
-   * открывается и из C:\Users\<кириллица>\…, в отличие от Tesseract. */
+  /* whisper.cpp itself converts the path from UTF-8 to UTF-16 on MSVC —
+   * the model opens fine even from C:\Users\<cyrillic>\…, unlike
+   * Tesseract. */
   session->ctx = whisper_init_from_file_with_params(session->model_path, cparams);
   return session->ctx != NULL ? MDW_OK : MDW_ERR_MODEL;
 }
@@ -140,24 +142,25 @@ static int mdw_session_add(mdw_session *session, int64_t start_ms,
   return MDW_OK;
 }
 
-/* Один вызов mdw_transcribe_*: параметры и состояние между кусками. */
+/* One call to mdw_transcribe_*: parameters and state carried between
+ * chunks. */
 typedef struct mdw_job {
   mdw_session *session;
-  const char *language; /* запрошенный: код или "auto" */
+  const char *language; /* requested: a code, or "auto" */
   const char *vad_model_path;
   int threads;
   mdw_control *control;
-  int64_t expected;    /* ожидаемая длина в отсчётах; 0 — неизвестна */
-  int64_t chunk_start; /* смещение текущего куска в отсчётах */
+  int64_t expected;    /* expected length in samples; 0 — unknown */
+  int64_t chunk_start; /* offset of the current chunk, in samples */
   int64_t chunk_length;
-  /* whisper прервался по флагу. Сам флаг этого не говорит: «Остановить»,
-   * нажатая, когда последнее окно уже распознано, не делает полную
-   * расшифровку неполной. */
+  /* whisper was interrupted by the flag. The flag alone doesn't say that:
+   * "Stop" pressed after the last window is already transcribed doesn't
+   * make a complete transcript incomplete. */
   int aborted;
 } mdw_job;
 
-/* Прогресс куска → прогресс файла. До 99: ожидаемая длина из метаданных
- * бывает неточной, а 100 — только когда всё готово. */
+/* Chunk progress → file progress. Capped at 99: the expected length from
+ * metadata can be inexact, and 100 only once everything is done. */
 static void mdw_on_progress(struct whisper_context *ctx,
                             struct whisper_state *state, int progress,
                             void *user_data) {
@@ -170,8 +173,8 @@ static void mdw_on_progress(struct whisper_context *ctx,
   job->control->progress = (int32_t)(percent < 99 ? percent : 99);
 }
 
-/* Проверяется перед каждым 30-секундным окном (и перед определением
- * языка): дольше одного окна отмена не ждёт. */
+/* Checked before every 30-second window (and before language detection):
+ * cancellation never waits longer than one window. */
 static bool mdw_on_encoder_begin(struct whisper_context *ctx,
                                  struct whisper_state *state, void *user_data) {
   (void)ctx;
@@ -182,7 +185,8 @@ static bool mdw_on_encoder_begin(struct whisper_context *ctx,
   return false;
 }
 
-/* А это — внутри вычисления графа ggml: прерывает и само окно. */
+/* And this one is inside the ggml graph computation itself: it interrupts
+ * the window in progress too. */
 static bool mdw_on_abort(void *user_data) {
   mdw_job *job = (mdw_job *)user_data;
   if (job->control->cancel == 0) return false;
@@ -190,8 +194,8 @@ static bool mdw_on_abort(void *user_data) {
   return true;
 }
 
-/* Кусок звука из приёмника (mdw_sink) → сегменты сеанса со сдвигом на
- * начало куска. */
+/* A chunk of audio from the sink (mdw_sink) → session segments, offset to
+ * the start of the chunk. */
 static int mdw_on_chunk(void *user, const float *samples, int64_t n) {
   mdw_job *job = (mdw_job *)user;
   mdw_session *session = job->session;
@@ -203,20 +207,23 @@ static int mdw_on_chunk(void *user, const float *samples, int64_t n) {
     job->aborted = 1;
     return MDW_ERR_CANCELLED;
   }
-  /* Щелчок, а не речь: whisper.cpp на звуке короче ~0,1 с отвечает
-   * ошибкой. Короче полсекунды бывает только весь файл или его хвост. */
+  /* A click, not speech: whisper.cpp errors out on audio shorter than
+   * ~0.1 s. Shorter than half a second can only happen for the whole file
+   * or its tail. */
   if (n < MDW_SAMPLE_RATE / 2) return MDW_OK;
   int status = mdw_session_load(session);
   if (status != MDW_OK) return status;
 
-  /* Жадный поиск, а не beam search (5 лучей у whisper-cli): вдвое быстрее,
-   * а на CPU телефона это разница между «минуты» и «десятки минут». При
-   * сомнительном результате whisper сам повторяет окно с температурой. */
+  /* Greedy search, not beam search (whisper-cli uses 5 beams): twice as
+   * fast, and on a phone's CPU that's the difference between "minutes" and
+   * "tens of minutes". On a dubious result whisper retries the window with
+   * temperature on its own. */
   struct whisper_full_params params =
       whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
   params.n_threads = job->threads > 0 ? job->threads : 1;
-  /* Один язык на файл, как у Whisper на одном вызове: определился по
-   * первому куску с речью — дальше задан, а не угадывается заново. */
+  /* One language per file, same as Whisper on a single call: once
+   * detected from the first chunk with speech, it's fixed afterwards
+   * rather than guessed again. */
   params.language =
       session->language[0] != '\0' ? session->language : job->language;
   params.detect_language = false;
@@ -225,7 +232,7 @@ static int mdw_on_chunk(void *user, const float *samples, int64_t n) {
   params.print_progress = false;
   params.print_realtime = false;
   params.print_timestamps = false;
-  /* Не выдумывать «[музыка]», «(смеётся)» и ноты — только речь. */
+  /* Don't invent "[music]", "(laughs)", and musical notes — speech only. */
   params.suppress_nst = true;
   if (job->vad_model_path != NULL && job->vad_model_path[0] != '\0') {
     params.vad = true;
@@ -241,11 +248,13 @@ static int mdw_on_chunk(void *user, const float *samples, int64_t n) {
     params.abort_callback_user_data = job;
   }
 
-  /* Кусок — 10 минут с хвостом до 15 секунд, в int помещается. */
+  /* A chunk is 10 minutes plus up to a 15-second tail, so it fits in an
+   * int. */
   int result = whisper_full(session->ctx, params, samples, (int)n);
 
-  /* Распознанное до остановки — тоже результат. Время whisper — в сотых
-   * долях секунды от начала куска. */
+  /* Whatever was transcribed before stopping still counts as a result.
+   * whisper's time is in hundredths of a second from the start of the
+   * chunk. */
   int64_t offset_ms = job->chunk_start * 1000 / MDW_SAMPLE_RATE;
   int segments = whisper_full_n_segments(session->ctx);
   for (int i = 0; i < segments; i++) {
@@ -255,8 +264,9 @@ static int mdw_on_chunk(void *user, const float *samples, int64_t n) {
         whisper_full_get_segment_text(session->ctx, i));
     if (status != MDW_OK) return status;
   }
-  /* Без сегментов язык не определялся: whisper отдаёт свой «по умолчанию»
-   * — английский, и музыка без слов стала бы «английской». */
+  /* With no segments, the language was never detected: whisper falls back
+   * to its own "default" — English, which would make wordless music
+   * "English". */
   if (session->language[0] == '\0' && segments > 0) {
     int lang_id = whisper_full_lang_id(session->ctx);
     const char *lang = lang_id >= 0 ? whisper_lang_str(lang_id) : NULL;
@@ -270,8 +280,8 @@ static int mdw_on_chunk(void *user, const float *samples, int64_t n) {
   return result == 0 ? MDW_OK : MDW_ERR_TRANSCRIBE;
 }
 
-/* Общее для памяти и файла: data != NULL — переносимые декодеры, иначе
- * декодер платформы по path. */
+/* Shared between memory and file: data != NULL means the portable
+ * decoders, otherwise the platform decoder via path. */
 static int mdw_transcribe_from(void *handle, const uint8_t *data, int64_t size,
                                const char *path, int64_t expected_samples,
                                const char *language, const char *vad_model_path,
@@ -279,7 +289,8 @@ static int mdw_transcribe_from(void *handle, const uint8_t *data, int64_t size,
   mdw_session *session = (mdw_session *)handle;
   mdw_session_reset(session);
   if (control != NULL) control->progress = 0;
-  /* Остановленное до старта не декодируем и не грузим модель вовсе. */
+  /* If it was stopped before starting, don't decode or load the model at
+   * all. */
   if (control != NULL && control->cancel != 0) return MDW_ERR_CANCELLED;
 
   mdw_job job = {session,          language, vad_model_path, threads, control,
@@ -292,9 +303,10 @@ static int mdw_transcribe_from(void *handle, const uint8_t *data, int64_t size,
   int stopped = mdw_sink_status(sink);
   int64_t total = mdw_sink_count(sink);
   if (stopped == MDW_OK) {
-    /* Ни одного отсчёта — распознавание не начиналось, и вызывающий может
-     * попробовать другой декодер. Сбой посреди потока — распознаём, что
-     * успели, как плеер играет битый файл до места поломки. */
+    /* Not a single sample — transcription never started, and the caller
+     * may try a different decoder. A failure mid-stream — transcribe
+     * whatever was decoded, the same way a player plays a corrupt file up
+     * to the point where it breaks. */
     if (total == 0) {
       mdw_sink_free(sink);
       return status != MDW_OK ? status : MDW_ERR_NO_AUDIO;

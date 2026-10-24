@@ -9,20 +9,20 @@ import 'package:path_provider/path_provider.dart';
 
 import 'bundled_assets.dart';
 
-/// Опись моделей, которую `whisper/fetch.sh` кладёт рядом с ними в
-/// `assets/whisper/`: Whisper small и Silero VAD — имя, размер, sha256.
+/// The model manifest that `whisper/fetch.sh` places next to them in
+/// `assets/whisper/`: Whisper small and Silero VAD — name, size, sha256.
 const _manifest = 'assets/whisper/models.json';
 
 Future<TranscriptionSettings?>? _settings;
 
-/// Где лежат модели распознавания речи — один раз за запуск, на главном
-/// изоляте (ассеты и каталоги приложения из изолята конвертации
-/// недоступны). `null` — распознавания не будет: конвертер отдаст
-/// метаданные и напишет, что оно недоступно.
+/// Where the speech-recognition models live — resolved once per run, on
+/// the main isolate (assets and app directories aren't available from the
+/// conversion isolate). `null` means no recognition will happen: the
+/// converter returns metadata and notes that it's unavailable.
 ///
-/// Зовётся только для аудио, а не на старте, как OCR: на Android первый
-/// вызов после установки копирует 265 МБ модели из APK на диск — секунды,
-/// которые не нужны тому, кто конвертирует PDF.
+/// Called only for audio, not on startup like OCR: on Android the first
+/// call after install copies a 265 MB model from the APK to disk — seconds
+/// that someone converting a PDF doesn't need to spend.
 Future<TranscriptionSettings?> transcriptionSettings() =>
     _settings ??= _prepare();
 
@@ -36,8 +36,8 @@ class _Model {
       size = json['size'] as int,
       sha256 = json['sha256'] as String;
 
-  /// Имя копии на диске Android: другая версия модели — другое имя, даже
-  /// если длина та же.
+  /// Name of the on-disk copy on Android: a different model version gets a
+  /// different name, even if the length is the same.
   String get diskName => '${sha256.substring(0, 12)}-$file';
 }
 
@@ -47,7 +47,7 @@ Future<TranscriptionSettings?> _prepare() async {
     try {
       manifest = jsonDecode(await rootBundle.loadString(_manifest));
     } on FlutterError {
-      return null; // сборка без моделей (whisper/fetch.sh не запускали)
+      return null; // build without models (whisper/fetch.sh wasn't run)
     }
     final model = _Model(manifest['model'] as Map<String, dynamic>);
     final vad = _Model(manifest['vad'] as Map<String, dynamic>);
@@ -62,12 +62,12 @@ Future<TranscriptionSettings?> _prepare() async {
       tempDir: temp.path,
     );
   } on Object {
-    _settings = null; // не кэшируем сбой: например, кончилось место на диске
+    _settings = null; // don't cache a failure: e.g. disk ran out of space
     return null;
   }
 }
 
-/// Windows (и Linux): модели читаются на месте, рядом с `.exe`.
+/// Windows (and Linux): models are read in place, next to the `.exe`.
 (String?, String?) _desktopAssets(_Model model, _Model vad) {
   final dir = desktopAssetDir('whisper');
   String? path(_Model m) {
@@ -78,13 +78,15 @@ Future<TranscriptionSettings?> _prepare() async {
   return (path(model), path(vad));
 }
 
-/// Android: whisper.cpp читает модель с диска — копируем из APK один раз
-/// (опись говорит, совпадает ли уже лежащая копия, без чтения модели в
-/// память); после обновления модели — заново, старую удаляем.
+/// Android: whisper.cpp reads the model from disk — we copy it from the APK
+/// once (the manifest tells us whether the copy already on disk matches,
+/// without reading the model into memory); after a model update — again,
+/// deleting the old one.
 ///
-/// Цена: модель лежит дважды — в APK и на диске (≈530 МБ вместе), а при
-/// копировании `rootBundle.load` читает её в память целиком. Почему так, а
-/// не чтение прямо из APK, — `docs/format-coverage.md#решения-транскрипции-08`.
+/// Cost: the model sits twice — in the APK and on disk (~530 MB combined),
+/// and while copying, `rootBundle.load` reads it into memory whole. Why this
+/// instead of reading straight from the APK —
+/// `docs/format-coverage.md#решения-транскрипции-08`.
 Future<(String?, String?)> _copyAssetsToDisk(_Model model, _Model vad) async {
   final support = await getApplicationSupportDirectory();
   final dir = Directory(p.join(support.path, 'whisper'));

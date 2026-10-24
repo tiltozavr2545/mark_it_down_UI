@@ -1,4 +1,4 @@
-/// Человекочитаемый размер файла, как в «Готово, когда» из плана: `184 КБ`.
+/// Human-readable file size, as in "Done when" from the plan: `184 КБ`.
 String formatSize(int bytes) {
   const kb = 1024;
   const mb = kb * 1024;

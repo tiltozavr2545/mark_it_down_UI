@@ -1,11 +1,11 @@
-/// Единая сборка Markdown-примитивов, которые реально нужны конвертерам.
-/// Экранирование и построение таблиц живёт здесь и только здесь — см.
-/// `docs/conversion-pipeline.md#как-markdown-собирается` и правило в
-/// `AGENTS.md` про то, почему это не должно разойтись по конвертерам.
+/// A single collection of the Markdown primitives converters actually
+/// need. Escaping and table building live here, and only here — see
+/// `docs/conversion-pipeline.md#как-markdown-собирается` and the rule in
+/// `AGENTS.md` about why this must not spread across converters.
 library;
 
-/// Экранирует символы, которые в Markdown значат разметку, а не себя:
-/// `\`, `*`, `_`, `` ` ``, `#`, `|`, `[`, `]`.
+/// Escapes characters that mean markup rather than themselves in
+/// Markdown: `\`, `*`, `_`, `` ` ``, `#`, `|`, `[`, `]`.
 String escapeInline(String text) {
   final buffer = StringBuffer();
   for (final rune in text.runes) {
@@ -18,12 +18,12 @@ String escapeInline(String text) {
 
 const _escaped = {'\\', '*', '_', '`', '#', '|', '[', ']'};
 
-/// Markdown-таблица из заголовка и строк. Ячейки экранируются через
-/// [escapeInline], переносы строк внутри ячейки заменяются на `<br>` —
-/// Markdown-таблица не умеет многострочные ячейки иначе. Строки короче
-/// заголовка дополняются пустыми ячейками, длиннее — лишние хвостовые ячейки
-/// склеиваются в последнюю: таблица должна остаться прямоугольной, а не
-/// кидать исключение на «рваных» данных.
+/// A Markdown table from a header and rows. Cells are escaped via
+/// [escapeInline]; line breaks inside a cell are replaced with `<br>` —
+/// a Markdown table has no other way to handle multi-line cells. Rows
+/// shorter than the header are padded with empty cells; rows longer than
+/// it have their extra trailing cells merged into the last one: the
+/// table must stay rectangular rather than throw on "jagged" data.
 String table(List<String> headers, List<List<String>> rows) {
   if (headers.isEmpty) return '';
 
@@ -50,27 +50,27 @@ String _cell(String value) => escapeInline(value.replaceAll('\n', '<br>'));
 
 String _tableRow(List<String> cells) => '| ${cells.join(' | ')} |';
 
-/// Заголовок уровня [level] (1–6).
+/// A heading at [level] (1-6).
 String heading(int level, String text) => '${'#' * level} $text';
 
-/// Полужирный текст. Экранирование — через [escapeInline], как у любого
-/// инлайн-текста, прежде чем обернуть его в разметку.
+/// Bold text. Escaped via [escapeInline], like any inline text, before
+/// being wrapped in markup.
 String bold(String text) => '**${escapeInline(text)}**';
 
-/// Курсив — см. [bold].
+/// Italic — see [bold].
 String italic(String text) => '*${escapeInline(text)}*';
 
-/// Markdown-ссылка. [href] не экранируется — это URL, а не текст, который
-/// может содержать значащие Markdown-символы.
+/// A Markdown link. [href] isn't escaped — it's a URL, not text that
+/// might contain meaningful Markdown characters.
 String link(String text, String href) => '[${escapeInline(text)}]($href)';
 
-/// Таблица как HTML-блок, а не Markdown-таблица, — для листов с
-/// объединёнными ячейками: Markdown-таблица их не выражает, см.
-/// `docs/conversion-pipeline.md#как-markdown-собирается`. [merges] — диапазоны
-/// слияния в виде `(startRow, startCol, rowSpan, colSpan)`, индексы с нуля
-/// **относительно [rows]** (данных), не включая строку заголовка — заголовок
-/// сам никогда не участвует в слиянии. Ячейки, покрытые слиянием, но не
-/// являющиеся его началом, не выводятся.
+/// A table as an HTML block rather than a Markdown table — for sheets
+/// with merged cells: a Markdown table can't express those, see
+/// `docs/conversion-pipeline.md#как-markdown-собирается`. [merges] is the
+/// merge ranges as `(startRow, startCol, rowSpan, colSpan)`, zero-based
+/// **relative to [rows]** (the data), not including the header row — the
+/// header itself is never part of a merge. Cells covered by a merge but
+/// not its starting cell aren't emitted.
 String htmlTable(
   List<String> headers,
   List<List<String>> rows,
@@ -80,7 +80,7 @@ String htmlTable(
   final covered = <int, Set<int>>{};
   final spanAt = <int, Map<int, (int, int)>>{};
   for (final (startRow, startCol, rowSpan, colSpan) in merges) {
-    final r0 = startRow + 1; // +1: строка заголовка в allRows не из rows.
+    final r0 = startRow + 1; // +1: the header row in allRows isn't from rows.
     spanAt.putIfAbsent(r0, () => {})[startCol] = (rowSpan, colSpan);
     for (var r = r0; r < r0 + rowSpan; r++) {
       for (var c = startCol; c < startCol + colSpan; c++) {
@@ -117,18 +117,20 @@ String _htmlEscape(String text) => text
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
 
-/// Фенс-блок кода. [language] попадает в info-строку фенса (````json`), если
-/// задан. Контент не экранируется — внутри фенса всё значит себя.
+/// A fenced code block. [language] goes into the fence's info string
+/// (````json`), if given. Content isn't escaped — inside a fence,
+/// everything means itself.
 String codeBlock(String content, {String? language}) {
   final fence = '```${language ?? ''}';
   final body = content.endsWith('\n') ? content : '$content\n';
   return '$fence\n$body```';
 }
 
-/// Нормализация, которую markitdown применяет к выводу любого конвертера:
-/// `\r\n` → `\n`, пробелы в конце строк убираются, три и больше переводов
-/// строки подряд схлопываются в два. Нужна там, где Dart-конвертер обязан
-/// совпасть с markitdown символ в символ (`msg`, `rss`).
+/// The normalization markitdown applies to any converter's output:
+/// `\r\n` → `\n`, trailing whitespace on lines is stripped, three or more
+/// consecutive line breaks collapse to two. Needed wherever a Dart
+/// converter must match markitdown character-for-character (`msg`,
+/// `rss`).
 String normalizeLikeMarkitdown(String text) => text
     .split(RegExp(r'\r?\n'))
     .map((line) => line.trimRight())

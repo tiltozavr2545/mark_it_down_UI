@@ -10,9 +10,9 @@ import '../conversion_result.dart';
 import '../document_converter.dart';
 import '../ooxml/ooxml_package.dart';
 
-/// `ppt/presentation.xml` → слайды по порядку. Заголовок слайда (плейсхолдер
-/// `title`/`ctrTitle`) → `##`, остальной текст — абзацами, заметки
-/// докладчика — отдельным блоком под слайдом. См.
+/// `ppt/presentation.xml` → slides in order. The slide title (the
+/// `title`/`ctrTitle` placeholder) → `##`, the rest of the text as
+/// paragraphs, speaker notes as a separate block below the slide. See
 /// `docs/implementation-plan.md#этап-2-office-02`.
 class PptxConverter implements DocumentConverter {
   const PptxConverter();

@@ -10,10 +10,10 @@ import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
 
-/// Как `json` — фенс-блок кода, не попытка построить markdown-структуру из
-/// произвольного XML. См. `docs/format-coverage.md`. Приоритет ниже
-/// конкретных форматов поверх XML (лента RSS/Atom — [RssConverter]): XML
-/// здесь — общий случай.
+/// Like `json` — a fenced code block, not an attempt to build a markdown
+/// structure out of arbitrary XML. See `docs/format-coverage.md`. Priority
+/// is lower than more specific formats layered on top of XML (an RSS/Atom
+/// feed — [RssConverter]): XML here is the generic fallback.
 class XmlConverter implements DocumentConverter {
   const XmlConverter();
 

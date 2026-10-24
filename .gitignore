@@ -1,18 +1,18 @@
 # macOS
 .DS_Store
 
-# Dart/Flutter — появится на Этапе 0, но пусть лежит заранее
+# Dart/Flutter — will appear at Stage 0, but let it sit here ahead of time
 .dart_tool/
 .packages
 build/
-# Приложение, не библиотека — но до первого релиза фиксировать версии
-# нечего; снять этот пункт, когда появится CI-сборка релиза
+# An app, not a library — but there's nothing to pin versions against
+# before the first release; remove this entry once there's a CI release build
 pubspec.lock
 *.iml
 .flutter-plugins
 .flutter-plugins-dependencies
 
-# Подпись релизных сборок — ключи в репозиторий не попадают никогда
+# Signing release builds — keys never go into the repository
 android/key.properties
 *.keystore
 *.jks
@@ -20,29 +20,31 @@ android/key.properties
 *.p12
 *.mobileprovision
 
-# Python-сайдкар: собирается скриптом, в репозиторий не коммитится
-# (см. docs/python-sidecar.md)
+# Python sidecar: built by a script, not committed to the repository
+# (see docs/python-sidecar.md)
 sidecar/python/
 sidecar/lib/
 sidecar/dist/
-# кэш загрузок build.sh (архив интерпретатора) и штампы сборки
+# build.sh's download cache (interpreter archive) and build stamps
 sidecar/cache/
 
-# PDFium: качается скриптом pdfium/fetch.sh, в репозиторий не коммитится
-# (см. docs/format-coverage.md#pdf-чем-извлекать-текст)
+# PDFium: downloaded by the pdfium/fetch.sh script, not committed to the
+# repository (see docs/format-coverage.md#pdf-how-to-extract-text)
 pdfium/native/
 app/android/app/src/main/jniLibs/
 
-# Tesseract (OCR): исходники, сборка и модели качаются tesseract/fetch.sh и
-# собираются tesseract/build.sh, в репозиторий не коммитятся
+# Tesseract (OCR): sources, build and models are downloaded by
+# tesseract/fetch.sh and built by tesseract/build.sh, not committed to the
+# repository
 tesseract/cache/
 tesseract/build/
 tesseract/native/
 tesseract/tessdata/
 app/assets/tessdata/*.traineddata
 
-# Распознавание речи: исходники, сборка и модели качаются whisper/fetch.sh и
-# собираются whisper/build.sh, в репозиторий не коммитятся
+# Speech recognition: sources, build and models are downloaded by
+# whisper/fetch.sh and built by whisper/build.sh, not committed to the
+# repository
 whisper/cache/
 whisper/build/
 whisper/native/
@@ -50,6 +52,6 @@ whisper/models/
 app/assets/whisper/*.bin
 app/assets/whisper/models.json
 
-# Claude Code: локальный конфиг и launch-профили, они per-machine
+# Claude Code: local config and launch profiles, these are per-machine
 .claude/settings.local.json
 .claude/launch.json

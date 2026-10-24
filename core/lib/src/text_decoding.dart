@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-/// Результат декодирования байтов текстового файла: сам текст и то, была ли
-/// это настоящая валидная UTF-8 последовательность. См. `type_detector.dart`
-/// — та же логика «не UTF-8 без BOM → почти наверняка Windows-1251», здесь
-/// переиспользуется всеми текстовыми конвертерами, а не только детекцией.
+/// The result of decoding a text file's bytes: the text itself, and
+/// whether it was a genuinely valid UTF-8 sequence. See
+/// `type_detector.dart` — the same logic of "not UTF-8, no BOM → almost
+/// certainly Windows-1251" is reused here by all the text converters, not
+/// just by detection.
 class DecodedText {
   final String content;
   final bool wasUtf8;
@@ -12,9 +13,9 @@ class DecodedText {
   const DecodedText(this.content, {required this.wasUtf8});
 }
 
-/// BOM → UTF-8 → Windows-1251. Текст без BOM, не разбирающийся как UTF-8, —
-/// это не битый файл, а почти наверняка Windows-1251 (обычное дело на
-/// русскоязычных выгрузках).
+/// BOM → UTF-8 → Windows-1251. Text with no BOM that doesn't parse as
+/// UTF-8 isn't a broken file — it's almost certainly Windows-1251 (a
+/// common thing in Russian-language exports).
 DecodedText decodeTextBytes(Uint8List bytes) {
   final withoutBom = _stripUtf8Bom(bytes);
   try {
@@ -45,8 +46,8 @@ String _decodeWindows1251(Uint8List bytes) {
   return buffer.toString();
 }
 
-/// Таблица байтов 0x80–0xFF Windows-1251 → Unicode. Однобайтовая кодировка,
-/// таблица фиксирована и не требует внешнего пакета.
+/// The byte table 0x80-0xFF Windows-1251 → Unicode. A single-byte
+/// encoding, the table is fixed and needs no external package.
 const _windows1251High = <int>[
   0x0402, 0x0403, 0x201A, 0x0453, 0x201E, 0x2026, 0x2020, 0x2021, //
   0x20AC, 0x2030, 0x0409, 0x2039, 0x040A, 0x040C, 0x040B, 0x040F, //
@@ -66,21 +67,23 @@ const _windows1251High = <int>[
   0x0448, 0x0449, 0x044A, 0x044B, 0x044C, 0x044D, 0x044E, 0x044F, //
 ];
 
-/// Строка из метаданных, объявленная однобайтовой (ID3 с кодировкой 0,
-/// ID3v1, `LIST/INFO` в WAV). Объявлено ISO-8859-1, а на деле в русских
-/// файлах — почти всегда Windows-1251, иногда UTF-8. Порядок: валидный
-/// UTF-8 → Windows-1251, если байты похожи на русские слова → Latin-1.
+/// A metadata string declared as single-byte (ID3 with encoding 0,
+/// ID3v1, `LIST/INFO` in WAV). Declared as ISO-8859-1, but in Russian
+/// files it's in practice almost always Windows-1251, sometimes UTF-8.
+/// Order: valid UTF-8 → Windows-1251 if the bytes look like Russian
+/// words → Latin-1.
 ///
-/// «Похожи на русские слова» — есть подряд три и больше байта из диапазона
-/// букв Windows-1251 (`0xC0–0xFF`, `Ёё`). В Latin-1 эти же байты — буквы с
-/// диакритикой, но они стоят поодиночке между латиницей (`Beyoncé`,
-/// `Motörhead`); два подряд ещё бывает (`Größe`), три — уже нет.
+/// "Look like Russian words" means three or more consecutive bytes from
+/// the Windows-1251 letter range (`0xC0-0xFF`, `Ёё`). In Latin-1 those
+/// same bytes are letters with diacritics, but they occur singly among
+/// Latin letters (`Beyoncé`, `Motörhead`); two in a row still happens
+/// (`Größe`), but three doesn't.
 String decodeLegacyText(Uint8List bytes) {
   if (bytes.every((b) => b < 0x80)) return String.fromCharCodes(bytes);
   try {
     return utf8.decode(bytes, allowMalformed: false);
   } on FormatException {
-    // не UTF-8 — дальше выбор между двумя однобайтовыми
+    // not UTF-8 — next, a choice between two single-byte encodings
   }
   var run = 0;
   var longestRun = 0;
@@ -94,11 +97,12 @@ String decodeLegacyText(Uint8List bytes) {
       : String.fromCharCodes(bytes);
 }
 
-/// Байты в кодовой странице Windows [codepage] — так её объявляют сами
-/// файлы (`CODEPAGE` в xls, `PR_MESSAGE_CODEPAGE` в msg). Таблицы — только
-/// для того, что реально встречается в русскоязычных и западных файлах;
-/// неизвестная или не объявленная страница — [decodeLegacyText], та же
-/// догадка «UTF-8 → Windows-1251 → Latin-1», что и для тегов аудио.
+/// Bytes in Windows code page [codepage] — the way the files themselves
+/// declare it (`CODEPAGE` in xls, `PR_MESSAGE_CODEPAGE` in msg). Tables
+/// are only for what actually shows up in Russian-language and Western
+/// files; an unknown or undeclared page falls back to
+/// [decodeLegacyText], the same "UTF-8 → Windows-1251 → Latin-1" guess
+/// used for audio tags.
 String decodeCodepage(Uint8List bytes, int? codepage) {
   switch (codepage) {
     case 1200:
@@ -141,8 +145,8 @@ String _decodeUtf16le(Uint8List bytes) {
   return String.fromCharCodes(units);
 }
 
-/// 0x80–0x9F Windows-1252; 0 — неопределённый байт (остаётся как есть),
-/// 0xA0–0xFF совпадают с Latin-1.
+/// 0x80-0x9F Windows-1252; 0 means an undefined byte (passed through
+/// unchanged); 0xA0-0xFF match Latin-1.
 const _windows1252High = <int>[
   0x20AC, 0x0000, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, //
   0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x0000, 0x017D, 0x0000, //
@@ -150,7 +154,7 @@ const _windows1252High = <int>[
   0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x0000, 0x017E, 0x0178, //
 ];
 
-/// 0x80–0xFF CP866 (DOS, «альтернативная»).
+/// 0x80-0xFF CP866 (DOS, the "alternative" code page).
 const _cp866High = <int>[
   0x0410, 0x0411, 0x0412, 0x0413, 0x0414, 0x0415, 0x0416, 0x0417, //
   0x0418, 0x0419, 0x041A, 0x041B, 0x041C, 0x041D, 0x041E, 0x041F, //
@@ -170,7 +174,7 @@ const _cp866High = <int>[
   0x00B0, 0x2219, 0x00B7, 0x221A, 0x2116, 0x00A4, 0x25A0, 0x00A0, //
 ];
 
-/// 0x80–0xFF KOI8-R.
+/// 0x80-0xFF KOI8-R.
 const _koi8rHigh = <int>[
   0x2500, 0x2502, 0x250C, 0x2510, 0x2514, 0x2518, 0x251C, 0x2524, //
   0x252C, 0x2534, 0x253C, 0x2580, 0x2584, 0x2588, 0x258C, 0x2590, //

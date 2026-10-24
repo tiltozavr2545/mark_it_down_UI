@@ -10,8 +10,9 @@ import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
 
-/// `csv` и `tsv` одним конвертером — разница только в разделителе. Приоритет
-/// `0.0`: расширение однозначно говорит, что это таблица, а не текст.
+/// `csv` and `tsv` share one converter — the only difference is the
+/// delimiter. Priority `0.0`: the extension unambiguously says this is a
+/// table, not plain text.
 class CsvConverter implements DocumentConverter {
   const CsvConverter();
 

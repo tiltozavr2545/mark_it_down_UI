@@ -1,16 +1,18 @@
 /*
- * Windows: декодер платформы (Media Foundation, Source Reader) — ради AAC в
- * M4A/MP4: так пишут диктофоны и мессенджеры, а свободного декодера AAC под
- * нашу лицензию нет. MP3/WAV/FLAC MF тоже умеет — пригодится, если
- * переносимый декодер файл не взял. Ogg (Opus/Vorbis) без расширений из
- * Store MF не читает — его и не просим, это делает mdw_decode.c.
+ * Windows: the platform decoder (Media Foundation, Source Reader) — for
+ * AAC in M4A/MP4: that's what voice recorders and messaging apps write,
+ * and there's no free AAC decoder under our license. MF can also handle
+ * MP3/WAV/FLAC — useful if the portable decoder didn't take the file. MF
+ * can't read Ogg (Opus/Vorbis) without Store extensions — we don't ask it
+ * to; mdw_decode.c handles that.
  *
- * Media Foundation грузится динамически (LoadLibraryEx из System32), а не
- * импортом: в редакциях Windows «N» без Media Feature Pack и в Windows
- * Server без компонента Media Foundation mfplat.dll нет, и со статическим
- * импортом не загрузилась бы вся
- * markitdown_whisper.dll — пропало бы распознавание речи целиком, а не
- * только AAC. Так M4A там получает честное «кодек не поддерживается».
+ * Media Foundation is loaded dynamically (LoadLibraryEx from System32),
+ * not via import: Windows "N" editions without the Media Feature Pack, and
+ * Windows Server without the Media Foundation component, have no
+ * mfplat.dll, and with a static import the whole markitdown_whisper.dll
+ * would fail to load — speech recognition would disappear entirely, not
+ * just AAC. This way M4A there gets an honest "codec not supported"
+ * instead.
  */
 #ifdef _WIN32
 
@@ -42,7 +44,7 @@ struct MediaFoundation {
   MFCreateMediaTypeFn create_media_type = nullptr;
   MFCreateSourceReaderFromURLFn create_source_reader = nullptr;
 
-  // Только из System32: DLL с тем же именем рядом с .exe не подхватится.
+  // From System32 only: a DLL with the same name next to the .exe won't be picked up.
   bool load() {
     mfplat = LoadLibraryExW(L"mfplat.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     mfreadwrite = LoadLibraryExW(L"mfreadwrite.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -96,8 +98,9 @@ int decode(const MediaFoundation &mf, const std::wstring &path, mdw_sink *sink) 
     return MDW_ERR_NO_AUDIO;
   }
 
-  // Просим float PCM, частоту и каналы — как в файле: сводим и
-  // передискретизируем сами, тем же ресемплером, что и остальные декодеры.
+  // We ask for float PCM, with the rate and channels left as they are in
+  // the file: we mix down and resample ourselves, with the same resampler
+  // as the other decoders.
   hr = mf.create_media_type(&requested);
   if (SUCCEEDED(hr)) hr = requested->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
   if (SUCCEEDED(hr)) hr = requested->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_Float);
@@ -108,11 +111,12 @@ int decode(const MediaFoundation &mf, const std::wstring &path, mdw_sink *sink) 
     return MDW_ERR_UNSUPPORTED;
   }
 
-  // Что на самом деле отдаёт декодер. Читается заново и после
-  // MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED: декодер AAC уточняет частоту
-  // и каналы по первому кадру (HE-AAC — вдвое чаще, чем в заголовке), и
-  // старые числа превратили бы звук в шум, на котором VAD не найдёт речи.
-  // Float просили, но принимаем и 16-битный PCM — не читать его как float.
+  // What the decoder actually produces. Read again after
+  // MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED too: the AAC decoder refines
+  // the rate and channels from the first frame (HE-AAC — twice as often as
+  // the header says), and stale numbers would turn the audio into noise
+  // that VAD can't find speech in. We asked for float, but also accept
+  // 16-bit PCM — just don't read it as float.
   UINT32 channels = 0, rate = 0, bits = 32;
   bool is_float = true;
   auto read_format = [&]() -> int {
@@ -183,9 +187,9 @@ extern "C" int mdw_platform_decode_file(const char *path, mdw_sink *sink) {
   std::wstring wide = widen(path);
   if (wide.empty()) return MDW_ERR_IO;
 
-  // Поток изолята Dart COM не инициализировал. Если кто-то уже сделал это
-  // в другом режиме (RPC_E_CHANGED_MODE) — работаем в его режиме, но и
-  // CoUninitialize тогда не наш.
+  // The Dart isolate's thread hasn't initialized COM. If someone already
+  // did, in a different mode (RPC_E_CHANGED_MODE) — work in their mode,
+  // but then CoUninitialize isn't ours to call either.
   HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   bool own_com = SUCCEEDED(com);
   if (FAILED(com) && com != RPC_E_CHANGED_MODE) return MDW_ERR_UNSUPPORTED;

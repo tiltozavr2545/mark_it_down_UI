@@ -1,488 +1,533 @@
-# Python-сайдкар: настоящий markitdown на десктопе
+# Python sidecar: a genuine markitdown on desktop
 
-Как настоящая [microsoft/markitdown](https://github.com/microsoft/markitdown)
-оказывается внутри десктопного приложения, зачем она там нужна при наличии
-Dart-ядра, и чего это стоит. Целевой десктоп — **Windows** (Этап 5 плана);
-macOS вторична. Сборка, проверенная до сих пор, — macOS x86_64 (Этап 4), и
-цифры ниже, если не сказано иное, оттуда; что меняется на Windows — в разделе
-[«Windows»](#windows-этап-5).
+How the real [microsoft/markitdown](https://github.com/microsoft/markitdown)
+ends up inside a desktop application, why it's needed there given the Dart
+core, and what it costs. The target desktop is **Windows** (Stage 5 of the
+plan); macOS is secondary. The build verified so far is macOS x86_64
+(Stage 4), and the numbers below, unless stated otherwise, come from there;
+what changes on Windows is in the [«Windows»](#windows-stage-5) section.
 
-На Android и iOS сайдкара нет и не будет — причина в самом низу. Как он
-подключается к конвейеру (приоритет −1.0, `localPath`) — в
-[conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер).
+There is no sidecar on Android or iOS, and there won't be — the reason is at
+the very bottom. How it plugs into the pipeline (priority −1.0, `localPath`)
+is covered in
+[conversion-pipeline.md](conversion-pipeline.md#sidecar--just-another-converter).
 
 ---
 
-## Зачем он, если есть Dart-ядро
+## Why it exists if there's a Dart core
 
-Не ради «полноты», а ради трёх конкретных вещей:
+Not for "completeness," but for three specific things:
 
-- **`.xls` (BIFF8) и `.msg`** — готового разбора на Dart нет, и писать его
-  ради двух форматов не стоит. `xlrd` и `olefile` их читают.
-- **PDF** — `pdfminer.six` + `pdfplumber` дают качество и, главное, **решения о
-  таблицах**, которые в markitdown уже приняты и обкатаны.
-- **Эталон для сверки.** Самое недооценённое: сайдкар — это способ получить
-  «правильный» ответ на любом тестовом файле прямо на машине разработчика и
-  сравнить с тем, что выдало Dart-ядро. Без него расхождение двух реализаций
-  замечается только глазами.
+- **`.xls` (BIFF8) and `.msg`** — there's no ready-made parsing in Dart, and
+  writing one just for two formats isn't worth it. `xlrd` and `olefile`
+  already read them.
+- **PDF** — `pdfminer.six` + `pdfplumber` give quality and, more importantly,
+  **decisions about tables** that have already been made and battle-tested
+  in markitdown.
+- **A reference for comparison.** The most underrated reason: the sidecar is
+  a way to get the "correct" answer for any test file right on the
+  developer's machine and compare it against what the Dart core produced.
+  Without it, a divergence between the two implementations is only ever
+  noticed by eye.
 
-Если бы оставался только третий пункт, сайдкар всё равно стоило бы собрать —
-но как инструмент разработки, а не как часть приложения.
+If only the third point remained, the sidecar would still be worth building
+— just as a development tool, not as part of the application.
 
-## Что именно упаковывается
+## What exactly gets packaged
 
 ```
 MarkItDown.app/Contents/Resources/sidecar/
-  python/                 ← интерпретатор из python-build-standalone
-  lib/                    ← markitdown + зависимости (site-packages)
-  run.py                  ← тонкая обёртка: argv → JSON на stdout
-  manifest.json           ← какие форматы сайдкар берёт на себя
+  python/                 ← interpreter from python-build-standalone
+  lib/                    ← markitdown + dependencies (site-packages)
+  run.py                  ← thin wrapper: argv → JSON on stdout
+  manifest.json           ← which formats the sidecar takes on
 ```
 
-Ровно эта раскладка получается в `sidecar/dist/<host>/` после сборки (см.
-«Сборка» ниже); при упаковке приложения каталог копируется как есть. На
-Windows тот же каталог лежит рядом с `.exe`, а интерпретатор — `python/python.exe`
-(см. «Windows» ниже).
+This is exactly the layout produced in `sidecar/dist/<host>/` after the build
+(see "Build" below); when packaging the app, the directory is copied as is.
+On Windows the same directory sits next to the `.exe`, and the interpreter is
+`python/python.exe` (see "Windows" below).
 
-Интерпретатор берётся из
+The interpreter comes from
 [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-(те же сборки, что использует `uv`): это готовый перемещаемый Python, который
-не зависит от системного. Системный Python использовать нельзя — на macOS его
-может не быть вовсе, а на Windows его нет почти никогда. Закреплено:
-релиз `20260929`, CPython **3.12.14** (вариант `install_only`), markitdown
-**0.1.8**. Python 3.12, а не свежий 3.13/3.14, — осознанно: колёса под macOS x86_64
-(`onnxruntime`, `pandas`, `lxml`) на 3.12 есть у всех зависимостей без
-исключений, а выигрыша от более нового интерпретатора здесь нет. Релиз взят
-не «сегодняшний», а десятидневной давности — чтобы не быть первым, кто на него
-наступает.
+(the same builds `uv` uses): a ready-made, relocatable Python that doesn't
+depend on the system one. The system Python can't be used — on macOS it
+might not even be present, and on Windows it almost never is. Pinned:
+release `20260929`, CPython **3.12.14** (the `install_only` variant),
+markitdown **0.1.8**. Python 3.12, not a newer 3.13/3.14, is a deliberate
+choice: macOS x86_64 wheels (`onnxruntime`, `pandas`, `lxml`) exist for every
+dependency on 3.12 without exception, and there's no payoff here from a
+newer interpreter. The release taken is not "today's" but ten days old — so
+as not to be the first one to hit a bug in it.
 
-Устанавливается **не** `markitdown[all]`: группы `az-doc-intel`,
-`az-content-understanding` и `youtube-transcription` не ставятся вообще — они
-про сеть и облако, которых в продукте нет (см.
-[offline-and-privacy.md](offline-and-privacy.md)). Ставятся `pdf`, `docx`,
-`xlsx`, `xls`, `pptx`, `outlook`. `audio-transcription` не ставится: он тянет
-`SpeechRecognition`, который по умолчанию ходит в веб-API Google, то есть даёт
-не офлайн-транскрипцию, а сетевую — подробности в
+What's installed is **not** `markitdown[all]`: the `az-doc-intel`,
+`az-content-understanding`, and `youtube-transcription` groups aren't
+installed at all — they're about network and cloud, which have no place in
+the product (see [offline-and-privacy.md](offline-and-privacy.md)). What
+gets installed: `pdf`, `docx`, `xlsx`, `xls`, `pptx`, `outlook`.
+`audio-transcription` is not installed: it pulls in `SpeechRecognition`,
+which by default calls Google's web API, i.e. gives you network
+transcription rather than offline — details in
 [format-coverage.md](format-coverage.md).
 
-## Сборка
+## Build
 
 ```
 make sidecar                # = ./sidecar/build.sh
-FORCE=1 make sidecar        # пересобрать, даже если уже собрано
+FORCE=1 make sidecar        # rebuild even if already built
 ```
 
-В `make verify` и CI сборка **не входит**: она качает сотни МБ (интерпретатор
-~25 МБ + колёса numpy/pandas/onnxruntime и т.д.) и нужна только тому, кто
-сверяет реализации или пакует десктоп. На слабом канале первый запуск может
-занять четверть часа; повторный идёт из кэша pip и архива за минуту.
+The build is **not part of** `make verify` or CI: it downloads hundreds of
+MB (the interpreter ~25 MB plus wheels like numpy/pandas/onnxruntime, etc.)
+and is only needed by whoever is cross-checking implementations or packaging
+the desktop app. On a slow connection the first run can take a quarter of an
+hour; a repeat run comes from the pip cache and archive in about a minute.
 
-Что делает `sidecar/build.sh`, по шагам и с причинами:
+What `sidecar/build.sh` does, step by step, with reasons:
 
-1. **Выбор ассета под хост**: macOS x86_64 / arm64, Linux x86_64 / aarch64.
-   Проверено только на macOS x86_64 — остальные три строки таблицы в скрипте
-   написаны по тому же шаблону, но не прогонялись.
-2. **Загрузка и sha256.** Версия релиза и Python закреплены в `sidecar/common.sh`,
-   суммы вшиты (сверены с `SHA256SUMS` релиза). Архив лежит в
-   `sidecar/cache/` (в `.gitignore`); повреждённый кэш — перекачка, несовпавший
-   хеш свежескачанного — отказ. «Latest» не используется: эталон, который
-   меняется молча, ничего не эталонит.
+1. **Pick the asset for the host**: macOS x86_64 / arm64, Linux x86_64 /
+   aarch64. Only macOS x86_64 has actually been verified — the other three
+   rows of the table in the script are written from the same template but
+   haven't been run.
+2. **Download and sha256.** The release version and Python version are
+   pinned in `sidecar/common.sh`, the checksums are baked in (checked
+   against the release's `SHA256SUMS`). The archive lives in
+   `sidecar/cache/` (in `.gitignore`); a corrupted cache triggers a
+   re-download, and a mismatched hash on a freshly downloaded file causes a
+   refusal. "Latest" is never used: a reference that changes silently isn't
+   a reference at all.
 3. **`pip install --require-hashes --no-deps --target lib -r locks/<host>.txt`**
-   интерпретатором *из архива*, с `-I` и `--only-binary=:all:` — никакой
-   сборки из исходников на машине и никакого влияния пользовательского
-   окружения. Все 42 пакета, включая транзитивные, закреплены версией и
-   sha256 колеса (см. «Lock-файл» ниже).
-4. **Чистка** (нужное в рантайме остаётся, код markitdown и его зависимостей не
-   правится):
-   - `lib/bin/` (скрипты pip с абсолютными путями), все `tests/`, чужие
-     `__pycache__`, `olefile/olefile2.py` (Python-2-вариант: не компилируется);
-   - **`sympy` и `mpmath`** (~45 МБ): `onnxruntime` числит их в зависимостях,
-     но при инференсе, который делает `magika`, не импортирует;
-     `onnxruntime/{transformers,tools,quantization}` (~7 МБ) — тоже
-     инструменты, не рантайм;
-   - из интерпретатора: `pip`/`ensurepip`, Tk/IDLE/тесты stdlib, заголовки, а
-     также `libpython3.12.dylib` (~18 МБ) — `python3.12` из этой сборки
-     статический, на динамическую `libpython` не ссылается (`otool -L`);
-   - **macOS: `lipo -thin`** для universal2-колёс (`onnxruntime`,
-     `cryptography`, `charset_normalizer`) — в бандле под одну архитектуру
-     вторая половина каждой `.so` мёртвый груз, ~38 МБ.
-5. **Байткод заранее**: `compileall --invalidation-mode unchecked-hash` по
-   `lib/` и stdlib. Рантайм идёт с `-B`, и писать `.pyc` в подписанный бандл
-   на macOS нельзя (сломает подпись), поэтому всё готово до подписи.
-   `unchecked-hash`, а не дефолтный timestamp: mtime исходника при копировании
-   в `.app`/DMG легко меняется, и интерпретатор молча перекомпилировал бы
-   всё в памяти на каждом запуске. Из `co_filename` срезан путь временной
-   сборки, чтобы в бандл не уезжал каталог сборщика.
-6. **`manifest.json`** с реальными версиями из собранного дерева (не из
-   констант скрипта), затем **самопроверка** `run.py --self-check`: markitdown
-   импортируется, зависимость каждого из шести конвертеров на месте, `magika`
-   отрабатывает настоящий инференс (это страховка чистки sympy), `pandas`
-   считает `to_html`, а список форматов в манифесте совпадает с таблицей
-   `run.py`. Не прошла — сборка падает, а не отдаёт манифест, который врёт.
-7. Результат собирается во временный каталог и атомарно подменяет
-   `sidecar/dist/<host>/`; пропуск при повторном запуске определяется штампом
-   в `sidecar/cache/` (версии + хеши `run.py` и `build.sh`).
+   using the interpreter *from the archive*, with `-I` and
+   `--only-binary=:all:` — no building from source on the machine and no
+   influence from the user's environment. All 42 packages, including
+   transitive ones, are pinned by version and wheel sha256 (see "Lock file"
+   below).
+4. **Cleanup** (what's needed at runtime stays; markitdown's code and its
+   dependencies' code are not touched):
+   - `lib/bin/` (pip scripts with absolute paths), all `tests/`, other
+     packages' `__pycache__`, `olefile/olefile2.py` (the Python 2 variant:
+     doesn't compile);
+   - **`sympy` and `mpmath`** (~45 MB): `onnxruntime` lists them as
+     dependencies, but doesn't import them during the inference that
+     `magika` performs; `onnxruntime/{transformers,tools,quantization}`
+     (~7 MB) — also tooling, not runtime;
+   - from the interpreter: `pip`/`ensurepip`, Tk/IDLE/stdlib tests, headers,
+     and also `libpython3.12.dylib` (~18 MB) — `python3.12` from this build
+     is static and doesn't link against a dynamic `libpython` (`otool -L`);
+   - **macOS: `lipo -thin`** for universal2 wheels (`onnxruntime`,
+     `cryptography`, `charset_normalizer`) — in a bundle targeting a single
+     architecture, the other half of each `.so` is dead weight, ~38 MB.
+5. **Bytecode ahead of time**: `compileall --invalidation-mode
+   unchecked-hash` across `lib/` and the stdlib. The runtime runs with `-B`,
+   and writing `.pyc` files into a signed bundle on macOS isn't allowed (it
+   would break the signature), so everything is prepared before signing.
+   `unchecked-hash`, not the default timestamp: the source mtime easily
+   changes when copied into `.app`/DMG, and the interpreter would silently
+   recompile everything in memory on every run. The temporary build path is
+   stripped from `co_filename` so the builder's directory doesn't leak into
+   the bundle.
+6. **`manifest.json`** with the real versions from the built tree (not from
+   constants in the script), then a **self-check** via `run.py
+   --self-check`: markitdown imports, each of the six converters' dependency
+   is in place, `magika` runs real inference (this is the safety net for the
+   sympy cleanup), `pandas` computes `to_html`, and the list of formats in
+   the manifest matches the table in `run.py`. If it doesn't pass, the build
+   fails rather than shipping a manifest that lies.
+7. The result is assembled into a temporary directory and atomically swaps
+   in for `sidecar/dist/<host>/`; a skip on a repeat run is determined by a
+   stamp in `sidecar/cache/` (versions plus hashes of `run.py` and
+   `build.sh`).
 
-Перемещаемость проверена: дерево, скопированное в каталог с пробелом в пути,
-с `touch` на всех `.py` и под `env -i`, работает и не создаёт ни одного нового
-файла (число файлов до и после — 5167).
+Relocatability has been verified: a tree copied into a directory with a
+space in the path, with `touch` run on every `.py` file, and under `env -i`,
+works and creates not a single new file (file count before and after —
+5167).
 
-### Lock-файл: воспроизводимость
+### Lock file: reproducibility
 
-`sidecar/locks/<host>.txt` (сейчас `macos-x86_64.txt`, коммитится) — все 42
-пакета в формате `имя==версия --hash=sha256:…`. Сборка ставит строго по нему
-(`--require-hashes --no-deps`): чего нет в файле или у чего не совпал хеш,
-pip не поставит, и «чуть более свежий lxml через месяц» невозможен. Файл на
-хост, а не общий: колёса numpy/onnxruntime под macOS x86_64, arm64 и Linux —
-разные файлы с разными хешами. Для хоста без lock-файла `build.sh` отказывается
-собирать (`ALLOW_UNLOCKED=1` — разовый обход, так делается первый lock на
-новом хосте: сначала `ALLOW_UNLOCKED=1 make sidecar`, потом `make
-sidecar-lock`).
+`sidecar/locks/<host>.txt` (currently `macos-x86_64.txt`, committed) — all 42
+packages in the form `name==version --hash=sha256:…`. The build installs
+strictly from it (`--require-hashes --no-deps`): anything not in the file, or
+whose hash doesn't match, pip simply will not install, and "a slightly
+newer lxml a month from now" is impossible. The file is per-host, not
+shared: wheels for numpy/onnxruntime on macOS x86_64, arm64, and Linux are
+different files with different hashes. For a host without a lock file,
+`build.sh` refuses to build (`ALLOW_UNLOCKED=1` is a one-time bypass, used
+exactly to create the first lock on a new host: first `ALLOW_UNLOCKED=1 make
+sidecar`, then `make sidecar-lock`).
 
-Как обновлять — только осознанно, когда меняется `MARKITDOWN_VERSION`,
-`PY_VERSION` или `PBS_TAG` в `sidecar/common.sh`, либо когда нужно поднять
-транзитивные зависимости:
+How to update it — only deliberately, when `MARKITDOWN_VERSION`,
+`PY_VERSION`, or `PBS_TAG` changes in `sidecar/common.sh`, or when transitive
+dependencies need bumping:
 
 ```
-make sidecar-lock          # sidecar/lock.sh: pip --dry-run --report, ничего не ставит
-git diff sidecar/locks/    # прочитать, что поменялось
-FORCE=1 make sidecar       # пересобрать по новому lock
-make compare-sidecar       # пересверить с Dart-ядром
+make sidecar-lock          # sidecar/lock.sh: pip --dry-run --report, installs nothing
+git diff sidecar/locks/    # read what changed
+FORCE=1 make sidecar       # rebuild from the new lock
+make compare-sidecar       # re-cross-check against the Dart core
 ```
 
-`lock.sh` не использует pip-tools/uv: разрешение зависимостей делает сам pip
-из скачанного интерпретатора, а sha256 берутся из его же отчёта по выбранным
-колёсам. Проверено: пересборка по lock-файлу дала то же множество из 40
-`*.dist-info` (42 минус вычищенные sympy/mpmath) и побайтно тот же вывод
-`run.py` на 10 образцах (pdf×3, docx×2, xlsx×2, xls, msg, pptx).
-`--self-check` проходит.
+`lock.sh` doesn't use pip-tools/uv: dependency resolution is done by pip
+itself from the downloaded interpreter, and sha256 values come from its own
+report on the chosen wheels. Verified: rebuilding from the lock file
+produced the same set of 40 `*.dist-info` entries (42 minus the cleaned-out
+sympy/mpmath) and byte-for-byte the same `run.py` output on 10 samples
+(pdf×3, docx×2, xlsx×2, xls, msg, pptx). `--self-check` passes.
 
-### Размеры (macOS x86_64, проверено)
+### Sizes (macOS x86_64, verified)
 
-Итого `sidecar/dist/macos-x86_64/` — **242 МБ**: `python/` 40 МБ, `lib/` 203 МБ
-(из них байткод ~35 МБ). Дорожка того, как к этому пришли: «в лоб» 355 МБ →
-без sympy/mpmath и инструментов onnxruntime 299 → `lipo -thin` 261 → без
-`libpython` 242.
+Total for `sidecar/dist/macos-x86_64/` — **242 MB**: `python/` 40 MB,
+`lib/` 203 MB (of which bytecode is ~35 MB). The path to get there: naive
+355 MB → without sympy/mpmath and onnxruntime tooling 299 → `lipo -thin` 261
+→ without `libpython` 242.
 
-Крупнейшие в `lib/` (с учётом скрытых `.dylibs/`):
+Largest items in `lib/` (including hidden `.dylibs/`):
 
-| пакет | МБ | зачем |
+| package | MB | why |
 |---|---|---|
-| `numpy` | 53 | `onnxruntime`, `pandas`; из них ~32 МБ — OpenBLAS и Fortran-рантайм |
-| `pandas` | 34 | xlsx/xls (см. ниже) |
-| `onnxruntime` | 30 | `magika` — определение типа по содержимому, импортируется markitdown безусловно |
+| `numpy` | 53 | `onnxruntime`, `pandas`; of which ~32 MB is OpenBLAS and the Fortran runtime |
+| `pandas` | 34 | xlsx/xls (see below) |
+| `onnxruntime` | 30 | `magika` — content-based type detection, imported unconditionally by markitdown |
 | `PIL` | 15 | `pdfplumber` |
-| `cryptography` | 13 | `pdfminer.six` (зашифрованные PDF) |
+| `cryptography` | 13 | `pdfminer.six` (encrypted PDFs) |
 | `lxml` | 11 | docx/pptx |
 | `pdfminer` | 9 | PDF |
 | `pypdfium2_raw` | 7 | `pdfplumber` |
 
-Дальше сжиматься можно только выбрасыванием зависимостей, которые markitdown
-импортирует безусловно (`magika`/`onnxruntime` и `pandas` — главные), то есть
-ценой «настоящести»: 242 МБ на десктопе — это цена эталона, и её надо
-назвать пользователю прямо. Исходники `.py` рядом с `.pyc` (~32 МБ) можно было
-бы убрать, оставив бессырцовый байткод, но это ломает трейсбеки ради 13% —
-не взято.
+Further shrinking is only possible by dropping dependencies that markitdown
+imports unconditionally (`magika`/`onnxruntime` and `pandas` being the main
+ones), i.e. at the cost of "authenticity": 242 MB on the desktop is the price
+of the reference implementation, and that price has to be stated to the
+user plainly. The `.py` sources next to the `.pyc` files (~32 MB) could be
+dropped, leaving source-less bytecode, but that breaks tracebacks to save
+13% — not taken.
 
-### pandas: обходится ли путь кода без него — нет
+### pandas: can the code path do without it — no
 
-Проверено по исходникам `markitdown 0.1.8`
-(`converters/_xlsx_converter.py`): и `XlsxConverter`, и `XlsConverter`
-целиком стоят на `pandas` — `pd.read_excel(..., sheet_name=None)` читает
-листы в `DataFrame`, а `DataFrame.to_html(index=False)` даёт промежуточный
-HTML, который затем превращает в Markdown общий `HtmlConverter`. `import
-pandas` стоит в начале модуля, и без него оба конвертера просто помечаются
-`MissingDependencyException`. Ни в одном другом конвертере (pdf/docx/pptx/msg)
-и ни в `pdfplumber`/`pdfminer` на пути markitdown pandas не используется
-(`grep` по дереву).
+Verified against the `markitdown 0.1.8` source
+(`converters/_xlsx_converter.py`): both `XlsxConverter` and `XlsConverter`
+rest entirely on `pandas` — `pd.read_excel(..., sheet_name=None)` reads
+sheets into a `DataFrame`, and `DataFrame.to_html(index=False)` produces
+intermediate HTML, which the shared `HtmlConverter` then turns into
+Markdown. `import pandas` sits at the top of the module, and without it both
+converters simply get marked with `MissingDependencyException`. pandas is
+not used in any other converter (pdf/docx/pptx/msg), nor in
+`pdfplumber`/`pdfminer`, anywhere on markitdown's code path (checked via
+`grep` across the tree).
 
-Цифры: `pandas` + `python-dateutil` + `six` = **35 МБ из 242 (~14%)**; `numpy`
-остаётся в любом случае (нужен `onnxruntime`). Выигрыш от полного отказа
-скромный, а цена — потеря смысла сайдкара для таблиц: свой путь xlsx/xls через
-`openpyxl`/`xlrd` дал бы *третью* реализацию, а не эталон. Формат вывода
-pandas — это и есть то, что мы хотим сверять: первая строка листа становится
-заголовком, пустые заголовки превращаются в `Unnamed: 1`, пустые ячейки в
-`NaN`, float'ы выравниваются по числу знаков (`0.50`), целочисленные float'ы
-из xls приводятся к int. Всё это пришлось бы повторять руками. **Решение:
-pandas остаётся, 35 МБ принимаются и называются.**
+Numbers: `pandas` + `python-dateutil` + `six` = **35 MB out of 242 (~14%)**;
+`numpy` stays regardless (needed by `onnxruntime`). The payoff from dropping
+it entirely is modest, and the cost is losing the whole point of the sidecar
+for tables: our own xlsx/xls path via `openpyxl`/`xlrd` would give a *third*
+implementation, not a reference. pandas's output format is exactly what we
+want to cross-check against: the sheet's first row becomes the header, empty
+headers turn into `Unnamed: 1`, empty cells become `NaN`, floats are aligned
+by digit count (`0.50`), and integer-valued floats coming from xls are cast
+to int. All of this would have to be reproduced by hand otherwise.
+**Decision: pandas stays, the 35 MB is accepted and called out.**
 
-Что сделано вместо удаления: pandas — это ещё и ~0,25 с холодного старта на
-каждый вызов, потому что markitdown импортирует все конвертеры разом.
-`run.py` для форматов не-таблиц (`pdf`, `docx`, `pptx`, `msg`) кладёт в
-`sys.modules["pandas"] = None` до импорта markitdown: `import pandas`
-падает `ImportError`, markitdown сам это ловит и помечает xlsx-конвертеры
-недоступными. Код и вывод markitdown не меняются (результат на шести
-фикстурах побайтно совпал с запуском без этой подмены), а вызов ускоряется
-с ~1,05 с до ~0,65 с.
+What was done instead of removing it: pandas also costs about 0.25 s of cold
+start on every call, because markitdown imports all converters at once. For
+non-table formats (`pdf`, `docx`, `pptx`, `msg`), `run.py` sets
+`sys.modules["pandas"] = None` before importing markitdown: `import pandas`
+then raises `ImportError`, which markitdown itself catches, marking the xlsx
+converters unavailable. markitdown's code and output don't change (the
+result on six fixtures was byte-for-byte identical to a run without this
+substitution), while the call speeds up from ~1.05 s to ~0.65 s.
 
-## Протокол
+## Protocol
 
-Один вызов — один подпроцесс. Без демона, без сокета, без разогрева:
+One call, one subprocess. No daemon, no socket, no warm-up:
 
 ```
 <dir>/python/bin/python3 -I -B <dir>/run.py --in /tmp/xxx.pdf --format pdf
-(на Windows: <dir>\python\python.exe — остальное то же)
-→ stdout: {"markdown": "...", "title": null, "warnings": [...]}   (один JSON, UTF-8)
-→ stderr: диагностика (в том числе предупреждения и логи библиотек)
-→ exit code: 0 | 2 (не поддерживается) | 3 (битый файл) | 1 (прочее)
+(on Windows: <dir>\python\python.exe — the rest is the same)
+→ stdout: {"markdown": "...", "title": null, "warnings": [...]}   (a single JSON object, UTF-8)
+→ stderr: diagnostics (including warnings and library logs)
+→ exit code: 0 | 2 (unsupported) | 3 (corrupt file) | 1 (other)
 ```
 
-- **`-I`**: окружение вызывающего (`PYTHONPATH`, user site) не влияет на
-  сайдкар; никаких переменных окружения он не требует. `run.py` сам
-  добавляет `<dir>/lib` в `sys.path` относительно своего `__file__`.
-- **`-B`**: байткод заранее собран при сборке, рантайм ничего не пишет в
-  бандл (см. «Подпись»).
-- **`--format`** — id формата (`pdf`, `docx`, `xlsx`, `xls`, `pptx`, `msg`);
-  `run.py` превращает его в подсказку-расширение для markitdown
-  (`StreamInfo(extension=...)`), потому что временный файл может прийти с
-  любым именем. Неизвестный id — код 2. **Это подсказка, а не принуждение:**
-  markitdown всё равно смотрит на содержимое (через `magika`), и `.docx`,
-  объявленный как `pdf`, или обычный текст, объявленный как `docx`, он
-  конвертирует «как есть», с кодом 0. Приложение передаёт id по своему же
-  распознаванию типа, так что на практике расхождения не бывает.
-- **stdout чист.** `run.py` на время работы перенаправляет *дескриптор* 1 на
-  stderr (нативный `onnxruntime` у `magika` пишет прямо в fd, `sys.stdout`
-  этого не поймает) и пишет JSON в сохранённую копию настоящего stdout.
-- **Коды выхода**: 2 — `UnsupportedFormatException` или неизвестный
-  `--format`; 3 — `FileConversionException` (в том числе пустой файл и мусор:
-  `PDFSyntaxError`, `BadZipFile`, `NotOleFileError`, `XLRDError`); 1 —
-  неверные аргументы, нет файла, непойманное исключение и случай, когда все
-  попытки упали на отсутствующей зависимости (это сломанная сборка, а не
-  «битый файл»; пользователю говорить «файл повреждён» было бы ложью). Свой
-  разбор аргументов вместо `argparse`, потому что у `argparse` ошибка — тоже
-  код 2, а он у нас занят.
-- **`warnings`** в JSON — только то, что `run.py` знает про результат (сейчас:
-  `"результат пуст"`); предупреждения библиотек уходят в stderr.
+- **`-I`**: the caller's environment (`PYTHONPATH`, user site) has no effect
+  on the sidecar; it requires no environment variables of its own. `run.py`
+  itself adds `<dir>/lib` to `sys.path` relative to its own `__file__`.
+- **`-B`**: bytecode is pre-built during the build step, the runtime writes
+  nothing into the bundle (see "Signing").
+- **`--format`** — a format id (`pdf`, `docx`, `xlsx`, `xls`, `pptx`, `msg`);
+  `run.py` turns it into an extension hint for markitdown
+  (`StreamInfo(extension=...)`), because the temporary file may arrive with
+  any name at all. An unknown id results in exit code 2. **This is a hint,
+  not a mandate:** markitdown still looks at the actual content (via
+  `magika`), and a `.docx` declared as `pdf`, or plain text declared as
+  `docx`, gets converted "as is," with exit code 0. The application passes
+  the id based on its own type detection, so in practice there's no
+  mismatch.
+- **stdout stays clean.** For the duration of the run, `run.py` redirects
+  file *descriptor* 1 to stderr (the native `onnxruntime` code inside
+  `magika` writes straight to the fd, which `sys.stdout` wouldn't catch),
+  and writes the JSON to a saved copy of the real stdout.
+- **Exit codes**: 2 — `UnsupportedFormatException` or an unknown
+  `--format`; 3 — `FileConversionException` (including an empty file or
+  garbage: `PDFSyntaxError`, `BadZipFile`, `NotOleFileError`, `XLRDError`);
+  1 — invalid arguments, missing file, an uncaught exception, and the case
+  where every attempt failed due to a missing dependency (that's a broken
+  build, not a "corrupt file"; telling the user "the file is corrupted"
+  would be a lie). Its own argument parsing is used instead of `argparse`,
+  because `argparse`'s own error is also exit code 2, which is already
+  taken.
+- **`warnings`** in the JSON — only what `run.py` itself knows about the
+  result (currently: `"result is empty"`); library warnings go to stderr.
 - **`manifest.json`**: `{"schema": 1, "markitdown": "0.1.8", "python":
-  "3.12.14", "formats": ["pdf","docx","xlsx","xls","pptx","msg"]}` — только
-  то, что реально работает в этом дереве (проверяет самопроверка сборки).
+  "3.12.14", "formats": ["pdf","docx","xlsx","xls","pptx","msg"]}` — only
+  what actually works in this particular tree (checked by the build's
+  self-check).
 
-Почему так, а не долгоживущий процесс: холодный старт Python с `import
-markitdown` — это на этой машине (Intel, macOS 12) около 0,65 с для
-pdf/docx/pptx/msg и 1,05 с для xlsx/xls, при ~96 / ~132 МБ ОЗУ (пик). Заметно, но на фоне
-остального терпимо. А процесс на вызов означает, что падение на одном файле
-не портит состояние для следующего, и что никакого состояния вообще нет.
-Если когда-нибудь станет мало — долгоживущий вариант и/или ленивый импорт
-конвертеров; сейчас не нужно.
+Why this, rather than a long-lived process: a cold Python start with `import
+markitdown` is, on this machine (Intel, macOS 12), around 0.65 s for
+pdf/docx/pptx/msg and 1.05 s for xlsx/xls, at ~96 / ~132 MB RAM (peak).
+Noticeable, but tolerable against everything else. And one process per call
+means a crash on one file doesn't corrupt state for the next one, and that
+there's no state at all. If this ever becomes insufficient — a long-lived
+variant and/or lazy converter imports; not needed right now.
 
-Передаётся **путь, а не поток через stdin**: часть конвертеров markitdown
-хочет видеть файл (и расширение в имени). Файл во временной папке создаёт
-приложение, удаляет тоже приложение, в `finally` — см.
-[client-architecture.md](client-architecture.md#состояние-и-приватность).
+What's passed is **a path, not a stream over stdin**: some markitdown
+converters want to see an actual file (and the extension in its name). The
+file in the temp folder is created by the application and deleted by the
+application too, in a `finally` block — see
+[client-architecture.md](client-architecture.md#state-and-privacy).
 
-Таймаут обязателен. Подпроцесс, который не ответил, убивается, и это
-превращается в обычную ошибку конвертации, а не в вечный спиннер.
+A timeout is mandatory. A subprocess that hasn't responded gets killed, and
+that turns into an ordinary conversion error rather than an endless spinner.
 
-## Что показал прогон на фикстурах
+## What the fixture run showed
 
-Прогон `run.py` из собранного сайдкара (macOS x86_64) по `core/test/fixtures/`
-и по синтетическим образцам `xls/simple.xls`, `msg/simple.msg`,
-`pptx/simple.pptx` (порождаются `sidecar/samples/make_samples.py`):
+A run of `run.py` from the built sidecar (macOS x86_64) over
+`core/test/fixtures/` and synthetic samples `xls/simple.xls`,
+`msg/simple.msg`, `pptx/simple.pptx` (produced by
+`sidecar/samples/make_samples.py`):
 
-| вход | код | результат |
+| input | code | result |
 |---|---|---|
-| `pdf/simple.pdf`, `docx/simple.docx`, `docx/evil_nested.docx`, `xlsx/*.xlsx` | 0 | валидный JSON |
-| `pdf/blank.pdf` | 0 | `markdown: ""`, `warnings: ["результат пуст"]` |
-| `pdf/scanned.pdf` | 0 | текст со страниц, где он есть; пустые страницы дают `\f` (form feed) |
-| `pptx/no_sppr.pptx` (фигура без `<p:spPr>`) | **3** | `InvalidXmlError: required <p:spPr> child element not present` |
-| образцы `.xls`/`.msg`/`.pptx` | 0 | валидный JSON, см. ниже |
-| пустой файл / случайные байты, любой из шести `--format` | 3 | stdout пуст, причина в stderr |
-| неизвестный `--format` | 2 | — |
-| нет `--in`, нет файла, лишний аргумент | 1 | — |
+| `pdf/simple.pdf`, `docx/simple.docx`, `docx/evil_nested.docx`, `xlsx/*.xlsx` | 0 | valid JSON |
+| `pdf/blank.pdf` | 0 | `markdown: ""`, `warnings: ["result is empty"]` |
+| `pdf/scanned.pdf` | 0 | text from pages that have it; empty pages produce `\f` (form feed) |
+| `pptx/no_sppr.pptx` (a shape without `<p:spPr>`) | **3** | `InvalidXmlError: required <p:spPr> child element not present` |
+| `.xls`/`.msg`/`.pptx` samples | 0 | valid JSON, see below |
+| empty file / random bytes, for any of the six `--format` values | 3 | stdout empty, reason in stderr |
+| unknown `--format` | 2 | — |
+| no `--in`, missing file, extra argument | 1 | — |
 
-Находки, важные для сверки:
+Findings relevant for cross-checking:
 
-- **Первая версия `pptx/simple.pptx` не открывалась настоящим python-pptx**
-  (фигура без `<p:spPr>`, Dart-парсеру это безразлично). Фикстуру заменили на
-  образец, который открывается обоими, а прежний вариант остался как злая
-  фикстура `pptx/no_sppr.pptx`: Dart её терпит, markitdown отвечает кодом 3.
-- **Расхождения Dart ↔ markitdown на текущих фикстурах** (из `expected.md`
-  против сайдкара): PDF — Dart делает заголовки по размеру шрифта и склеивает
-  перенесённые строки, markitdown 0.1.8 — нет (строки остаются как есть,
-  заголовков нет); docx — маркер списка `-` против `*`, сноски `[^1]` против
-  `[[1]](#footnote-1)`, таблица без заголовка у markitdown получает пустую
-  шапку `|  |  |`, вложенная таблица разворачивается в одну строку;
-  xlsx — первая строка листа markitdown делает заголовком (Dart выводит `A | B`
-  и данные целиком), объединённые ячейки не отмечает вовсе (Dart отдаёт
-  HTML-блок с warning, markitdown — `Unnamed: 1`).
-- **Происхождение `.xls`/`.msg`/`.pptx` в `core/test/fixtures/`**
-  (`xls/simple.xls`, `msg/simple.msg`, `pptx/simple.pptx`) — не «откуда-то», а
-  порождены `sidecar/samples/make_samples.py` (он пишет прямо в
-  `core/test/fixtures/`, опции `--only` и `--extra-path`). `.xls` — через
-  `xlwt` (ставится во временный каталог, в сайдкар не попадает); `.pptx` —
-  через python-pptx из сайдкара; `.msg` — минимальным писателем Compound File
-  Binary прямо в скрипте, с UTF-16-строками и кириллицей. Это синтетика, а не
-  письмо из Outlook: она проверяет путь `olefile` → `OutlookMsgConverter`, но
-  не даёт представления о реальных `.msg` (вложения, ANSI-кодировки,
-  RTF-тело). Ожидаемый Markdown для `.xls`/`.msg` — вывод самого сайдкара
-  (других конвертеров нет).
+- **The first version of `pptx/simple.pptx` wouldn't open in real
+  python-pptx** (a shape without `<p:spPr>`, which the Dart parser doesn't
+  care about). The fixture was replaced with a sample that opens in both,
+  and the old variant was kept as an adversarial fixture
+  `pptx/no_sppr.pptx`: Dart tolerates it, markitdown responds with code 3.
+- **Divergences between Dart and markitdown on the current fixtures**
+  (from `expected.md` versus the sidecar): PDF — Dart builds headings from
+  font size and joins wrapped lines, markitdown 0.1.8 doesn't (lines stay as
+  is, no headings); docx — list marker `-` versus `*`, footnotes `[^1]`
+  versus `[[1]](#footnote-1)`, a headerless table in markitdown gets an
+  empty header row `|  |  |`, a nested table gets flattened onto one line;
+  xlsx — markitdown turns the sheet's first row into a header (Dart outputs
+  `A | B` plus the data as is), merged cells aren't marked at all (Dart
+  emits an HTML block with a warning, markitdown produces `Unnamed: 1`).
+- **Where `.xls`/`.msg`/`.pptx` in `core/test/fixtures/` come from**
+  (`xls/simple.xls`, `msg/simple.msg`, `pptx/simple.pptx`) — not "from
+  somewhere," but produced by `sidecar/samples/make_samples.py` (it writes
+  directly into `core/test/fixtures/`, with `--only` and `--extra-path`
+  options). `.xls` via `xlwt` (installed into a temp directory, doesn't end
+  up in the sidecar); `.pptx` via python-pptx from the sidecar; `.msg` via a
+  minimal Compound File Binary writer right in the script, with UTF-16
+  strings and Cyrillic text. This is synthetic data, not a real Outlook
+  message: it exercises the `olefile` → `OutlookMsgConverter` path, but
+  gives no picture of real `.msg` files (attachments, ANSI encodings, RTF
+  bodies). The expected Markdown for `.xls`/`.msg` is the sidecar's own
+  output (there's no other converter).
 
-Холодный старт одного вызова, macOS x86_64, Intel, прогрев дисковым кэшем:
-**0,65 с** (pdf/docx/pptx/msg), **1,05 с** (xlsx/xls), пик ОЗУ ~96 и ~132 МБ; сам
-интерпретатор стартует за 30 мс, остальное — импорт markitdown и `magika`.
-Замеров «совсем холодного» диска (после перезагрузки или копирования бандла
-на другой том) нет: один случайный прогон по только что установленному pip'ом
-дереву без предкомпилированного байткода занял ~40 с, но это другое дерево
-и другая ситуация. Для таймаута приложения брать большой запас, а не 1 с.
+Cold start for a single call, macOS x86_64, Intel, with disk cache warm:
+**0.65 s** (pdf/docx/pptx/msg), **1.05 s** (xlsx/xls), peak RAM ~96 and
+~132 MB; the interpreter itself starts in 30 ms, the rest is importing
+markitdown and `magika`. There are no measurements of a "truly cold" disk
+(after a reboot, or copying the bundle to another volume): one random run
+over a tree freshly installed by pip, with no precompiled bytecode, took
+~40 s, but that's a different tree and a different situation. For the
+application's timeout, build in a large margin, not 1 s.
 
-## Windows (Этап 5)
+## Windows (Stage 5)
 
-Приоритет автора сместился на Windows и Android, поэтому сайдкар на десктопе
-теперь в первую очередь про Windows. Устройство то же — один подпроцесс на
-вызов, тот же `run.py`, тот же протокол; меняется следующее. **Собирается и
-проверяется в CI** (джоб `windows-sidecar` на `windows-2022`: сборка,
-интеграционные тесты, сверка с Dart — все выводы совпали с macOS побайтно,
-см. [format-coverage.md](format-coverage.md#сверка-на-windows-этап-5)); на
-живой Windows-машине — ещё нет (п. 8), см. [implementation-plan.md](implementation-plan.md#этап-5--windows-05),
-п. 4; ниже — что и почему.
+The author's priority has shifted to Windows and Android, so the desktop
+sidecar is now primarily about Windows. The design is the same — one
+subprocess per call, the same `run.py`, the same protocol; what changes is
+below. **It builds and is checked in CI** (the `windows-sidecar` job on
+`windows-2022`: build, integration tests, cross-check against Dart — all
+outputs matched macOS byte-for-byte, see
+[format-coverage.md](format-coverage.md#reconciliation-on-windows-stage-5)); it has
+not yet been checked on a live Windows machine (item 8), see
+[implementation-plan.md](implementation-plan.md#stage-5--windows-05), item 4;
+below is what changes and why.
 
-- **Раскладка.** `sidecar/dist/windows-x86_64/{python,lib,run.py,manifest.json}`
-  рядом с `.exe`; интерпретатор — `python/python.exe` вместо
-  `python/bin/python3` (`SidecarConverter.fromDirectory` это знает).
-  `discover()` ищет `sidecar\` в каталоге `.exe`, а
-  `app/windows/CMakeLists.txt` кладёт туда `sidecar/dist/windows-x86_64/`,
-  если тот собран. Протокол, `-I -B`, коды выхода без изменений.
-- **Интерпретатор.** python-build-standalone для `x86_64-pc-windows-msvc`,
-  вариант `install_only`, те же релиз и CPython 3.12.14. Системный Python не
-  используется и тут: на Windows его нет почти никогда, а «Python из
-  Microsoft Store» — заглушка.
-- **Зависимости.** Колёса `numpy`, `onnxruntime`, `pandas`, `lxml`,
-  `cryptography`, `pillow`, `pypdfium2` под `win_amd64` и cp312 существуют, так
-  что принципиальной преграды нет. Их DLL-зависимости (OpenBLAS у `numpy`,
-  собственные `.dll` у `onnxruntime`) едут внутри колёс, но проверить надо
-  именно запуском: `--self-check` на раннере — единственное, что считается.
-  Нужен ли Visual C++ Redistributable на чистой машине автора — выяснить на
-  первом артефакте: `python.exe` из python-build-standalone линкуется с
-  CRT, и если он отсутствует, сайдкар молча не стартует.
-- **Lock-файл.** `sidecar/locks/windows-x86_64.txt` — отдельный (хеши колёс
-  `win_amd64` свои), сгенерирован на раннере, а не руками: если файла нет,
-  джоб `windows-sidecar` сам зовёт `lock.sh`, выкладывает результат
-  артефактом `sidecar-lock-windows-x86_64` и краснеет, пока его не прочитают
-  и не закоммитят. 44 пакета против 42 на macOS: плюс `pyreadline3` и
-  `tzdata` (Windows-зависимости `humanfriendly` и `pandas`); `cryptography`,
-  `onnxruntime`, `pypdfium2` новее, чем на Intel-Mac, — свежих колёс там нет.
-  На вывод фикстур это не повлияло.
-- **Чистка в `build.sh`.** `lipo -thin` — macOS-специфика, на Windows
-  пропускается по хосту; `sympy`/`mpmath`, инструменты onnxruntime и
-  `compileall` общие. Чистка самого интерпретатора — **отдельной веткой**:
-  NTFS не различает регистр, `python/lib/` там — это `python/Lib/`, и
-  Unix-шное `rm -rf python/lib/{tcl*,tk*,thread*}` снесло бы
-  `Lib/threading.py`. На Windows убираются `Lib/{test,idlelib,tkinter,…}`,
-  `tcl/`, `include/`, `libs/`, `Scripts/`, Tk-библиотеки из `DLLs/`.
-- **Кодировка и пути.** Встроенные Python-скрипты `lock.sh`/`build.sh` идут с
-  `-X utf8`: stdout в пайпе на Windows — cp1252, `print` с кириллицей падал, а
-  `PYTHONUTF8` под `-I` игнорируется. Пути в аргументах `python.exe` — через
-  `cygpath -w` (`native_path` в `common.sh`), иначе `compileall -s` не срезал
-  бы путь сборки из `.pyc`. Сам `run.py` пишет ответ UTF-8-байтами прямо в
-  fd, так что протоколу кодировка консоли не мешает.
-- **Размер — 308 МБ** (macOS — 242): `lib/` 182 МБ, `python/` 126 МБ, из них
-  `DLLs/` ≈70 МБ — заметно больше, чем ждёшь от стандартных `.pyd`; что там
-  и можно ли срезать — не разобрано (открытый вопрос, см.
-  [future-development.md](future-development.md#размер-windows-сайдкара)).
-- **Подписи macOS нет.** `sign.sh`, `sidecar.entitlements`, Hardened Runtime и
-  нотаризация к Windows не относятся, а вместе с ними уходит и причина для
-  `-B` из соображений подписи (флаг остаётся: он всё равно не даёт писать в
-  каталог установки). Вместо этого — **Authenticode** для `.exe` и,
-  возможно, `python.exe`; сертификата нет, решение о подписи и SmartScreen —
-  открытый вопрос Этапа 5 (п. 6). Первый вызов интерпретатора Defender
-  проверяет заметно дольше обычного — таймаут первого вызова держать
-  щедрым, как и на macOS.
-- **Длинные пути.** Самый длинный путь внутри сайдкара — 95 символов
-  (`lib/lxml/isoschematron/…`; печатается в логе джоба), то есть до лимита
-  260 остаётся ~165 на каталог, куда распакован zip. Если в Этапе 7 выберут
-  MSIX (`C:\Program Files\WindowsApps\…` с длинным префиксом) — проверить
-  заново.
-- **Скорость.** Замеры из этого документа и из
-  [format-coverage.md](format-coverage.md#сверка-с-эталоном-этап-4) — с macOS;
-  на Windows пересмотреть. Порядок «сайдкар или Dart» решён (Этап 5, п. 5):
-  в приложении сайдкар идёт первым только на `pdf` до 50 страниц и на
-  `xls`/`msg` — см.
-  [conversion-pipeline.md](conversion-pipeline.md#сайдкар--просто-ещё-один-конвертер).
+- **Layout.** `sidecar/dist/windows-x86_64/{python,lib,run.py,manifest.json}`
+  next to the `.exe`; the interpreter is `python/python.exe` instead of
+  `python/bin/python3` (`SidecarConverter.fromDirectory` knows this).
+  `discover()` looks for `sidecar\` in the `.exe`'s directory, and
+  `app/windows/CMakeLists.txt` puts `sidecar/dist/windows-x86_64/` there if
+  it's been built. The protocol, `-I -B`, and exit codes are unchanged.
+- **Interpreter.** python-build-standalone for `x86_64-pc-windows-msvc`,
+  `install_only` variant, same release and CPython 3.12.14. The system
+  Python isn't used here either: on Windows it almost never exists, and
+  "Python from the Microsoft Store" is a stub.
+- **Dependencies.** Wheels for `numpy`, `onnxruntime`, `pandas`, `lxml`,
+  `cryptography`, `pillow`, `pypdfium2` exist for `win_amd64` and cp312, so
+  there's no fundamental obstacle. Their DLL dependencies (OpenBLAS for
+  `numpy`, `onnxruntime`'s own `.dll` files) ship inside the wheels, but this
+  has to be verified by actually running: `--self-check` on the runner is
+  the only thing that counts. Whether the Visual C++ Redistributable is
+  needed on the author's clean machine remains to be found out on the first
+  artifact: `python.exe` from python-build-standalone links against the
+  CRT, and if it's absent, the sidecar will silently fail to start.
+- **Lock file.** `sidecar/locks/windows-x86_64.txt` — a separate file (the
+  `win_amd64` wheel hashes are its own), generated on the runner rather than
+  by hand: if the file doesn't exist, the `windows-sidecar` job calls
+  `lock.sh` itself, uploads the result as the `sidecar-lock-windows-x86_64`
+  artifact, and stays red until it's read and committed. 44 packages versus
+  42 on macOS: plus `pyreadline3` and `tzdata` (Windows-only dependencies of
+  `humanfriendly` and `pandas`); `cryptography`, `onnxruntime`, and
+  `pypdfium2` are newer than on the Intel Mac — there are no fresh enough
+  wheels there. This had no effect on the fixture output.
+- **Cleanup in `build.sh`.** `lipo -thin` is macOS-specific and is skipped by
+  host on Windows; `sympy`/`mpmath`, onnxruntime tooling, and `compileall`
+  are shared. Cleaning the interpreter itself is a **separate branch**: NTFS
+  is case-insensitive, so `python/lib/` there is the same as `python/Lib/`,
+  and the Unix-style `rm -rf python/lib/{tcl*,tk*,thread*}` would have wiped
+  out `Lib/threading.py`. On Windows, `Lib/{test,idlelib,tkinter,…}`, `tcl/`,
+  `include/`, `libs/`, `Scripts/`, and the Tk libraries in `DLLs/` are
+  removed instead.
+- **Encoding and paths.** The embedded Python scripts `lock.sh`/`build.sh`
+  run with `-X utf8`: stdout in a pipe on Windows is cp1252, `print` with
+  Cyrillic text used to fail, and `PYTHONUTF8` is ignored under `-I`. Paths
+  passed as arguments to `python.exe` go through `cygpath -w` (`native_path`
+  in `common.sh`), otherwise `compileall -s` wouldn't have stripped the
+  build path out of the `.pyc` files. `run.py` itself writes the response as
+  UTF-8 bytes straight to the fd, so the console encoding doesn't interfere
+  with the protocol.
+- **Size — 308 MB** (macOS — 242): `lib/` 182 MB, `python/` 126 MB, of which
+  `DLLs/` is ≈70 MB — noticeably more than you'd expect from standard
+  `.pyd` files; what's actually in there and whether it can be trimmed
+  hasn't been looked into (an open question, see
+  [future-development.md](future-development.md#size-of-the-windows-sidecar)).
+- **No macOS signing.** `sign.sh`, `sidecar.entitlements`, Hardened Runtime,
+  and notarization don't apply to Windows, and along with them goes the
+  signing-related reason for `-B` (the flag stays anyway: it still prevents
+  writing into the install directory). Instead there's **Authenticode** for
+  the `.exe` and possibly `python.exe`; there's no certificate yet, and the
+  decision on signing and SmartScreen is an open question for Stage 5
+  (item 6). The first call to the interpreter is checked noticeably longer
+  than usual by Defender — keep the first call's timeout generous, just as
+  on macOS.
+- **Long paths.** The longest path inside the sidecar is 95 characters
+  (`lib/lxml/isoschematron/…`; printed in the job log), i.e. with the 260
+  limit there's about 165 left for the directory the zip is extracted into.
+  If MSIX is chosen at Stage 7 (`C:\Program Files\WindowsApps\…` with a
+  long prefix), re-check this.
+- **Speed.** The measurements in this document and in
+  [format-coverage.md](format-coverage.md#reconciliation-with-the-reference-stage-4) are
+  from macOS; revisit on Windows. The order of "sidecar or Dart" has been
+  decided (Stage 5, item 5): in the app, the sidecar goes first only for
+  `pdf` up to 50 pages and for `xls`/`msg` — see
+  [conversion-pipeline.md](conversion-pipeline.md#sidecar--just-another-converter).
 
-## Подпись и нотаризация на macOS
+## Signing and notarization on macOS
 
-*Вторичная платформа: раздел рабочий и остаётся как есть, но в приоритете больше не стоит.*
+*Secondary platform: this section is maintained and stays as is, but is no
+longer a priority.*
 
-Самая вероятная точка, где всё встанет, — поэтому вынесена отдельно. Рабочие
-команды целиком (с пометками, что проверено, а что нет) — в
-[operations.md](operations.md#подпись-и-нотаризация-команды); здесь — почему
-именно так.
+The most likely point where everything breaks down — hence a dedicated
+section. The full working commands (marked with what's verified and what
+isn't) are in
+[operations.md](operations.md#signing-and-notarization-commands); here is
+why it's done this way.
 
-Встроенный интерпретатор — это **исполняемый файл внутри бандла**, и
-Hardened Runtime относится к нему со всей серьёзностью:
+The embedded interpreter is **an executable file inside the bundle**, and
+Hardened Runtime treats it with full seriousness:
 
-- Каждый вложенный Mach-O подписывается **отдельно**, с `--options runtime`
-  (без него нотаризация отказывает), и только потом подписывается бандл
-  (изнутри наружу). Их 111: 110 `.so`/`.dylib` и `python3.12`.
-  `sidecar/sign.sh` ищет их по магическим байтам, а не по расширению, чтобы не
-  пропустить `.so` с нестандартным именем.
-- **Подпись идёт строго после `build.sh` целиком** — после compileall, чисток
-  и `lipo -thin`: подпись хеширует файл, и любая правка после неё её ломает.
-  Сам `sign.sh` в дерево ничего, кроме подписей, не пишет. И строго до подписи
-  внешнего `.app`, чей ресурсный seal накрывает этот каталог.
-- `com.apple.security.network.client` в entitlements интерпретатора **не
-  нужен и не добавляется**. С 0.9 приложение (Runner) его имеет — для
-  режима «ссылка», — и сайдкар как подпроцесс наследует его вместе с
-  песочницей; без сети сайдкар держит то, что сетевые конвертеры markitdown
-  в нём не установлены (см. [offline-and-privacy.md](offline-and-privacy.md)).
-  `sign.sh` отказывается работать, если в файле entitlements есть сетевой ключ,
-  и проверяет итоговые entitlements подписанного интерпретатора.
-- Нотаризация проверяет всё дерево: один неподписанный `.so` в зависимостях —
-  отказ, и в отчёте он один из многих. Поэтому подпись делается скриптом с
-  обходом дерева, а не руками, и в конце каждый файл проверяется отдельно.
+- Every nested Mach-O binary is signed **separately**, with `--options
+  runtime` (without it, notarization refuses), and only then is the bundle
+  itself signed (inside out). There are 111 of them: 110 `.so`/`.dylib`
+  files and `python3.12`. `sidecar/sign.sh` finds them by magic bytes, not
+  by extension, so as not to miss a `.so` with a nonstandard name.
+- **Signing happens strictly after `build.sh` has fully run** — after
+  compileall, all the cleanup steps, and `lipo -thin`: signing hashes the
+  file, and any edit afterward breaks the signature. `sign.sh` itself writes
+  nothing into the tree except the signatures. And it runs strictly before
+  signing the outer `.app`, whose resource seal covers this directory.
+- `com.apple.security.network.client` in the interpreter's entitlements is
+  **not needed and is not added**. Since 0.9 the application (Runner) has
+  it — for the "link" mode — and the sidecar, as a subprocess, inherits it
+  along with the sandbox; without network access, the sidecar relies on the
+  fact that markitdown's network converters simply aren't installed in it
+  (see [offline-and-privacy.md](offline-and-privacy.md)). `sign.sh` refuses
+  to run if the entitlements file contains a network key, and it checks the
+  final entitlements of the signed interpreter.
+- Notarization checks the entire tree: a single unsigned `.so` among the
+  dependencies is a refusal, and in the report it's just one line among
+  many. That's why signing is done by a script that walks the tree, not by
+  hand, and at the end every file is verified individually.
 
-### Подпись: проверено ad-hoc с Hardened Runtime
+### Signing: verified ad hoc with Hardened Runtime
 
-Идентичности Developer ID на машине нет (`security find-identity -v -p
-codesigning` — 0), поэтому честная проверка здесь — **ad-hoc (`-`) с
-`--options runtime`**: Hardened Runtime применяется и к ad-hoc, включая
-library validation, так что набор entitlements проверяется настоящим
-образом. Не проверено: настоящий Developer ID, `--timestamp`, нотаризация.
+There's no Developer ID identity on this machine (`security find-identity -v
+-p codesigning` — 0), so the honest verification here is **ad hoc (`-`)
+with `--options runtime`**: Hardened Runtime applies to ad hoc signing too,
+including library validation, so the set of entitlements is genuinely
+exercised. Not verified: a real Developer ID, `--timestamp`, notarization.
 
-Что выяснилось, по entitlements:
+What was found, by entitlement:
 
-| entitlement | нужен? | как проверено |
+| entitlement | needed? | how it was verified |
 |---|---|---|
-| `cs.disable-library-validation` | **да, для ad-hoc; с Developer ID, вероятно, нет** | без него `import numpy` падает: `code signature … not valid for use in process: mapped file has no Team ID and is not a platform binary`. С ним `--self-check` и все шесть форматов проходят, вывод побайтно совпадает с неподписанным. С настоящим Developer ID все 111 файлов получат один Team ID, и library validation, по документации, их пропустит и так; проверить это нечем, поэтому ключ оставлен (он ослабляет Hardened Runtime, и это кандидат на удаление при первой же сборке с настоящим сертификатом) |
-| `cs.allow-unsigned-executable-memory` | **нет** | ctypes-колбэк (`qsort` с `CFUNCTYPE`) под Hardened Runtime без него **зависает** (процесс крутится в ядре, 12 с системного времени из 20), с ним отрабатывает за 0,8 с. `allow-jit` не помогает — libffi не использует `MAP_JIT`. Но колбэки есть только в `cffi.backend_ctypes`, `pypdfium2` (не на пути markitdown) и Windows-ветке `click`; все шесть форматов и onnxruntime/numpy/lxml без него работают. Если когда-нибудь появится зависимость с колбэками, симптом — именно зависание, а лечится одной строкой в `sidecar.entitlements` |
-| `cs.allow-jit` | нет | см. выше; Python 3.12 JIT не использует |
-| `com.apple.security.network.*` | **запрещено** | сайдкар офлайн |
-| `app-sandbox` + `inherit` | нет, для DMG | подпроцесс песочного приложения наследует песочницу сам; для Mac App Store понадобятся оба (отдельное решение). **Не проверено** — нужен живой `.app`, а Xcode не ставится |
+| `cs.disable-library-validation` | **yes, for ad hoc; probably not with a Developer ID** | without it, `import numpy` fails: `code signature … not valid for use in process: mapped file has no Team ID and is not a platform binary`. With it, `--self-check` and all six formats pass, and the output matches the unsigned build byte-for-byte. With a real Developer ID, all 111 files would get one Team ID, and library validation, per the documentation, should let them through anyway; there's no way to verify this here, so the key is left in (it weakens Hardened Runtime and is a candidate for removal as soon as there's a build with a real certificate) |
+| `cs.allow-unsigned-executable-memory` | **no** | a ctypes callback (`qsort` with `CFUNCTYPE`) under Hardened Runtime **hangs** without it (the process spins in the kernel, 12 s of system time out of 20), and completes in 0.8 s with it. `allow-jit` doesn't help — libffi doesn't use `MAP_JIT`. But callbacks only occur in `cffi.backend_ctypes`, `pypdfium2` (not on markitdown's code path), and the Windows branch of `click`; all six formats and onnxruntime/numpy/lxml work fine without it. If a dependency with callbacks ever shows up, the symptom is exactly this hang, and the fix is a single line in `sidecar.entitlements` |
+| `cs.allow-jit` | no | see above; Python 3.12 doesn't use a JIT |
+| `com.apple.security.network.*` | **forbidden** | the sidecar is offline |
+| `app-sandbox` + `inherit` | no, for the DMG | a sandboxed app's subprocess inherits the sandbox on its own; for the Mac App Store both would be needed (a separate decision). **Not verified** — needs a live `.app`, and Xcode isn't installed |
 
-Дополнительно проверено: подписанное дерево, скопированное в каталог с
-пробелом в пути (`rsync -a`), работает; подписанное дерево, вложенное в тестовый
-`.app` и подписанное снаружи с `Release.entitlements`, проходит
-`codesign --verify --deep --strict` (запечатано 5205 файлов), вложенный
-интерпретатор остаётся валидным и запускается. Порча подписанной `.so`
-ловится `codesign --verify`.
+Additionally verified: a signed tree copied into a directory with a space in
+the path (`rsync -a`) works; a signed tree embedded in a test `.app` and
+signed from the outside with `Release.entitlements` passes `codesign
+--verify --deep --strict` (5205 files sealed), the nested interpreter stays
+valid and runs. Corrupting a signed `.so` is caught by `codesign --verify`.
 
-Заметка про производительность: первый запуск свежеподписанных файлов на этой
-машине заметно медленнее обычного (система проверяет каждый новый подписанный
-файл), поэтому таймаут приложения на первый вызов должен быть щедрым.
+A performance note: the first run of freshly signed files on this machine is
+noticeably slower than usual (the system checks every newly signed file),
+so the application's timeout for the first call should be generous.
 
-### Про App Store
+### About the App Store
 
-Бандл с интерпретатором — не нарушение (приложение самодостаточно, код
-ниоткуда не скачивается), но это **существенно более хлопотный путь**:
-sandbox, подпись вложенных бинарников, повышенное внимание ревью. Поэтому
-распространение на этапе 4 — DMG с нотаризацией и GitHub Releases, а Mac App
-Store — отдельное решение, если и когда появится причина.
+A bundle containing an interpreter is not a violation (the app is
+self-contained, no code is downloaded from anywhere), but it is a
+**significantly more cumbersome path**: sandboxing, signing of nested
+binaries, heightened review scrutiny. That's why distribution at Stage 4 is
+a notarized DMG via GitHub Releases, and the Mac App Store is a separate
+decision, if and when there's a reason for it.
 
-## Почему на мобильных его нет
+## Why it's absent on mobile
 
-Не «сложно», а упирается в нативные зависимости. `lxml`, `pdfminer.six` (через
-`cryptography`), `pandas`, `pillow`, `magika` (ONNX-рантайм) — всё это
-нативные колёса, и под `arm64-ios`/`arm64-android` их просто нет; собирать их
-самостоятельно под мобильные ABI — отдельный проект, заметно больший, чем всё
-это приложение.
+Not because it's "hard," but because it runs straight into native
+dependencies. `lxml`, `pdfminer.six` (via `cryptography`), `pandas`,
+`pillow`, `magika` (an ONNX runtime) — these are all native wheels, and none
+of them exist for `arm64-ios`/`arm64-android`; building them from source for
+mobile ABIs would be a separate project, noticeably bigger than this whole
+application.
 
-Chaquopy (Android) и python-apple-support (iOS) дают сам интерпретатор, но не
-решают проблему колёс. Поэтому мобильные платформы работают **только** на
-Dart-ядре, и это не временное состояние, а архитектурное решение: именно
-поэтому Dart-ядро — основной путь, а сайдкар — усиление, а не наоборот. Если
-бы было наоборот, приложение на телефоне не умело бы ничего.
+Chaquopy (Android) and python-apple-support (iOS) provide the interpreter
+itself but don't solve the wheel problem. So mobile platforms run **only**
+on the Dart core, and this isn't a temporary state but an architectural
+decision: it's exactly why the Dart core is the primary path and the sidecar
+is a booster, not the other way around. If it were the other way around,
+the app on a phone wouldn't be able to do anything at all.
 
-Следствие, которое надо держать в голове: **на телефоне и на макбуке
-результат может отличаться.** Там, где сработал сайдкар, в `warnings` пишется
-`converterId: sidecar` — чтобы при разборе «почему у меня вышло не так» не
-гадать.
+A consequence worth keeping in mind: **results can differ between a phone
+and a laptop.** Wherever the sidecar did the work, `warnings` includes
+`converterId: sidecar` — so that when figuring out "why did I get a
+different result," you don't have to guess.

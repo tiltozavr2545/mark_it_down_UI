@@ -5,16 +5,16 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import 'picked_file.dart';
 
-/// Системное «Поделиться» на Android — третий из четырёх входов. Плагин
-/// умеет и iOS, но Share Extension там — отдельный процесс и отдельная
-/// задача (см. `docs/client-architecture.md`), поэтому здесь вызывающая
-/// сторона включает это только под `Platform.isAndroid`.
+/// The system "Share" on Android — the third of four intake sources. The
+/// plugin supports iOS too, but the Share Extension there is a separate
+/// process and a separate task (see `docs/client-architecture.md`), so here
+/// the caller enables this only under `Platform.isAndroid`.
 ///
-/// Файлы уже лежат во временном кеше плагина — [SharedMediaFile.path] ведёт
-/// на диск, поэтому [PickedFile.bytes] здесь читается через `File.readAsBytes`.
-/// Текст и URL (ссылкой делятся YouTube и браузер) приходят как
-/// [SharedInput.link] — для режима «ссылка»; текст без ссылки отбрасывается
-/// уже там.
+/// Files already sit in the plugin's temporary cache — [SharedMediaFile.path]
+/// points to disk, so [PickedFile.bytes] here is read via
+/// `File.readAsBytes`. Text and URLs (YouTube and the browser share as a
+/// link) arrive as [SharedInput.link] — for "link" mode; text with no link
+/// is already discarded there.
 class ShareIntake {
   Future<SharedInput> initial() async {
     final media = await ReceiveSharingIntent.instance.getInitialMedia();
@@ -33,7 +33,7 @@ class ShareIntake {
     for (final shared in media) {
       if (shared.type == SharedMediaType.text ||
           shared.type == SharedMediaType.url) {
-        // У текста плагин кладёт сам текст в `path`.
+        // For text, the plugin puts the text itself into `path`.
         link ??= shared.path;
         continue;
       }
@@ -51,7 +51,7 @@ class ShareIntake {
   }
 }
 
-/// Чем поделились: файлы или текст со ссылкой.
+/// What was shared: files, or text with a link.
 class SharedInput {
   final List<PickedFile> files;
   final String? link;

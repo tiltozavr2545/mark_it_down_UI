@@ -10,15 +10,17 @@ import 'package:markitdown_core/src/conversion/speech/whisper_transcriber.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// Распознавание речи на настоящем whisper.cpp. Эталон — ключевые слова, а
-/// не побайтный Markdown, как у OCR: текст зависит от версии движка, модели
-/// и даже набора инструкций процессора (варианты CPU-бэкенда считают с
-/// разной точностью). Фикстуры `speech/` — синтезированная речь (`say` на
-/// macOS: Milena, Samantha, Alice), см. `docs/format-coverage.md`.
+/// Speech recognition on real whisper.cpp. The baseline is keywords, not
+/// byte-for-byte Markdown like OCR: the text depends on the engine version,
+/// the model, and even the processor's instruction set (CPU backend variants
+/// compute with different precision). The `speech/` fixtures are synthesized
+/// speech (`say` on macOS: Milena, Samantha, Alice), see
+/// `docs/format-coverage.md`.
 ///
-/// Нужны библиотеки (`MARKITDOWN_WHISPER_DIR`, `whisper/build.sh`) и для
-/// распознавания — модели (`whisper/models/`, `whisper/fetch.sh`). Без
-/// них тесты пропускаются; декодеры проверяются и без моделей.
+/// Requires the libraries (`MARKITDOWN_WHISPER_DIR`, `whisper/build.sh`) and,
+/// for recognition, the models (`whisper/models/`, `whisper/fetch.sh`).
+/// Without them the tests are skipped; decoders are checked even without
+/// models.
 void main() {
   final root = Directory.current.parent.path;
   final models = p.join(root, 'whisper', 'models');
@@ -56,10 +58,10 @@ void main() {
   Iterable<String> messages(ConversionResult result) =>
       result.warnings.map((w) => w.message);
 
-  // Одно слово из нескольких может выйти иначе на другом процессоре: ggml
-  // выбирает вариант CPU-кода под раннер, и «riconoscimento» однажды стало
-  // «riconosimento». Поэтому из фраз допускается одна неточная, а язык
-  // проверяется строго.
+  // One word out of several may come out differently on another processor:
+  // ggml picks a CPU-code variant for the runner, and "riconoscimento" once
+  // became "riconosimento". So one inexact phrase is allowed, while the
+  // language is checked strictly.
   void expectMostOf(String markdown, List<String> phrases) {
     final text = markdown.toLowerCase();
     final missing = phrases.where((p) => !text.contains(p)).toList();
@@ -70,8 +72,8 @@ void main() {
     );
   }
 
-  group('распознавание', () {
-    test('русский — расшифровка, язык и движок в предупреждениях', () async {
+  group('recognition', () {
+    test('Russian — transcription, language and engine in warnings', () async {
       final result = await convert('speech/ru.wav');
       expect(result.markdown, contains('## Расшифровка'));
       expect(result.markdown, contains('**0:00** '));
@@ -85,7 +87,7 @@ void main() {
       expect(messages(result), contains(contains('whisper.cpp')));
     }, skip: noModel);
 
-    test('английский', () async {
+    test('English', () async {
       final result = await convert('speech/en.wav');
       expectMostOf(result.markdown, [
         'speech recognition',
@@ -96,7 +98,7 @@ void main() {
       expect(result.markdown, contains('- **Язык речи:** английский'));
     }, skip: noModel);
 
-    test('итальянский', () async {
+    test('Italian', () async {
       final result = await convert('speech/it.wav');
       expectMostOf(result.markdown, [
         'prova',
@@ -107,12 +109,12 @@ void main() {
       expect(result.markdown, contains('- **Язык речи:** итальянский'));
     }, skip: noModel);
 
-    // Английский и итальянский — главные для автора наравне с русским.
-    // 50 секунд, четыре голоса (Samantha, Daniel, Alex / Alice, Luca),
-    // быстрая речь в конце: несколько 30-секундных окон подряд, язык
-    // определяется сам. Замер 0.8 на этих записях — WER 0 % (английский) и
-    // 1,6 % (итальянский: «ha» → «a», «caldaia» → «caldàia»).
-    test('английский, 50 секунд, четыре голоса', () async {
+    // English and Italian are primary for the author, on par with Russian.
+    // 50 seconds, four voices (Samantha, Daniel, Alex / Alice, Luca), fast
+    // speech at the end: several consecutive 30-second windows, language
+    // detected automatically. The 0.8 measurement on these recordings is
+    // WER 0% (English) and 1.6% (Italian: "ha" → "a", "caldaia" → "caldàia").
+    test('English, 50 seconds, four voices', () async {
       final result = await convert('speech/en_long.flac');
       expect(result.markdown, contains('- **Язык речи:** английский'));
       expectMostOf(result.markdown, [
@@ -124,7 +126,7 @@ void main() {
       ]);
     }, skip: noModel);
 
-    test('итальянский, 50 секунд, четыре голоса', () async {
+    test('Italian, 50 seconds, four voices', () async {
       final result = await convert('speech/it_long.flac');
       expect(result.markdown, contains('- **Язык речи:** итальянский'));
       expectMostOf(result.markdown, [
@@ -136,7 +138,7 @@ void main() {
       ]);
     }, skip: noModel);
 
-    test('FLAC — тот же путь через miniaudio', () async {
+    test('FLAC — same path through miniaudio', () async {
       final result = await convert('speech/en.flac');
       expectMostOf(result.markdown, [
         'speech recognition',
@@ -145,16 +147,17 @@ void main() {
       ]);
     }, skip: noModel);
 
-    test('M4A (AAC) — декодер платформы', () async {
+    test('M4A (AAC) — platform decoder', () async {
       final result = await convert('speech/ru.m4a');
       if (result.markdown.contains('## Расшифровка')) {
         expectMostOf(result.markdown, ['распознавания речи', 'понедельник']);
         return;
       }
-      // Декодера AAC нет: хост тестов macOS/Linux, Windows «N» или Windows
-      // Server без Media Foundation (на раннере CI windows-2022 он есть). Метаданные есть,
-      // распознавания нет — и об этом сказано; сам путь AAC здесь не
-      // проверен, поэтому тест помечается пропущенным, а не зелёным.
+      // No AAC decoder: test host is macOS/Linux, Windows "N", or Windows
+      // Server without Media Foundation (the windows-2022 CI runner has it).
+      // Metadata is present, recognition isn't — and that's reported; the
+      // AAC path itself isn't verified here, so the test is marked skipped
+      // rather than green.
       expect(result.markdown, contains('- **Формат:**'));
       expect(messages(result), contains(contains('кодек не поддерживается')));
       markTestSkipped(
@@ -162,7 +165,7 @@ void main() {
       );
     }, skip: noModel);
 
-    test('отмена до начала — результат без текста, а не ошибка', () async {
+    test('cancel before start — result without text, not an error', () async {
       final control = TranscriptionControl()..cancel();
       try {
         final cancelled = ConverterRegistry.defaultRegistry(
@@ -177,9 +180,10 @@ void main() {
       }
     }, skip: noModel);
 
-    // Dart проверяет флаг до прослойки сам, поэтому её ранний выход —
-    // напрямую: остановленное до вызова не декодируется и не грузит модель.
-    test('отмена до mdw_transcribe_memory — сразу «остановлено»', () {
+    // Dart checks the flag before the shim itself, so its early exit is
+    // tested directly: cancelling before the call means nothing is decoded
+    // and no model is loaded.
+    test('cancel before mdw_transcribe_memory — immediately "cancelled"', () {
       final bindings = WhisperBindings(loadWhisperLibrary()!.library);
       final bytes = read('speech/ru.wav');
       final data = malloc<Uint8>(bytes.length);
@@ -212,11 +216,12 @@ void main() {
       }
     }, skip: noModel);
 
-    // Кусок — 10 минут: речь, 10,5 минуты тишины, снова речь. Граница
-    // куска ложится в тишину, вторая фраза — во втором куске со сдвигом
-    // времени, язык — с первого куска. Распознаётся только речь (VAD),
-    // поэтому тест идёт секунды, а не минуты.
-    test('длинная запись — кусками: время и язык сквозные', () async {
+    // A chunk is 10 minutes: speech, 10.5 minutes of silence, speech again.
+    // The chunk boundary falls in the silence, the second phrase is in the
+    // second chunk with a time offset, the language comes from the first
+    // chunk. Only speech is recognized (VAD), so the test runs in seconds,
+    // not minutes.
+    test('long recording — in chunks: time and language carry through', () async {
       final (speech, _) = engine!.decodeMemory(read('speech/ru.wav'), 1 << 30);
       final words = Float32List.fromList(
         speech!.samples.asTypedList(speech.length),
@@ -259,11 +264,12 @@ void main() {
       }
     }, skip: noModel);
 
-    // Граница куска посреди речи: тишина до 9:40, затем фраза шесть раз
-    // подряд до 10:16 — в последних 15 секундах куска тишины нет, и он
-    // режется в паузе между фразами. Остаток куска переносится в следующий:
-    // потеряй или испорти его — пропала бы фраза.
-    test('граница куска в речи — ни одна фраза не потеряна', () async {
+    // Chunk boundary in the middle of speech: silence until 9:40, then the
+    // phrase six times in a row until 10:16 — there's no silence in the last
+    // 15 seconds of the chunk, and it's cut in the pause between phrases.
+    // The remainder of the chunk carries over into the next one: lose or
+    // corrupt it and a phrase would be missing.
+    test('chunk boundary within speech — no phrase lost', () async {
       final (speech, _) = engine!.decodeMemory(read('speech/ru.wav'), 1 << 30);
       final words = Float32List.fromList(
         speech!.samples.asTypedList(speech.length),
@@ -284,17 +290,18 @@ void main() {
     }, skip: noModel);
   });
 
-  // Каталог задан явно (make test, CI) — значит библиотеки там должны
-  // быть: тихий пропуск всех тестов выглядел бы в CI как успех.
+  // The directory is set explicitly (make test, CI) — meaning the libraries
+  // should be there: silently skipping all tests would look like success
+  // in CI.
   test(
-    'библиотеки грузятся из MARKITDOWN_WHISPER_DIR',
+    'libraries load from MARKITDOWN_WHISPER_DIR',
     () {
       expect(engine, isNotNull, reason: 'не загрузилась markitdown_whisper');
     },
     skip: Platform.environment[whisperLibDirEnvVar] == null,
   );
 
-  test('модели нет — метаданные и предупреждение, не отказ', () async {
+  test('no model — metadata and warning, not a failure', () async {
     final missing = ConverterRegistry.defaultRegistry(
       transcription: const TranscriptionSettings(modelPath: '/нет/модели.bin'),
     );
@@ -303,25 +310,25 @@ void main() {
     expect(messages(result), contains(contains('недоступно')));
   });
 
-  test('музыка без слов — «речь не найдена», без языка', () async {
+  test('music without words — "speech not found", no language', () async {
     final result = await convert('audio/music.ogg');
     expect(result.markdown, isNot(contains('## Расшифровка')));
     expect(result.markdown, isNot(contains('Язык речи')));
     expect(messages(result), contains('речь не найдена'));
   }, skip: noModel);
 
-  group('декодеры', () {
-    // Длительность по метаданным (AudioConverter) против декодированной.
+  group('decoders', () {
+    // Duration from metadata (AudioConverter) versus decoded.
     const durations = {
-      'audio/voice.ogg': 3.0, // Ogg Opus — свой разбор Ogg + libopus
+      'audio/voice.ogg': 3.0, // Ogg Opus — own Ogg parsing + libopus
       'audio/music.ogg': null, // Ogg Vorbis — stb_vorbis
       'audio/song.mp3': null,
       'audio/track.flac': null,
       'audio/recording.wav': null,
-      'speech/ru.wav': 6.6, // 22 050 Гц — через ресемплер
+      'speech/ru.wav': 6.6, // 22,050 Hz — through the resampler
     };
     for (final MapEntry(key: name, value: seconds) in durations.entries) {
-      test('$name → 16 кГц моно', () {
+      test('$name → 16 kHz mono', () {
         final (audio, status) = engine!.decodeMemory(read(name), 1 << 30);
         expect(status, 0, reason: 'код mdw: $status');
         try {
@@ -335,9 +342,9 @@ void main() {
       }, skip: noLibrary);
     }
 
-    // Нативный декодер в процессе приложения: битый файл не должен его
-    // ронять. Код ошибки или частичный результат — оба годятся.
-    test('обрезанные файлы — код возврата, а не падение', () {
+    // The native decoder runs in the app's process: a corrupt file must not
+    // crash it. An error code or a partial result are both fine.
+    test('truncated files — return code, not a crash', () {
       final names = [...durations.keys, 'speech/en.flac'];
       for (final name in names) {
         final full = read(name);
@@ -352,11 +359,11 @@ void main() {
       }
     }, skip: noLibrary);
 
-    // AAC — только декодер платформы (Media Foundation, MediaCodec). Тест
-    // прямо на декодер: если расшифровка M4A пустая, здесь видно, звук ли
-    // это короткий, тишина или шум.
+    // AAC — platform decoder only (Media Foundation, MediaCodec). The test
+    // targets the decoder directly: if the M4A transcription is empty, this
+    // shows whether the audio is short, silent, or noisy.
     test(
-      'speech/ru.m4a → декодер платформы: длительность и не тишина',
+      'speech/ru.m4a → platform decoder: duration and not silence',
       () {
         final dir = Directory.systemTemp.createTempSync('mdw_m4a_');
         try {
@@ -396,7 +403,7 @@ void main() {
       skip: noLibrary,
     );
 
-    test('предел отсчётов соблюдается', () {
+    test('sample limit is respected', () {
       final (audio, status) = engine!.decodeMemory(
         read('speech/ru.wav'),
         16000,
@@ -408,8 +415,8 @@ void main() {
   });
 }
 
-/// 16 кГц моно float → WAV 16 бит: длинная запись для теста кусков без
-/// фикстуры на 20 МБ.
+/// 16 kHz mono float → WAV 16-bit: a long recording for the chunking test
+/// without a 20 MB fixture.
 Uint8List _wav16(Float32List samples) {
   final data = ByteData(44 + samples.length * 2);
   void ascii(int at, String text) {
@@ -425,7 +432,7 @@ Uint8List _wav16(Float32List samples) {
   data
     ..setUint32(16, 16, Endian.little)
     ..setUint16(20, 1, Endian.little) // PCM
-    ..setUint16(22, 1, Endian.little) // моно
+    ..setUint16(22, 1, Endian.little) // mono
     ..setUint32(24, 16000, Endian.little)
     ..setUint32(28, 32000, Endian.little)
     ..setUint16(32, 2, Endian.little)

@@ -10,8 +10,8 @@ import '../conversion_result.dart';
 import '../document_converter.dart';
 import '../ooxml/ooxml_package.dart';
 
-/// `word/document.xml` → Markdown. Первый из OOXML-форматов, см.
-/// `docs/implementation-plan.md#этап-2-office-02` — почему именно он первый.
+/// `word/document.xml` → Markdown. The first of the OOXML formats, see
+/// `docs/implementation-plan.md#этап-2-office-02` for why it's first.
 class DocxConverter implements DocumentConverter {
   const DocxConverter();
 
@@ -48,9 +48,10 @@ class DocxConverter implements DocumentConverter {
     final markerWidthByLevel = <int, int>{};
     final usedFootnotes = <String>[];
     final blocks = <String>[];
-    // Пункты списка подряд склеиваются одним переводом строки (плотный
-    // список), остальные блоки — пустой строкой. Иначе каждый пункт стал бы
-    // «абзацем» разреженного списка, а в длинном списке строк вдвое больше.
+    // Consecutive list items are joined with a single newline (a tight
+    // list); other blocks with a blank line. Otherwise every item would
+    // become a "paragraph" of a loose list, doubling the line count in a
+    // long list.
     final isListItem = <bool>[];
 
     for (final child in body.childElements) {
@@ -70,9 +71,9 @@ class DocxConverter implements DocumentConverter {
             isListItem.add(block.isListItem);
           }
         case 'w:tbl':
-          // `md.table` заканчивается собственным `\n` после последней
-          // строки — без обрезки это даёт лишнюю пустую строку перед
-          // следующим блоком, который и так добавляет `\n\n` при склейке.
+          // `md.table` ends with its own `\n` after the last row — without
+          // trimming this leaves an extra blank line before the next
+          // block, which already adds `\n\n` when joining.
           final table = _renderTable(child).trimRight();
           if (table.isNotEmpty) {
             blocks.add(table);
@@ -142,8 +143,8 @@ _Block? _renderParagraph(
         ) ??
         0;
 
-    // Более глубокий уровень под новым родителем начинается заново —
-    // счётчики ниже текущего уровня не переживают возврат на него.
+    // A deeper level under a new parent starts over — counters below the
+    // current level don't survive a return to it.
     counterByLevel.removeWhere((level, _) => level > ilvl);
     numIdByLevel.removeWhere((level, _) => level > ilvl);
     markerWidthByLevel.removeWhere((level, _) => level > ilvl);
@@ -160,10 +161,11 @@ _Block? _renderParagraph(
         : '${counterByLevel[ilvl]}.';
     markerWidthByLevel[ilvl] = marker.length + 1;
 
-    // Вложенный пункт отступает на ширину маркера родителя (`- ` — 2,
-    // `1. ` — 3, `10. ` — 4): при меньшем отступе CommonMark не считает его
-    // дочерним, и список под нумерованным пунктом сплющивается. Уровень без
-    // родителя в документе (список начался сразу с `ilvl=1`) — запасные 2.
+    // A nested item is indented by the width of its parent's marker
+    // (`- ` — 2, `1. ` — 3, `10. ` — 4): with less indentation CommonMark
+    // doesn't treat it as a child, and a list under a numbered item
+    // collapses flat. A level with no parent in the document (the list
+    // started straight at `ilvl=1`) falls back to 2.
     var indent = 0;
     for (var level = 0; level < ilvl; level++) {
       indent += markerWidthByLevel[level] ?? 2;
@@ -174,8 +176,9 @@ _Block? _renderParagraph(
   return inline.isEmpty ? null : (text: inline, isListItem: false);
 }
 
-/// Один прогон по прямым детям `w:p` (кроме `w:pPr`) — обычные `w:r` и
-/// `w:hyperlink`, который оборачивает свои `w:r` в ссылку целиком.
+/// One pass over the direct children of `w:p` (except `w:pPr`) — ordinary
+/// `w:r` and `w:hyperlink`, which wraps its `w:r` children in a link as a
+/// whole.
 String _renderInline(
   XmlElement node,
   Map<String, String> rels,
@@ -193,7 +196,7 @@ String _renderInline(
   }
 }
 
-/// Один `w:r`: картинка-заглушка, сноска, либо текст с полужирным/курсивом.
+/// One `w:r`: an image placeholder, a footnote, or text with bold/italic.
 String _renderRun(
   XmlElement run,
   Map<String, String> rels,
@@ -235,12 +238,11 @@ int? _headingLevel(String? styleId) {
   return match == null ? null : int.parse(match.group(1)!);
 }
 
-/// Таблицы в Markdown не умеют вкладываться — вложенная `w:tbl` внутри
-/// ячейки схлопывается в плоский текст (строки через `\n`, ячейки через
-/// `|`), а не рекурсивный Markdown. Форматирование runs (bold/italic/ссылки)
-/// внутри ячеек не переносится по той же причине: `md.table` сам
-/// экранирует содержимое ячейки, и повторная экранировка уже готовой
-/// разметки её бы сломала.
+/// Markdown tables cannot nest — a nested `w:tbl` inside a cell collapses
+/// into flat text (rows joined with `\n`, cells with `|`), not recursive
+/// Markdown. Run formatting (bold/italic/links) inside cells is dropped
+/// for the same reason: `md.table` escapes cell content itself, and
+/// re-escaping already-rendered markup would break it.
 String _renderTable(XmlElement tbl) {
   final rows = tbl
       .findElements('w:tr')
@@ -279,8 +281,8 @@ Map<String, String> _parseFootnotes(XmlDocument? doc) {
   if (doc == null) return const {};
   final result = <String, String>{};
   for (final footnote in doc.findAllElements('w:footnote')) {
-    // `separator`/`continuationSeparator` — служебные записи Word, не
-    // настоящие сноски документа.
+    // `separator`/`continuationSeparator` are internal Word bookkeeping
+    // entries, not real document footnotes.
     if (footnote.getAttribute('w:type') != null) continue;
     final id = footnote.getAttribute('w:id');
     if (id == null) continue;
@@ -289,9 +291,9 @@ Map<String, String> _parseFootnotes(XmlDocument? doc) {
   return result;
 }
 
-/// Резолв `numId` → `bullet`/не-`bullet` через `abstractNum`. Неизвестный
-/// `numId` или уровень — фоллбэк на нумерованный список, разумное
-/// умолчание для списка, про который ничего не известно.
+/// Resolves `numId` → `bullet`/not-`bullet` through `abstractNum`. An
+/// unknown `numId` or level falls back to a numbered list — a reasonable
+/// default for a list nothing is known about.
 class _Numbering {
   final Map<int, int> _numToAbstract;
   final Map<int, Map<int, String>> _abstractLevels;

@@ -1,22 +1,22 @@
 import 'dart:typed_data';
 
-/// То общее, что умеют отдать все четыре источника файла (диалог, drag&drop,
-/// «Поделиться», буфер обмена), прежде чем попасть в единую точку приёма —
-/// [FileIntakeController.accept]. Источники различаются только тем, как эти
-/// байты добыты; дальше ветвление запрещено, см.
-/// `docs/client-architecture.md#приём-файла-четыре-входа-одна-точка`.
+/// The common shape all four file sources (file dialog, drag&drop, "Share",
+/// clipboard) can produce before reaching the single intake point —
+/// [FileIntakeController.accept]. The sources differ only in how these bytes
+/// were obtained; branching beyond this point is forbidden, see
+/// `docs/client-architecture.md#file-intake-four-inputs-one-entry-point`.
 class PickedFile {
   final String? filename;
   final String? mimeType;
   final Uint8List bytes;
 
-  /// Путь к файлу на диске, если источник его знает (диалог, drag&drop,
-  /// «Поделиться»). Нужен десктопному сайдкару, чтобы не писать копию во
-  /// временный файл; у буфера обмена путей нет.
+  /// Path to the file on disk, if the source knows it (file dialog,
+  /// drag&drop, "Share"). Needed by the desktop sidecar so it doesn't have
+  /// to write a copy to a temp file; the clipboard has no paths.
   final String? localPath;
 
-  /// Адрес, с которого файл скачан (режим «ссылка»): по нему конвертеры
-  /// узнают YouTube и Wikipedia и разрешают относительные ссылки.
+  /// The address the file was downloaded from ("link" mode): converters use
+  /// it to recognize YouTube and Wikipedia and to resolve relative links.
   final String? url;
 
   const PickedFile({

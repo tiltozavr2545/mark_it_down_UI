@@ -8,36 +8,38 @@ import 'package:ffi/ffi.dart';
 
 import 'whisper_bindings.dart';
 
-/// Частота, которую ждёт Whisper (`MDW_SAMPLE_RATE`).
+/// The sample rate Whisper expects (`MDW_SAMPLE_RATE`).
 const _sampleRate = 16000;
 
-/// Настройки распознавания речи, которые приложение передаёт в изолят
-/// конвертации: только строки и числа — библиотеки открываются уже внутри
-/// изолята, как у OCR ([OcrSettings]).
+/// Speech recognition settings that the app passes into the conversion
+/// isolate: only strings and numbers — the libraries are opened inside the
+/// isolate itself, same as OCR ([OcrSettings]).
 class TranscriptionSettings {
-  /// Модель Whisper (`ggml-small-q8_0.bin`). На Windows — ассет рядом с
-  /// `.exe`, на Android — копия ассета в каталоге приложения (whisper.cpp
-  /// читает модель с диска, а не из APK), см.
+  /// The Whisper model (`ggml-small-q8_0.bin`). On Windows — an asset next
+  /// to the `.exe`; on Android — a copy of the asset in the app's directory
+  /// (whisper.cpp reads the model from disk, not from the APK), see
   /// `app/lib/src/conversion/speech_data.dart`.
   final String modelPath;
 
-  /// Silero VAD или `null` — распознавать без вырезания тишины.
+  /// Silero VAD, or `null` — transcribe without cutting out silence.
   final String? vadModelPath;
 
-  /// Каталог библиотек; `null` — место по умолчанию для платформы (см.
+  /// The libraries directory; `null` — the platform's default location (see
   /// [loadWhisperLibrary]).
   final String? libraryDir;
 
-  /// Куда писать звук во временный файл, когда декодеру платформы (AAC)
-  /// нужен путь, а файла на диске нет. `null` — системный временный каталог.
+  /// Where to write audio to a temp file when the platform decoder (AAC)
+  /// needs a path but there's no file on disk. `null` — the system temp
+  /// directory.
   final String? tempDir;
 
-  /// Код языка (`ru`, `en`, `it`) или `auto` — определить по первым 30
-  /// секундам речи. Один язык на весь файл: так устроен Whisper.
+  /// The language code (`ru`, `en`, `it`) or `auto` — detect from the first
+  /// 30 seconds of speech. One language for the whole file: that's how
+  /// Whisper works.
   final String language;
 
-  /// Адрес `mdw_control` ([TranscriptionControl.address]) — прогресс и
-  /// отмена из главного изолята; 0 — без них.
+  /// The `mdw_control` address ([TranscriptionControl.address]) — progress
+  /// and cancellation from the main isolate; 0 — none.
   final int controlAddress;
 
   const TranscriptionSettings({
@@ -60,30 +62,33 @@ class TranscriptionSettings {
       );
 }
 
-/// Прогресс и отмена распознавания — память, общая с изолятом конвертации.
-/// Создаётся на главном изоляте до конвертации, освобождается [dispose]
-/// только после её конца: нативный код пишет сюда до последнего окна.
+/// Progress and cancellation for transcription — memory shared with the
+/// conversion isolate. Created on the main isolate before conversion,
+/// freed by [dispose] only after it ends: native code writes here up to
+/// the very last window.
 class TranscriptionControl {
   final Pointer<MdwControl> _control = calloc<MdwControl>();
 
   int get address => _control.address;
 
-  /// 0–100: доля обработанного звука; 0 — распознавание ещё не началось.
+  /// 0-100: the fraction of audio processed; 0 — transcription hasn't
+  /// started yet.
   int get progress => _control.ref.progress;
 
   bool get cancelled => _control.ref.cancel != 0;
 
-  /// Остановить распознавание: дольше одного 30-секундного окна (или
-  /// подготовки 10-минутного куска — VAD и мел-спектрограмма) не ждёт, уже
-  /// распознанное остаётся в результате.
+  /// Stop transcription: it doesn't wait longer than a single 30-second
+  /// window (or preparing a 10-minute chunk — VAD and the mel spectrogram);
+  /// whatever was already transcribed stays in the result.
   void cancel() => _control.ref.cancel = 1;
 
   void dispose() => calloc.free(_control);
 }
 
-/// Есть ли рабочее распознавание с этими настройками: библиотеки грузятся,
-/// CPU-бэкенд нашёлся, модель на месте. Модель не загружается — это
-/// секунды; конвертерам проверять заранее не нужно.
+/// Whether working transcription is available with these settings: the
+/// libraries load, a CPU backend was found, the model is in place. The
+/// model itself isn't loaded — that takes seconds; converters don't need to
+/// check in advance.
 bool transcriptionAvailable(TranscriptionSettings settings) =>
     WhisperEngine.open(settings) != null &&
     File(settings.modelPath).existsSync();
@@ -97,35 +102,35 @@ class TranscriptSegment {
 }
 
 enum TranscriptionFailure {
-  /// Нет библиотек, CPU-бэкенда или модели.
+  /// No libraries, CPU backend, or model.
   unavailable,
 
-  /// Ни один декодер не взял звук (кодек, которого нет у платформы).
+  /// No decoder could take the audio (a codec the platform doesn't have).
   unsupportedAudio,
 
-  /// Формат опознан, но звук не декодировался.
+  /// The format was recognized, but the audio didn't decode.
   undecodable,
 
-  /// В файле нет звуковой дорожки.
+  /// The file has no audio track.
   noAudio,
 
-  /// whisper.cpp вернул ошибку.
+  /// whisper.cpp returned an error.
   failed,
 }
 
 class Transcript {
   final List<TranscriptSegment> segments;
 
-  /// Определённый (или заданный) язык: `ru`, `en`, `it`…; `null` — неизвестен.
+  /// The detected (or given) language: `ru`, `en`, `it`…; `null` — unknown.
   final String? language;
 
-  /// Сколько звука распознавалось — меньше длительности файла, если
-  /// остановили.
+  /// How much audio was transcribed — less than the file's duration if it
+  /// was stopped.
   final Duration processed;
 
   final bool cancelled;
 
-  /// `whisper.cpp 1.9.5` — пишется в `warnings`, как движок OCR.
+  /// `whisper.cpp 1.9.5` — written to `warnings`, like the OCR engine.
   final String engine;
 
   const Transcript({
@@ -137,7 +142,7 @@ class Transcript {
   });
 }
 
-/// Результат: либо [transcript], либо [failure].
+/// The result: either [transcript] or [failure].
 class TranscriptionOutcome {
   final Transcript? transcript;
   final TranscriptionFailure? failure;
@@ -149,9 +154,9 @@ class TranscriptionOutcome {
     : transcript = null;
 }
 
-/// Декодированный звук: 16 кГц моно float в нативной памяти. Распознаванию
-/// не нужен — оно декодирует само, кусками; это проверка декодеров целиком.
-/// [dispose] обязателен.
+/// Decoded audio: 16 kHz mono float in native memory. Not needed for
+/// transcription — it decodes on its own, in chunks; this is for testing
+/// the decoders as a whole. [dispose] is mandatory.
 class DecodedAudio {
   DecodedAudio._(this._bindings, this.samples, this.length);
 
@@ -165,8 +170,8 @@ class DecodedAudio {
   void dispose() => _bindings.freeSamples(samples);
 }
 
-/// Открытые библиотеки и выбранный CPU-бэкенд. Один на изолят: открыть
-/// библиотеку повторно дёшево, но варианты бэкенда грузятся один раз.
+/// The opened libraries and the chosen CPU backend. One per isolate:
+/// reopening the library is cheap, but backend variants are loaded once.
 class WhisperEngine {
   WhisperEngine._(this._bindings);
 
@@ -175,7 +180,7 @@ class WhisperEngine {
   static WhisperEngine? _cached;
   static bool _loadFailed = false;
 
-  /// `null` — библиотек нет или ни один вариант CPU-бэкенда не загрузился.
+  /// `null` — no libraries, or no CPU backend variant loaded.
   static WhisperEngine? open(TranscriptionSettings settings) {
     if (_cached != null) return _cached;
     if (_loadFailed) return null;
@@ -188,7 +193,7 @@ class WhisperEngine {
     try {
       bindings = WhisperBindings(library.library);
     } on ArgumentError {
-      _loadFailed = true; // не та сборка: нет нужного символа
+      _loadFailed = true; // wrong build: the needed symbol is missing
       return null;
     }
     final dir = library.backendDir?.toNativeUtf8() ?? nullptr;
@@ -206,7 +211,7 @@ class WhisperEngine {
   /// `whisper.cpp 1.9.5`.
   String get engine => 'whisper.cpp ${_bindings.version().toDartString()}';
 
-  /// Остановлено до первой фразы: пустая расшифровка с пометкой.
+  /// Stopped before the first phrase: an empty transcript with a marker.
   Transcript _stopped(Duration processed) => Transcript(
     segments: const [],
     language: null,
@@ -215,13 +220,14 @@ class WhisperEngine {
     engine: engine,
   );
 
-  /// Звук в памяти → 16 кГц моно: WAV, MP3, FLAC, Ogg Vorbis/Opus.
-  /// Возвращает [DecodedAudio] или код `MdwStatus`.
+  /// In-memory audio → 16 kHz mono: WAV, MP3, FLAC, Ogg Vorbis/Opus.
+  /// Returns [DecodedAudio] or an `MdwStatus` code.
   (DecodedAudio?, int) decodeMemory(Uint8List bytes, int maxSamples) {
-    // malloc, не calloc: буфер размером с файл тут же целиком
-    // перезаписывается, обнулять его — лишний проход по сотням МБ. Отдать
-    // сам Uint8List (`.address`) можно только листовым вызовом, а он
-    // держит GC всей группы изолятов, включая UI, на всё декодирование.
+    // malloc, not calloc: a buffer the size of the file gets fully
+    // overwritten right away, zeroing it is a wasted pass over hundreds of
+    // MB. Handing over the Uint8List itself (`.address`) is only possible
+    // with a leaf call, which holds the GC for the whole isolate group,
+    // including the UI, for the entire decode.
     final data = malloc<Uint8>(math.max(bytes.length, 1));
     final out = calloc<Pointer<Float>>();
     final count = calloc<Int64>();

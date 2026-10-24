@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import '../../type_detection/magic_bytes.dart';
 import 'audio_info.dart';
 
-/// Битрейты, кбит/с, по индексу 1–14 (0 — «free», 15 — запрещён).
+/// Bitrates, kbit/s, by index 1–14 (0 — "free", 15 — reserved).
 const _bitratesV1L1 = [
   0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, //
 ];
@@ -20,7 +20,7 @@ const _bitratesV2L23 = [
   0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, //
 ];
 
-/// Заголовок кадра MPEG-аудио, разобранный по полям.
+/// An MPEG audio frame header, parsed into its fields.
 class _Frame {
   final int version; // 1, 2, 25 (MPEG 2.5)
   final int layer; // 1, 2, 3
@@ -59,7 +59,8 @@ class _Frame {
         ? [_bitratesV1L1, _bitratesV1L2, _bitratesV1L3][layer - 1]
         : (layer == 1 ? _bitratesV2L1 : _bitratesV2L23);
     final bitrate = table[b2 >> 4];
-    // «free» битрейт: длину кадра по заголовку не вычислить.
+    // A "free" bitrate: the frame length can't be computed from the
+    // header.
     if (bitrate == 0) return null;
     final baseRate = [44100, 48000, 32000][(b2 >> 2) & 3];
     final sampleRate = switch (version) {
@@ -79,18 +80,21 @@ class _Frame {
   }
 }
 
-/// Сколько байт после ID3v2 просматривать в поисках первого кадра: между
-/// тегом и звуком бывает мусор (недописанный паддинг, второй тег).
+/// How many bytes after the ID3v2 tag to scan looking for the first
+/// frame: there can be junk between the tag and the audio (unfinished
+/// padding, a second tag).
 const _searchWindow = 64 * 1024;
 
-/// Длительность, битрейт и параметры звука по кадрам MPEG. [audioStart] —
-/// конец ID3v2, [audioEnd] — начало ID3v1 (или конец файла).
+/// Duration, bitrate and audio parameters from MPEG frames. [audioStart]
+/// is the end of ID3v2, [audioEnd] is the start of ID3v1 (or the end of
+/// the file).
 ///
-/// Первый кадр — первая позиция, где заголовок валиден **и** следующий кадр
-/// тоже начинается с валидного заголовка: одиночное `0xFFE…` в мусоре
-/// встречается часто, два подряд на правильном расстоянии — нет.
-/// Длительность — по заголовку Xing/Info или VBRI (их пишет любой
-/// VBR-кодировщик), иначе по размеру при постоянном битрейте.
+/// The first frame is the first position where the header is valid
+/// **and** the next frame also starts with a valid header: a lone
+/// `0xFFE…` shows up in junk data often, two in a row at the right
+/// distance apart — doesn't. Duration comes from the Xing/Info or VBRI
+/// header (written by any VBR encoder), otherwise from the size assuming
+/// a constant bitrate.
 void readMpegAudio(
   Uint8List bytes,
   int audioStart,
@@ -129,7 +133,8 @@ void _describe(
   if (frames != null && frames > 0) {
     final seconds = frames * frame.samplesPerFrame / frame.sampleRate;
     info.duration = Duration(milliseconds: (seconds * 1000).round());
-    // `Info` — тот же заголовок, но у CBR-файла: битрейт честный из кадра.
+    // `Info` is the same header, but for a CBR file: the bitrate is the
+    // genuine one from the frame.
     info
       ..variableBitrate = variable
       ..bitrateKbps = variable
@@ -144,8 +149,9 @@ void _describe(
     );
 }
 
-/// Число кадров из заголовка Xing/Info (в первом кадре после side info)
-/// или VBRI (ровно через 32 байта после заголовка кадра), и признак VBR.
+/// The frame count from the Xing/Info header (in the first frame, after
+/// the side info) or VBRI (exactly 32 bytes after the frame header), and
+/// a VBR flag.
 (int?, bool) _frameCount(Uint8List bytes, int offset, _Frame frame) {
   final view = ByteData.sublistView(bytes);
   final sideInfo = frame.version == 1

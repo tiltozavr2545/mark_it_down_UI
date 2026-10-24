@@ -1,11 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Сеть — только режиму «ссылка» (0.9, решение автора): скачать то, на
-         что указывает вставленная или присланная ссылка. Весь сетевой код —
-         в core/lib/src/web/, это проверяет CI; файлы пользователя в сеть не
-         уходят. См. docs/offline-and-privacy.md. -->
+    <!-- Network access is only for "link" mode (0.9, author's decision): to
+         download whatever a pasted or shared link points to. All networking
+         code lives in core/lib/src/web/, checked by CI; the user's files
+         never go out over the network. See docs/offline-and-privacy.md. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- usesCleartextTraffic: ссылка может быть и http://, как у markitdown;
-         без этого Android 9+ молча отказал бы в соединении. -->
+    <!-- usesCleartextTraffic: the link can be http:// too, as with
+         markitdown; without this, Android 9+ would silently refuse the
+         connection. -->
     <application
         android:usesCleartextTraffic="true"
         android:label="markitdown_ui"
@@ -32,14 +33,15 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Системное «Поделиться»: без android:mimeType="*/*" файл без
-                 расширения (частый случай из мессенджеров) туда не попадёт. -->
+            <!-- The system "Share": without android:mimeType="*/*" a file
+                 with no extension (a common case from messengers) wouldn't
+                 reach it. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="*/*"/>
             </intent-filter>
-            <!-- «Открыть с помощью» для файла, уже лежащего на диске. -->
+            <!-- "Open with" for a file already sitting on disk. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>

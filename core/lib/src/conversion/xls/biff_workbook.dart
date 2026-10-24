@@ -3,20 +3,21 @@ import 'dart:typed_data';
 import '../../text_decoding.dart';
 import '../spreadsheet/sheet_markdown.dart';
 
-/// Разбор потока `Workbook` (BIFF8, Excel 97–2003) и `Book` (BIFF5/7,
-/// Excel 5–95) — ровно то, что нужно для таблицы: листы, ячейки со
-/// значениями, объединения, даты. Форматирование, формулы (кроме
-/// кэшированного значения), графики и макросы не читаются. Спецификация —
-/// MS-XLS; поведение на спорных местах сверено с `xlrd`, которым читает
-/// `.xls` сам markitdown.
+/// Parses the `Workbook` stream (BIFF8, Excel 97–2003) and `Book` (BIFF5/7,
+/// Excel 5–95) — exactly what's needed for the table: sheets, cells with
+/// values, merges, dates. Formatting, formulas (other than the cached
+/// value), charts and macros aren't read. The spec is MS-XLS; behavior on
+/// disputed points was checked against `xlrd`, which is what markitdown
+/// itself uses to read `.xls`.
 ///
-/// Бросает [FormatException] на нечитаемый поток и [XlsUnsupported] на то,
-/// что прочитать можно было бы, но не здесь (пароль, BIFF2–4).
+/// Throws [FormatException] on an unreadable stream and [XlsUnsupported]
+/// for something that could be read but isn't handled here (password,
+/// BIFF2–4).
 class BiffWorkbook {
   final List<BiffSheet> sheets;
 
-  /// Листы, которые не удалось прочитать, — пропускаются с предупреждением,
-  /// а не топят всю книгу.
+  /// Sheets that couldn't be read — skipped with a warning instead of
+  /// sinking the whole workbook.
   final List<String> unreadableSheets;
 
   const BiffWorkbook(this.sheets, this.unreadableSheets);
@@ -28,14 +29,15 @@ class BiffWorkbook {
 class BiffSheet {
   final String name;
 
-  /// Строка → столбец → значение, индексы с нуля.
+  /// Row → column → value, zero-based indices.
   final Map<int, Map<int, String>> cells;
   final List<MergeRange> merges;
 
   const BiffSheet(this.name, this.cells, this.merges);
 }
 
-/// Файл узнан, но этот разбор его не прочитает; [reason] — для человека.
+/// The file is recognized, but this parser won't read it; [reason] is for
+/// humans.
 class XlsUnsupported implements Exception {
   final String reason;
 
@@ -45,7 +47,7 @@ class XlsUnsupported implements Exception {
   String toString() => reason;
 }
 
-// Идентификаторы записей BIFF.
+// BIFF record identifiers.
 const _bof = 0x0809;
 const _eof = 0x000A;
 const _continue = 0x003C;
@@ -67,8 +69,9 @@ const _formula = 0x0006;
 const _string = 0x0207;
 const _mergedCells = 0x00E5;
 
-/// Старые BOF (BIFF2–4): книга такого возраста целиком в одном листе, и
-/// встречается сейчас только в архивах — честный отказ, а не догадки.
+/// Old BOF records (BIFF2–4): a workbook that old is entirely in one
+/// sheet, and these only show up in archives nowadays — an honest refusal
+/// instead of guessing.
 const _oldBofs = {0x0009, 0x0209, 0x0409};
 
 class _Record {
@@ -174,8 +177,8 @@ class _WorkbookParser {
         : _decode(segments.bytes(segments.u8()));
   }
 
-  /// Имя и смещение BOF листа; `null` для графиков, макросов и модулей VBA
-  /// — у них нет ячеек.
+  /// The sheet's name and BOF offset; `null` for charts, macros and VBA
+  /// modules — they have no cells.
   (String, int)? _readBoundSheet(Uint8List data) {
     final position = ByteData.sublistView(data).getUint32(0, Endian.little);
     final type = data[5];
@@ -187,11 +190,11 @@ class _WorkbookParser {
     return type == 0 ? (name, position) : null;
   }
 
-  /// SST: общая таблица строк BIFF8. Строки продолжаются в записях CONTINUE,
-  /// и если разрыв приходится на символы, продолжение начинается с нового
-  /// байта флагов — см. [_Segments.unicodeString].
+  /// SST: BIFF8's shared string table. Strings continue in CONTINUE
+  /// records, and if the break falls inside characters, the continuation
+  /// starts with a new flags byte — see [_Segments.unicodeString].
   void _readSst(_Segments s) {
-    s.u32(); // всего ссылок на строки
+    s.u32(); // total string references
     final unique = s.u32();
     for (var i = 0; i < unique && !s.atEnd; i++) {
       _sharedStrings.add(s.richString());
@@ -208,8 +211,8 @@ class _WorkbookParser {
     void put(int row, int col, String value) =>
         cells.putIfAbsent(row, () => {})[col] = value;
 
-    // Внутри листа бывают вложенные BOF…EOF (встроенные графики) — их
-    // записи не про ячейки этого листа.
+    // A sheet can contain nested BOF…EOF blocks (embedded charts) — their
+    // records aren't about this sheet's cells.
     var depth = 0;
     (int, int)? pendingFormulaString;
     var offset = _next(bof);
@@ -270,7 +273,7 @@ class _WorkbookParser {
           final col = _u16(d, 2);
           if (d[12] == 0xFF && d[13] == 0xFF) {
             switch (d[6]) {
-              case 0: // строка — в следующей записи STRING
+              case 0: // string — in the following STRING record
                 pendingFormulaString = (row, col);
               case 1:
                 put(row, col, d[8] == 0 ? 'FALSE' : 'TRUE');
@@ -309,8 +312,8 @@ class _WorkbookParser {
             final firstCol = _u16(d, at + 4);
             final lastCol = _u16(d, at + 6);
             if (lastRow < firstRow || lastCol < firstCol) continue;
-            // Одна ячейка «объединена сама с собой» — так пишут некоторые
-            // генераторы; это не объединение.
+            // A single cell "merged with itself" — some generators write
+            // this; it isn't a merge.
             if (lastRow == firstRow && lastCol == firstCol) continue;
             merges.add((
               firstRow,
@@ -324,8 +327,8 @@ class _WorkbookParser {
     return BiffSheet(name, cells, merges);
   }
 
-  /// Число по стилю ячейки [xfIndex]: дата — `yyyy-MM-dd`, остальное — как
-  /// в xlsx, без хвоста `.0` у целых.
+  /// A number per the cell style [xfIndex]: a date — `yyyy-MM-dd`,
+  /// anything else — like xlsx, without a trailing `.0` for integers.
   String _numberText(double value, int xfIndex) {
     if (xfIndex < _xfFormats.length) {
       final format = _xfFormats[xfIndex];
@@ -340,8 +343,8 @@ class _WorkbookParser {
   String _decode(Uint8List bytes) => decodeCodepage(bytes, _codepage);
 }
 
-/// Число так, как его записал бы xlsx: целое — без `.0`, дробное — самым
-/// коротким представлением.
+/// A number the way xlsx would write it: an integer — without `.0`, a
+/// fraction — in its shortest representation.
 String formatSpreadsheetNumber(double value) {
   if (value.isFinite &&
       value == value.truncateToDouble() &&
@@ -362,8 +365,8 @@ String _errorText(int code) => switch (code) {
   _ => '#ERROR',
 };
 
-/// RK — упакованное число: целое в 30 битах или старшие 30 бит double, и
-/// флаг «разделить на 100».
+/// RK — a packed number: a 30-bit integer, or the high 30 bits of a
+/// double, plus a "divide by 100" flag.
 double _rkValue(Uint8List d, int offset) {
   final rk = ByteData.sublistView(d).getUint32(offset, Endian.little);
   double value;
@@ -382,9 +385,10 @@ int _u16(Uint8List d, int offset) =>
 double _f64(Uint8List d, int offset) =>
     ByteData.sublistView(d).getFloat64(offset, Endian.little);
 
-/// Данные записи и её CONTINUE подряд — как один поток байтов, но с
-/// памятью о границах: строка BIFF8, разорванная посреди символов,
-/// продолжается с нового байта флагов (сжатая/UTF-16 может смениться).
+/// A record's data and its CONTINUE records in sequence — like one byte
+/// stream, but with memory of the boundaries: a BIFF8 string broken mid-
+/// character continues with a new flags byte (compressed/UTF-16 can
+/// switch).
 class _Segments {
   final List<Uint8List> _parts;
   int _part = 0;
@@ -430,14 +434,15 @@ class _Segments {
     }
   }
 
-  /// XLUnicodeString после поля длины: байт флагов, затем символы.
+  /// XLUnicodeString after the length field: a flags byte, then the
+  /// characters.
   String unicodeString(int length) {
     final flags = u8();
     return _chars(length, flags & 1 != 0);
   }
 
-  /// Строка SST целиком: длина, флаги, необязательные счётчики
-  /// форматирования и фонетики, символы, затем сами эти блоки (пропускаются).
+  /// A full SST string: length, flags, optional formatting and phonetic
+  /// run counts, characters, then those blocks themselves (skipped).
   String richString() {
     final length = u16();
     final flags = u8();
@@ -456,8 +461,8 @@ class _Segments {
       }
       final part = _parts[_part];
       if (_pos >= part.length) {
-        // Разрыв посреди символов: следующая CONTINUE начинается с байта
-        // флагов, кодировка символов может смениться.
+        // A break mid-character: the next CONTINUE starts with a flags
+        // byte, the character encoding can switch.
         _part++;
         _pos = 0;
         if (_part >= _parts.length) {
@@ -473,8 +478,8 @@ class _Segments {
         units.add(part[_pos] | (part[_pos + 1] << 8));
         _pos += 2;
       } else {
-        // Сжатая строка BIFF8 — младшие байты UTF-16, то есть Latin-1, а не
-        // кодовая страница книги.
+        // A compressed BIFF8 string — the low bytes of UTF-16, i.e.
+        // Latin-1, not the workbook's codepage.
         units.add(part[_pos++]);
       }
     }
