@@ -9,6 +9,7 @@ export 'src/conversion/conversion_result.dart';
 export 'src/conversion/converter_registry.dart';
 export 'src/conversion/converters/audio_converter.dart' show AudioConverter;
 export 'src/conversion/document_converter.dart';
+export 'src/conversion/merge.dart';
 export 'src/conversion/ocr/tesseract_bindings.dart' show tesseractLibDirEnvVar;
 export 'src/conversion/ocr/tesseract_ocr.dart' show OcrSettings, ocrAvailable;
 export 'src/conversion/speech/whisper_bindings.dart' show whisperLibDirEnvVar;

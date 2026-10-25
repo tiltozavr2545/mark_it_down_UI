@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:markitdown_core/markitdown_core.dart';
 import 'package:markitdown_ui/main.dart';
 import 'package:markitdown_ui/src/file_intake/file_intake_controller.dart';
+import 'package:markitdown_ui/src/merge/merge_controller.dart';
 
 const _ru = Locale('ru');
 
@@ -134,6 +135,92 @@ void main() {
     expect(find.text('Hello world'), findsOneWidget);
     expect(find.text('Скопировать'), findsOneWidget);
     expect(find.text('Сохранить как .md'), findsOneWidget);
+    expect(find.text('Добавить файлы'), findsOneWidget);
+  });
+
+  testWidgets('merge list — row statuses, a failure blocks "Merge"', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_mergeListApp());
+
+    expect(find.text('4 файла для склейки'), findsOneWidget);
+    expect(find.text('a.txt'), findsOneWidget);
+    expect(
+      find.text(
+        'Файл повреждён. Не удалось прочитать содержимое: архив обрезан',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Распознаётся речь… 40 %'), findsOneWidget);
+    expect(find.byTooltip('Остановить'), findsOneWidget);
+    expect(find.text('https://example.com/a'), findsOneWidget);
+    expect(find.text('В очереди'), findsOneWidget);
+    expect(
+      find.text('Уберите файлы с ошибкой, чтобы склеить остальные.'),
+      findsOneWidget,
+    );
+    final merge = tester.widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text('Склеить'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+    expect(merge.onPressed, isNull);
+  });
+
+  testWidgets('merge list fits a phone (360 dp) without overflow', (
+    tester,
+  ) async {
+    // Rows carry up to three buttons on the right; an overflow there is
+    // reported as an exception and fails the test.
+    tester.view.physicalSize = const Size(1080, 2220);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_mergeListApp());
+    expect(find.text('Склеить'), findsOneWidget);
+    expect(find.byTooltip('Очистить'), findsOneWidget);
+  });
+
+  testWidgets('merged result — preview, warnings, back to the list', (
+    tester,
+  ) async {
+    final controller = _FakeMergeController(
+      MergeState(
+        [
+          MergeItem(
+            id: 0,
+            status: MergeItemStatus.ready,
+            info: _txtInfo('a.txt'),
+            result: _result('A'),
+          ),
+          MergeItem(
+            id: 1,
+            status: MergeItemStatus.ready,
+            info: _txtInfo('b.txt'),
+            result: _result('B'),
+          ),
+        ],
+        merged: const ConversionResult(
+          markdown: '# a.txt\n\nA\n\n---\n\n# b.txt\n\nB\n',
+          converterId: 'merge',
+          elapsed: Duration.zero,
+          warnings: [ConversionWarning('b.txt: скан без текста')],
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [mergeControllerProvider.overrideWith(() => controller)],
+        child: const MarkItDownApp(locale: _ru),
+      ),
+    );
+
+    expect(find.text('Склеено 2 файла'), findsOneWidget);
+    expect(find.textContaining('# b.txt'), findsOneWidget);
+    expect(find.text('• b.txt: скан без текста'), findsOneWidget);
+    expect(find.text('Скопировать'), findsOneWidget);
+    await tester.tap(find.text('К списку'));
+    expect(controller.wentBack, isTrue);
   });
 
   testWidgets('unsupported format shows the error screen', (tester) async {
@@ -251,6 +338,74 @@ final _voiceInfo = StreamInfo(
   lengthBytes: 25454,
   detectedType: const DetectedType(FileKind.ogg, 'Ogg'),
 );
+
+/// A merge list with one row of each kind: ready, failed, transcribing,
+/// and a link waiting its turn.
+Widget _mergeListApp() => ProviderScope(
+  overrides: [
+    mergeControllerProvider.overrideWith(
+      () => _FakeMergeController(
+        MergeState([
+          MergeItem(
+            id: 0,
+            status: MergeItemStatus.ready,
+            info: _txtInfo('a.txt'),
+            result: _result('A'),
+          ),
+          MergeItem(
+            id: 1,
+            status: MergeItemStatus.failed,
+            info: _txtInfo('битый.zip'),
+            failure: const CorruptedFileFailure(
+              converterId: 'zip',
+              reason: 'архив обрезан',
+            ),
+          ),
+          MergeItem(
+            id: 2,
+            status: MergeItemStatus.converting,
+            info: _voiceInfo,
+            transcribing: true,
+            speechProgress: 40,
+          ),
+          const MergeItem(
+            id: 3,
+            status: MergeItemStatus.waiting,
+            label: 'https://example.com/a',
+          ),
+        ]),
+      ),
+    ),
+  ],
+  child: const MarkItDownApp(locale: _ru),
+);
+
+StreamInfo _txtInfo(String filename) => StreamInfo(
+  filename: filename,
+  extension: 'txt',
+  mimeType: null,
+  lengthBytes: 1,
+  detectedType: const DetectedType(FileKind.text, 'Текст (.txt)'),
+);
+
+ConversionResult _result(String markdown) => ConversionResult(
+  markdown: markdown,
+  converterId: 'plain_text',
+  elapsed: Duration.zero,
+);
+
+class _FakeMergeController extends MergeController {
+  final MergeState initial;
+  bool wentBack = false;
+
+  _FakeMergeController(this.initial);
+
+  @override
+  MergeState build() => initial;
+
+  @override
+  void backToList() => wentBack = true;
+}
 
 class _FakeFileIntakeController extends FileIntakeController {
   final FileIntakeState initial;

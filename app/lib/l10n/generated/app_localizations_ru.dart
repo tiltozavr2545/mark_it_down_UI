@@ -80,6 +80,80 @@ class AppLocalizationsRu extends AppLocalizations {
   String get warningsLabel => 'Предупреждения';
 
   @override
+  String get addFilesButton => 'Добавить файлы';
+
+  @override
+  String get mergeButton => 'Склеить';
+
+  @override
+  String mergeListTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count файла для склейки',
+      many: '$count файлов для склейки',
+      few: '$count файла для склейки',
+      one: '$count файл для склейки',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String mergedTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Склеено $count файла',
+      many: 'Склеено $count файлов',
+      few: 'Склеено $count файла',
+      one: 'Склеен $count файл',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mergeOrderHint =>
+      'Файлы пойдут в этом порядке — перетащите, чтобы поменять.';
+
+  @override
+  String get mergeWaitingHint =>
+      'Склеить можно, когда все файлы сконвертируются.';
+
+  @override
+  String get mergeFailedHint =>
+      'Уберите файлы с ошибкой, чтобы склеить остальные.';
+
+  @override
+  String get waitingLabel => 'В очереди';
+
+  @override
+  String get removeTooltip => 'Убрать';
+
+  @override
+  String get clearButton => 'Очистить';
+
+  @override
+  String get backToListButton => 'К списку';
+
+  @override
+  String mergedFileName(String name, int count) {
+    return '${name}_и_ещё_$count';
+  }
+
+  @override
+  String get incomingTitle => 'Добавить к склейке?';
+
+  @override
+  String get incomingBody =>
+      'На экране уже есть файлы. Добавить новое к ним или начать заново?';
+
+  @override
+  String get startOverButton => 'Начать заново';
+
+  @override
+  String get addButton => 'Добавить';
+
+  @override
   String get errorUnsupportedTitle => 'Формат не поддерживается';
 
   @override

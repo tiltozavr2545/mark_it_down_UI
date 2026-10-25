@@ -79,6 +79,75 @@ class AppLocalizationsEn extends AppLocalizations {
   String get warningsLabel => 'Warnings';
 
   @override
+  String get addFilesButton => 'Add files';
+
+  @override
+  String get mergeButton => 'Merge';
+
+  @override
+  String mergeListTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files to merge',
+      one: '$count file to merge',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String mergedTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Merged $count files',
+      one: 'Merged $count file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mergeOrderHint => 'Files go in this order — drag to change it.';
+
+  @override
+  String get mergeWaitingHint =>
+      'Merging becomes available once all files are converted.';
+
+  @override
+  String get mergeFailedHint =>
+      'Remove the files with errors to merge the rest.';
+
+  @override
+  String get waitingLabel => 'Queued';
+
+  @override
+  String get removeTooltip => 'Remove';
+
+  @override
+  String get clearButton => 'Clear';
+
+  @override
+  String get backToListButton => 'Back to list';
+
+  @override
+  String mergedFileName(String name, int count) {
+    return '${name}_and_${count}_more';
+  }
+
+  @override
+  String get incomingTitle => 'Add to the merge?';
+
+  @override
+  String get incomingBody =>
+      'There are files on screen already. Add the new ones to them, or start over?';
+
+  @override
+  String get startOverButton => 'Start over';
+
+  @override
+  String get addButton => 'Add';
+
+  @override
   String get errorUnsupportedTitle => 'Format not supported';
 
   @override

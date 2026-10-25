@@ -14,6 +14,29 @@ monotonically. Bumped in every PR, see "Working conventions" in
 
 ---
 
+## 0.10.0 — merging files into one `.md`
+
+Author's request: "glue files into one md, a couple of PDFs and so on."
+
+**How it starts.** Choose several files in the dialog, drop several onto
+the window, or "Share" several on Android — they go straight into a merge
+list. A single file opens as before, and its result now has an "Add
+files" button that starts a merge with it. If a file or link arrives by
+drop or "Share" while a result or the list is on screen, the app asks
+whether to add it or start over.
+
+**The list.** Each file is converted as soon as it's added, one at a
+time — that's the check that it isn't corrupted. A file that fails shows
+its error in its row, and "Merge" stays unavailable until it's removed:
+an error stops the merge rather than leaving a gap in it. Order is
+changed by dragging; links (pages, YouTube, Wikipedia) and audio with
+speech recognition (percentage and "Stop" in the row) go in like files.
+
+**The result.** Each file under a `# name` heading (a page by link: a
+heading linking to it), files separated by `---`, each file's own
+Markdown untouched. Warnings are prefixed with the file they came from.
+"Save as .md" suggests `<first file>_and_N_more.md`.
+
 ## 0.9.0 — everything markitdown can do, plus links
 
 Author's request: "do everything regular markitdown can do, … internet

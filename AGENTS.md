@@ -143,6 +143,13 @@ implemented (author's decision). All the "why" is in
 [format-coverage.md](docs/format-coverage.md#09-decisions-xls-msg-rss)
 and [offline-and-privacy.md](docs/offline-and-privacy.md).
 
+**0.10 — merging files into one `.md`** (outside the plan, at the
+author's request): several files or links → a list converted one at a
+time as they're added, reorderable, and joined under `# name` headings
+with `---` between files. A failed file blocks the merge until removed.
+All the "why" is in
+[client-architecture.md](docs/client-architecture.md#merging-files-010).
+
 Many sections in `docs/` are still stubs, and they say so directly. Working
 commands (signing, notarization, building the sidecar) get written down as
 each stage goes, while they're fresh, rather than being reconstructed at

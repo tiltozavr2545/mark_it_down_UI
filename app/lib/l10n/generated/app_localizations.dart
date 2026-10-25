@@ -230,6 +230,102 @@ abstract class AppLocalizations {
   /// **'Warnings'**
   String get warningsLabel;
 
+  /// Adds files to the merge list; on a single file's result, starts a merge with it
+  ///
+  /// In en, this message translates to:
+  /// **'Add files'**
+  String get addFilesButton;
+
+  /// Joins all files of the list into one Markdown document
+  ///
+  /// In en, this message translates to:
+  /// **'Merge'**
+  String get mergeButton;
+
+  /// Title of the merge list
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} file to merge} other{{count} files to merge}}'**
+  String mergeListTitle(int count);
+
+  /// Title of the merged result preview
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{Merged {count} file} other{Merged {count} files}}'**
+  String mergedTitle(int count);
+
+  /// No description provided for @mergeOrderHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Files go in this order — drag to change it.'**
+  String get mergeOrderHint;
+
+  /// No description provided for @mergeWaitingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging becomes available once all files are converted.'**
+  String get mergeWaitingHint;
+
+  /// A failed file blocks the merge until it's removed from the list
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the files with errors to merge the rest.'**
+  String get mergeFailedHint;
+
+  /// A merge list item waiting for its turn to be converted
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get waitingLabel;
+
+  /// No description provided for @removeTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get removeTooltip;
+
+  /// Empties the merge list and goes back to the start screen
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get clearButton;
+
+  /// No description provided for @backToListButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to list'**
+  String get backToListButton;
+
+  /// Suggested name (without .md) for saving a merge: the first file's name and how many others follow it
+  ///
+  /// In en, this message translates to:
+  /// **'{name}_and_{count}_more'**
+  String mergedFileName(String name, int count);
+
+  /// A file was dropped or shared while a result or the merge list is on screen
+  ///
+  /// In en, this message translates to:
+  /// **'Add to the merge?'**
+  String get incomingTitle;
+
+  /// No description provided for @incomingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'There are files on screen already. Add the new ones to them, or start over?'**
+  String get incomingBody;
+
+  /// No description provided for @startOverButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Start over'**
+  String get startOverButton;
+
+  /// No description provided for @addButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get addButton;
+
   /// No description provided for @errorUnsupportedTitle.
   ///
   /// In en, this message translates to:

@@ -14,6 +14,7 @@ import 'file_intake/file_intake_controller.dart';
 import 'file_intake/format_size.dart';
 import 'file_intake/picked_file.dart';
 import 'file_intake/share_intake.dart';
+import 'merge/merge_controller.dart';
 import '../l10n/generated/app_localizations.dart';
 
 /// Markdown longer than this doesn't render in full — `SelectableText` on a
@@ -47,28 +48,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// mode. Text with no link is silently ignored.
   void _acceptShared(SharedInput input) {
     if (input.files.isNotEmpty) {
-      _acceptAll(input.files);
+      _incoming(input.files);
       return;
     }
     final link = input.link;
     if (link != null && parseUserUrl(link) != null) {
-      ref.read(fileIntakeControllerProvider.notifier).acceptUrl(link);
+      _incoming(const [], link: link);
     }
   }
 
-  Future<void> _pasteLink() async {
+  Future<String?> _askLink() async {
     // A link from the clipboard goes straight into the field: it was
     // usually just copied. Read on button press, not on startup.
     final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
     final copied = clipboard?.text?.trim() ?? '';
-    if (!mounted) return;
+    if (!mounted) return null;
     final link = await showDialog<String>(
       context: context,
       builder: (context) =>
           _LinkDialog(initial: parseUserUrl(copied) == null ? '' : copied),
     );
-    if (link == null || link.trim().isEmpty) return;
-    ref.read(fileIntakeControllerProvider.notifier).acceptUrl(link);
+    if (link == null || link.trim().isEmpty) return null;
+    return link;
   }
 
   @override
@@ -77,24 +78,73 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.dispose();
   }
 
-  void _acceptAll(List<PickedFile> files) {
-    if (files.isEmpty) return;
-    ref.read(fileIntakeControllerProvider.notifier).accept(files.first);
+  /// Files or a link from a drop or "Share" — sources that can arrive at
+  /// any moment. With nothing on screen, one file opens as before and
+  /// several go straight into a merge; with a result or the merge list on
+  /// screen, the person is asked whether to add to it or start over
+  /// (author's decision) — silently replacing a merge of five files would
+  /// lose work.
+  Future<void> _incoming(List<PickedFile> files, {String? link}) async {
+    if (files.isEmpty && link == null) return;
+    final single = ref.read(fileIntakeControllerProvider);
+    if (ref.read(mergeControllerProvider).active ||
+        single.phase == FileIntakePhase.ready) {
+      final add = await showDialog<bool>(
+        context: context,
+        builder: (context) => const _IncomingDialog(),
+      );
+      if (add == null || !mounted) return;
+      if (add) {
+        _addToMerge(files, link: link);
+        return;
+      }
+      ref.read(mergeControllerProvider.notifier).clear();
+    }
+
+    final intake = ref.read(fileIntakeControllerProvider.notifier);
+    if (link != null) {
+      intake.acceptUrl(link);
+    } else if (files.length == 1) {
+      intake.accept(files.single);
+    } else {
+      intake.clear();
+      ref.read(mergeControllerProvider.notifier).addFiles(files);
+    }
   }
 
-  Future<void> _pickFile() async {
-    final result = await FilePicker.pickFiles(withData: true);
-    final file = result?.files.firstOrNull;
-    final bytes = file?.bytes;
-    if (file == null || bytes == null) return;
-    _acceptAll([
-      PickedFile(bytes: bytes, filename: file.name, localPath: file.path),
-    ]);
+  /// Adds to the merge list; a single file's result on screen becomes its
+  /// first row.
+  void _addToMerge(List<PickedFile> files, {String? link}) {
+    final merge = ref.read(mergeControllerProvider.notifier);
+    final single = ref.read(fileIntakeControllerProvider);
+    if (!ref.read(mergeControllerProvider).active &&
+        single.phase == FileIntakePhase.ready) {
+      merge.startFrom(single.info!, single.result!);
+      ref.read(fileIntakeControllerProvider.notifier).clear();
+    }
+    if (files.isNotEmpty) merge.addFiles(files);
+    if (link != null) merge.addUrl(link);
+  }
+
+  Future<List<PickedFile>> _pickFiles() async {
+    final result = await FilePicker.pickFiles(
+      withData: true,
+      allowMultiple: true,
+    );
+    return [
+      for (final file in result?.files ?? const <PlatformFile>[])
+        if (file.bytes case final bytes?)
+          PickedFile(bytes: bytes, filename: file.name, localPath: file.path),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(fileIntakeControllerProvider);
+    final merge = ref.watch(mergeControllerProvider);
+    final mergeController = ref.read(mergeControllerProvider.notifier);
+    final merged = merge.merged;
 
     return Scaffold(
       appBar: AppBar(title: const Text('MarkItDown UI')),
@@ -103,48 +153,135 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onDragExited: (_) => setState(() => _dragging = false),
         onDragDone: (details) async {
           setState(() => _dragging = false);
-          final item = details.files.firstOrNull;
-          if (item == null) return;
-          final bytes = await item.readAsBytes();
-          _acceptAll([
-            PickedFile(
-              bytes: bytes,
-              filename: item.name,
-              mimeType: item.mimeType,
-              localPath: item.path,
-            ),
+          _incoming([
+            for (final item in details.files)
+              PickedFile(
+                bytes: await item.readAsBytes(),
+                filename: item.name,
+                mimeType: item.mimeType,
+                localPath: item.path,
+              ),
           ]);
         },
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
-            child: switch (state.phase) {
-              FileIntakePhase.idle => _EmptyState(
-                dragging: _dragging,
-                onPickFile: _pickFile,
-                onPasteLink: _pasteLink,
-              ),
-              FileIntakePhase.converting => _Converting(
-                state: state,
-                onStop: () => ref
-                    .read(fileIntakeControllerProvider.notifier)
-                    .stopTranscription(),
-              ),
-              FileIntakePhase.ready => _PreviewResult(
-                info: state.info!,
-                result: state.result!,
-                onPickAnother: () =>
-                    ref.read(fileIntakeControllerProvider.notifier).clear(),
-              ),
-              FileIntakePhase.failed => _ConversionError(
-                failure: state.failure!,
-                onPickAnother: () =>
-                    ref.read(fileIntakeControllerProvider.notifier).clear(),
-              ),
-            },
+            child: merge.active
+                ? merged != null
+                      ? _PreviewResult(
+                          title: l10n.mergedTitle(merge.items.length),
+                          result: merged,
+                          saveName: _mergedFileName(l10n, merge.items),
+                          actions: [
+                            TextButton(
+                              onPressed: mergeController.backToList,
+                              child: Text(l10n.backToListButton),
+                            ),
+                            TextButton(
+                              onPressed: mergeController.clear,
+                              child: Text(l10n.clearButton),
+                            ),
+                          ],
+                        )
+                      : _MergeList(
+                          state: merge,
+                          onMove: mergeController.move,
+                          onRemove: mergeController.remove,
+                          onStop: mergeController.stopTranscription,
+                          onAddFiles: () async {
+                            final files = await _pickFiles();
+                            if (files.isNotEmpty) {
+                              mergeController.addFiles(files);
+                            }
+                          },
+                          onAddLink: () async {
+                            final link = await _askLink();
+                            if (link != null) mergeController.addUrl(link);
+                          },
+                          onMerge: () => mergeController.merge(l10n.noFilename),
+                          onClear: mergeController.clear,
+                        )
+                : switch (state.phase) {
+                    FileIntakePhase.idle => _EmptyState(
+                      dragging: _dragging,
+                      onPickFile: () async => _incoming(await _pickFiles()),
+                      onPasteLink: () async {
+                        final link = await _askLink();
+                        if (link != null) _incoming(const [], link: link);
+                      },
+                    ),
+                    FileIntakePhase.converting => _Converting(
+                      state: state,
+                      onStop: () => ref
+                          .read(fileIntakeControllerProvider.notifier)
+                          .stopTranscription(),
+                    ),
+                    FileIntakePhase.ready => _PreviewResult(
+                      title:
+                          state.info!.filename ??
+                          state.info!.url ??
+                          l10n.noFilename,
+                      subtitle:
+                          '${state.info!.detectedType.label}, '
+                          '${formatSize(state.info!.lengthBytes)}',
+                      result: state.result!,
+                      saveName: state.info!.filename != null
+                          ? '${_fileBase(state.info!.filename)}.md'
+                          : '${_titleBase(state.result!.title)}.md',
+                      actions: [
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final files = await _pickFiles();
+                            if (files.isNotEmpty) _addToMerge(files);
+                          },
+                          icon: const Icon(Icons.add),
+                          label: Text(l10n.addFilesButton),
+                        ),
+                        TextButton(
+                          onPressed: () => ref
+                              .read(fileIntakeControllerProvider.notifier)
+                              .clear(),
+                          child: Text(l10n.pickAnotherButton),
+                        ),
+                      ],
+                    ),
+                    FileIntakePhase.failed => _ConversionError(
+                      failure: state.failure!,
+                      onPickAnother: () => ref
+                          .read(fileIntakeControllerProvider.notifier)
+                          .clear(),
+                    ),
+                  },
           ),
         ),
       ),
+    );
+  }
+}
+
+class _IncomingDialog extends StatelessWidget {
+  const _IncomingDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      title: Text(l10n.incomingTitle),
+      content: Text(l10n.incomingBody),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancelButton),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(l10n.startOverButton),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(l10n.addButton),
+        ),
+      ],
     );
   }
 }
@@ -338,15 +475,24 @@ class _Converting extends StatelessWidget {
   }
 }
 
+/// A result on screen — one file's or a merge's.
 class _PreviewResult extends StatelessWidget {
-  final StreamInfo info;
+  final String title;
+  final String? subtitle;
   final ConversionResult result;
-  final VoidCallback onPickAnother;
+
+  /// Suggested name for "Save as .md".
+  final String saveName;
+
+  /// Buttons after "Copy" and "Save".
+  final List<Widget> actions;
 
   const _PreviewResult({
-    required this.info,
+    required this.title,
     required this.result,
-    required this.onPickAnother,
+    required this.saveName,
+    required this.actions,
+    this.subtitle,
   });
 
   Future<void> _copy(BuildContext context) async {
@@ -366,9 +512,7 @@ class _PreviewResult extends StatelessWidget {
   Future<void> _save(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
     final path = await FilePicker.saveFile(
-      fileName: info.filename != null
-          ? _markdownFileName(info.filename)
-          : _titleFileName(result.title),
+      fileName: saveName,
       type: FileType.custom,
       allowedExtensions: const ['md'],
       bytes: Uint8List.fromList(utf8.encode(result.markdown)),
@@ -396,14 +540,11 @@ class _PreviewResult extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                info.filename ?? info.url ?? l10n.noFilename,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${info.detectedType.label}, ${formatSize(info.lengthBytes)}',
-              ),
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              if (subtitle case final subtitle?) ...[
+                const SizedBox(height: 4),
+                Text(subtitle),
+              ],
               if (result.warnings.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -466,10 +607,7 @@ class _PreviewResult extends StatelessWidget {
                     icon: const Icon(Icons.save_alt),
                     label: Text(l10n.saveAsButton),
                   ),
-                  TextButton(
-                    onPressed: onPickAnother,
-                    child: Text(l10n.pickAnotherButton),
-                  ),
+                  ...actions,
                 ],
               ),
             ],
@@ -489,24 +627,7 @@ class _ConversionError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final (title, body) = switch (failure) {
-      UnsupportedFormatFailure(detectedTypeLabel: final label) => (
-        l10n.errorUnsupportedTitle,
-        l10n.errorUnsupportedBody(label),
-      ),
-      CorruptedFileFailure(reason: final reason) => (
-        l10n.errorCorruptedTitle,
-        l10n.errorCorruptedBody(reason),
-      ),
-      LimitExceededFailure(description: final description) => (
-        l10n.errorLimitTitle,
-        l10n.errorLimitBody(description),
-      ),
-      NetworkFailure(description: final description) => (
-        l10n.errorNetworkTitle,
-        l10n.errorNetworkBody(description),
-      ),
-    };
+    final (title, body) = _failureText(l10n, failure);
 
     return Container(
       width: double.infinity,
@@ -535,26 +656,267 @@ class _ConversionError extends StatelessWidget {
   }
 }
 
-String _markdownFileName(String? originalFilename) {
-  if (originalFilename == null || originalFilename.isEmpty) {
-    return 'converted.md';
+/// The same three cases (plus the network) on the error screen and in a
+/// merge list row — see `docs/conversion-pipeline.md#errors`.
+(String, String) _failureText(
+  AppLocalizations l10n,
+  ConversionFailure failure,
+) => switch (failure) {
+  UnsupportedFormatFailure(detectedTypeLabel: final label) => (
+    l10n.errorUnsupportedTitle,
+    l10n.errorUnsupportedBody(label),
+  ),
+  CorruptedFileFailure(reason: final reason) => (
+    l10n.errorCorruptedTitle,
+    l10n.errorCorruptedBody(reason),
+  ),
+  LimitExceededFailure(description: final description) => (
+    l10n.errorLimitTitle,
+    l10n.errorLimitBody(description),
+  ),
+  NetworkFailure(description: final description) => (
+    l10n.errorNetworkTitle,
+    l10n.errorNetworkBody(description),
+  ),
+};
+
+class _MergeList extends StatelessWidget {
+  final MergeState state;
+  final void Function(int from, int to) onMove;
+  final void Function(int id) onRemove;
+  final void Function(int id) onStop;
+  final VoidCallback onAddFiles;
+  final VoidCallback onAddLink;
+  final VoidCallback onMerge;
+  final VoidCallback onClear;
+
+  const _MergeList({
+    required this.state,
+    required this.onMove,
+    required this.onRemove,
+    required this.onStop,
+    required this.onAddFiles,
+    required this.onAddLink,
+    required this.onMerge,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final (hint, hintColor) = state.hasFailures
+        ? (l10n.mergeFailedHint, theme.colorScheme.error)
+        : !state.canMerge
+        ? (l10n.mergeWaitingHint, null)
+        : (l10n.mergeOrderHint, null);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 720, maxHeight: 560),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // The secondary actions are icons up here: as four labelled
+              // buttons at the bottom they wrapped into four rows on a
+              // phone and left the list room for a row and a half.
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.mergeListTitle(state.items.length),
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onAddLink,
+                    icon: const Icon(Icons.link),
+                    tooltip: l10n.pasteLinkButton,
+                  ),
+                  IconButton(
+                    onPressed: onClear,
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    tooltip: l10n.clearButton,
+                  ),
+                ],
+              ),
+              Flexible(
+                child: ReorderableListView(
+                  shrinkWrap: true,
+                  // Handles are explicit on every platform: on Android the
+                  // default is a long press anywhere on the row, which
+                  // nobody discovers.
+                  buildDefaultDragHandles: false,
+                  onReorder: (from, to) =>
+                      // The list reports the index before removal.
+                      onMove(from, to > from ? to - 1 : to),
+                  children: [
+                    for (final (index, item) in state.items.indexed)
+                      _MergeRow(
+                        key: ValueKey(item.id),
+                        index: index,
+                        item: item,
+                        onRemove: () => onRemove(item.id),
+                        onStop: () => onStop(item.id),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                hint,
+                style: theme.textTheme.bodySmall?.copyWith(color: hintColor),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: state.canMerge ? onMerge : null,
+                    icon: const Icon(Icons.merge),
+                    label: Text(l10n.mergeButton),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: onAddFiles,
+                    icon: const Icon(Icons.add),
+                    label: Text(l10n.addFilesButton),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  final dot = originalFilename.lastIndexOf('.');
-  final base = dot > 0 ? originalFilename.substring(0, dot) : originalFilename;
-  return '$base.md';
+}
+
+class _MergeRow extends StatelessWidget {
+  final int index;
+  final MergeItem item;
+  final VoidCallback onRemove;
+  final VoidCallback onStop;
+
+  const _MergeRow({
+    super.key,
+    required this.index,
+    required this.item,
+    required this.onRemove,
+    required this.onStop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final colors = Theme.of(context).colorScheme;
+    final info = item.info;
+    final typeAndSize = info == null
+        ? null
+        : '${info.detectedType.label}, ${formatSize(info.lengthBytes)}';
+    final subtitle = switch (item.status) {
+      MergeItemStatus.waiting => [
+        typeAndSize,
+        l10n.waitingLabel,
+      ].nonNulls.join(' · '),
+      MergeItemStatus.downloading => l10n.downloadingLabel,
+      MergeItemStatus.converting =>
+        !item.transcribing
+            ? l10n.convertingLabel
+            : item.stopping
+            ? l10n.stoppingLabel
+            : item.speechProgress > 0
+            ? l10n.transcribingProgressLabel(item.speechProgress)
+            : l10n.transcribingLabel,
+      MergeItemStatus.ready => typeAndSize ?? '',
+      MergeItemStatus.failed => switch (_failureText(l10n, item.failure!)) {
+        (final title, final body) => '$title. $body',
+      },
+    };
+
+    return ListTile(
+      contentPadding: const EdgeInsets.only(left: 4),
+      visualDensity: VisualDensity.compact,
+      leading: switch (item.status) {
+        MergeItemStatus.waiting => Icon(Icons.schedule, color: colors.outline),
+        MergeItemStatus.downloading ||
+        MergeItemStatus.converting => const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        MergeItemStatus.ready => Icon(
+          Icons.check_circle_outline,
+          color: colors.primary,
+        ),
+        MergeItemStatus.failed => Icon(
+          Icons.error_outline,
+          color: colors.error,
+        ),
+      },
+      title: Text(item.name ?? l10n.noFilename),
+      subtitle: Text(
+        subtitle,
+        style: item.status == MergeItemStatus.failed
+            ? TextStyle(color: colors.error)
+            : null,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (item.transcribing)
+            IconButton(
+              onPressed: item.stopping ? null : onStop,
+              icon: const Icon(Icons.stop),
+              tooltip: l10n.stopButton,
+            ),
+          IconButton(
+            onPressed: onRemove,
+            icon: const Icon(Icons.close),
+            tooltip: l10n.removeTooltip,
+          ),
+          ReorderableDragStartListener(
+            index: index,
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(Icons.drag_handle),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// [filename] without its extension.
+String _fileBase(String? filename) {
+  if (filename == null || filename.isEmpty) return 'converted';
+  final dot = filename.lastIndexOf('.');
+  return dot > 0 ? filename.substring(0, dot) : filename;
 }
 
 /// A page fetched by link has no filename — its title is used instead,
 /// stripped of characters forbidden in Windows filenames, and capped at a
 /// reasonable length.
-String _titleFileName(String? title) {
+String _titleBase(String? title) {
   final cleaned = (title ?? '')
       .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
-  if (cleaned.isEmpty) return 'converted.md';
-  final short = cleaned.length > 100
-      ? cleaned.substring(0, 100).trim()
-      : cleaned;
-  return '$short.md';
+  if (cleaned.isEmpty) return 'converted';
+  return cleaned.length > 100 ? cleaned.substring(0, 100).trim() : cleaned;
+}
+
+/// Named after the first file and how many follow it (author's decision):
+/// `report_and_2_more.md`.
+String _mergedFileName(AppLocalizations l10n, List<MergeItem> items) {
+  final first = items.first;
+  final base = first.info?.url != null
+      ? _titleBase(first.name)
+      : _fileBase(first.name);
+  if (items.length == 1) return '$base.md';
+  return '${l10n.mergedFileName(base, items.length - 1)}.md';
 }

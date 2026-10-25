@@ -113,6 +113,40 @@ that same `accept` — with the address in `PickedFile.url`. A download
 failure is a `NetworkFailure`, a fourth kind of failure alongside the three
 file-based ones.
 
+Neither is a merge (0.10) a fifth path. The conversion itself —
+type detection, speech-recognition setup and polling, the isolate — lives
+in `convertPicked` (`app/lib/src/conversion/convert_picked.dart`), and both
+`FileIntakeController.accept` and the merge list call it, so a file in the
+list is handled exactly like a file alone.
+
+## Merging files (0.10)
+
+`MergeController` (`app/lib/src/merge/`) holds the list; the joining
+itself is `mergeResults` in the core (`core/lib/src/conversion/merge.dart`):
+a `# name` heading per file, `---` between files, the files' own Markdown
+as-is. Decisions, all the author's:
+
+- **Entry points.** Several files at once (dialog, drop, "Share" on
+  Android via `SEND_MULTIPLE`) go straight into a list; one file opens on
+  its own, as before, and "Add files" on its result moves it into a list
+  without converting it again.
+- **A drop or "Share" while something is on screen asks** — add to it or
+  start over. Before 0.10 a new file silently replaced the old one; with a
+  merge of five files that would lose work. A drop during a single file's
+  conversion still replaces it, as before: there's nothing to merge yet.
+- **Conversion happens on adding, one file at a time.** That's the only
+  real integrity check — the signature says "PDF," not "intact PDF." A
+  failed file blocks "Merge" until it's removed (an error stops the merge,
+  rather than leaving a gap), and since everything is already converted,
+  reordering and merging are instant. One at a time, not in parallel: a
+  phone holding several files' bytes and parse trees at once gets killed,
+  and only one speech recognition can run anyway. After conversion a
+  file's bytes are dropped — the list keeps only Markdown.
+- **Order is the list's order**, changed by dragging an explicit handle
+  (on Android the default long press anywhere is undiscoverable).
+- **Headings inside files aren't shifted** — a file's text in a merge is
+  exactly what converting it alone gives.
+
 Platform-specific details that have to be set up by hand in the native
 projects:
 

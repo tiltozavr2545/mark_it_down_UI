@@ -42,6 +42,41 @@
   "savedConfirmation": "Saved",
   "warningsLabel": "Warnings",
 
+  "addFilesButton": "Add files",
+  "@addFilesButton": {"description": "Adds files to the merge list; on a single file's result, starts a merge with it"},
+  "mergeButton": "Merge",
+  "@mergeButton": {"description": "Joins all files of the list into one Markdown document"},
+  "mergeListTitle": "{count, plural, one{{count} file to merge} other{{count} files to merge}}",
+  "@mergeListTitle": {
+    "description": "Title of the merge list",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "mergedTitle": "{count, plural, one{Merged {count} file} other{Merged {count} files}}",
+  "@mergedTitle": {
+    "description": "Title of the merged result preview",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "mergeOrderHint": "Files go in this order — drag to change it.",
+  "mergeWaitingHint": "Merging becomes available once all files are converted.",
+  "mergeFailedHint": "Remove the files with errors to merge the rest.",
+  "@mergeFailedHint": {"description": "A failed file blocks the merge until it's removed from the list"},
+  "waitingLabel": "Queued",
+  "@waitingLabel": {"description": "A merge list item waiting for its turn to be converted"},
+  "removeTooltip": "Remove",
+  "clearButton": "Clear",
+  "@clearButton": {"description": "Empties the merge list and goes back to the start screen"},
+  "backToListButton": "Back to list",
+  "mergedFileName": "{name}_and_{count}_more",
+  "@mergedFileName": {
+    "description": "Suggested name (without .md) for saving a merge: the first file's name and how many others follow it",
+    "placeholders": {"name": {"type": "String"}, "count": {"type": "int"}}
+  },
+  "incomingTitle": "Add to the merge?",
+  "@incomingTitle": {"description": "A file was dropped or shared while a result or the merge list is on screen"},
+  "incomingBody": "There are files on screen already. Add the new ones to them, or start over?",
+  "startOverButton": "Start over",
+  "addButton": "Add",
+
   "errorUnsupportedTitle": "Format not supported",
   "errorUnsupportedBody": "{format} isn't supported yet.",
   "@errorUnsupportedBody": {

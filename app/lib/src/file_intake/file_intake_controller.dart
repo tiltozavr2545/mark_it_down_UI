@@ -1,11 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markitdown_core/markitdown_core.dart';
 
-import '../conversion/isolated_convert.dart';
-import '../conversion/ocr_data.dart';
-import '../conversion/speech_data.dart';
+import '../conversion/convert_picked.dart';
 import 'picked_file.dart';
 
 enum FileIntakePhase { idle, converting, ready, failed }
@@ -83,67 +79,35 @@ class FileIntakeController extends Notifier<FileIntakeState> {
   Future<void> accept(PickedFile file) async {
     final generation = _supersede();
     bool current() => generation == _generation;
-    final info = StreamInfo.fromHead(
-      file.bytes,
-      filename: file.filename,
-      mimeType: file.mimeType,
-      localPath: file.localPath,
-      url: file.url,
-    );
+    final info = infoFor(file);
     state = FileIntakeState.converting(info);
 
-    TranscriptionSettings? speech;
-    TranscriptionControl? control;
-    Timer? poll;
-    // AudioConverter does the speech recognition, and it takes minutes, not
-    // seconds — that's why its files get the progress bar and "Stop" button.
-    if (AudioConverter.handles(info.detectedType.kind)) {
-      speech = await transcriptionSettings();
-      // Another file arrived while we waited for the model.
-      if (!current()) return;
-      if (speech != null) {
-        control = _control = TranscriptionControl();
-        speech = speech.withControl(control);
-        state = FileIntakeState.converting(info, transcribing: true);
-        // Progress is written by native code into shared memory — we poll
-        // instead of waiting for messages: the isolate is busy in
-        // whisper_full and won't respond.
-        poll = Timer.periodic(const Duration(milliseconds: 500), (_) {
-          final progress = control!.progress;
-          final stopping = control.cancelled;
-          // The percentage moves in steps of 5 — without the comparison the
-          // card would rebuild twice a second for nothing.
-          if (!current() ||
-              progress == state.speechProgress && stopping == state.stopping) {
-            return;
-          }
-          state = FileIntakeState.converting(
-            info,
-            transcribing: true,
-            speechProgress: progress,
-            stopping: stopping,
-          );
-        });
-      }
-    }
+    final outcome = await ref
+        .read(pickedConverterProvider)
+        .call(
+          file,
+          info,
+          isCurrent: current,
+          speech: SpeechHooks(
+            onStart: (control) {
+              _control = control;
+              state = FileIntakeState.converting(info, transcribing: true);
+            },
+            onProgress: (progress, stopping) {
+              state = FileIntakeState.converting(
+                info,
+                transcribing: true,
+                speechProgress: progress,
+                stopping: stopping,
+              );
+            },
+            onEnd: (control) {
+              if (identical(_control, control)) _control = null;
+            },
+          ),
+        );
 
-    final ConversionOutcome outcome;
-    try {
-      outcome = await isolatedConvert(
-        file.bytes,
-        info,
-        ocr: await ocrSettings(),
-        transcription: speech,
-      );
-    } finally {
-      poll?.cancel();
-      // Release only after the isolate finishes: native code writes to
-      // control up to the last window.
-      if (identical(_control, control)) _control = null;
-      control?.dispose();
-    }
-
-    if (!current()) return;
+    if (outcome == null || !current()) return;
     switch (outcome) {
       case ConversionSuccess(result: final result):
         state = FileIntakeState.ready(info, result);

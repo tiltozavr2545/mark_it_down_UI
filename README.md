@@ -24,6 +24,11 @@ on the user's own machine:
    automatically — only on button press, so as not to overwrite whatever was
    already there.
 
+**Several files into one** — choose or drop several at once (or "Add
+files" on a result): they're converted into a list, reordered by
+dragging, and merged into one Markdown document, each file under its own
+heading. Links and audio can go into the list too.
+
 The file type is detected from its content, not its extension: a file from
 a messaging app with no extension, or a `.docx` renamed to `.pdf`, still
 opens correctly. Text in scans and photos is recognized (OCR), speech in
@@ -50,7 +55,8 @@ everywhere) and real markitdown, bundled together with Python in a
 The project proceeds in stages ([plan](docs/implementation-plan.md));
 Stages 0–5 are closed, Stage 6 (images, audio, OCR) has shipped, and
 **Stage 7 — polish** is in progress. 0.8 added offline speech recognition.
-Version — `0.8.0`.
+0.9 added "link" mode, 0.10 — merging several files into one `.md`.
+Version — `0.10.0`.
 
 | platform | status |
 |---|---|
@@ -285,6 +291,7 @@ Details — [docs/conversion-pipeline.md](docs/conversion-pipeline.md) and
 app/                      Flutter app
   lib/src/home_screen.dart      screen: file selection, preview, copy
   lib/src/file_intake/          dialog, drag & drop, "Share" (Android)
+  lib/src/merge/                the merge list: several files into one .md
   lib/src/conversion/           runs conversion in an isolate, OCR and
                                 speech-recognition models
   lib/l10n/                     UI strings (ru, en)
