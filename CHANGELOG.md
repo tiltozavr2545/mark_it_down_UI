@@ -8,6 +8,12 @@ For the **why** behind a decision, look not here but at the comment next
 to the code, or at `git log`. Here you'll find the timeline and what
 appeared in which version.
 
+**Since 0.9, a version's section is the "What's new" of its GitHub
+Release** (`tool/release_notes.sh`), so it's written for someone who just
+downloads the app: plain language, what they can now do and how — no
+"author's request," no library names, parsers, or CI details (those go in
+`git log` and `docs/`).
+
 Version format is `name+build` (`0.1.0+1`), with `build` increasing
 monotonically. Bumped in every PR, see "Working conventions" in
 [AGENTS.md](AGENTS.md).
@@ -16,63 +22,40 @@ monotonically. Bumped in every PR, see "Working conventions" in
 
 ## 0.10.0 — merging files into one `.md`
 
-Author's request: "glue files into one md, a couple of PDFs and so on."
+You can now turn several files into a single Markdown document — for
+example, a few PDFs you want to paste into a chat together.
 
-**How it starts.** Choose several files in the dialog, drop several onto
-the window, or "Share" several on Android — they go straight into a merge
-list. A single file opens as before, and its result now has an "Add
-files" button that starts a merge with it. If a file or link arrives by
-drop or "Share" while a result or the list is on screen, the app asks
-whether to add it or start over.
+- **Pick several files at once** — in the file dialog, by dragging them
+  onto the window (Windows), or with "Share" on Android. Already
+  converted one file? Press "Add files" to put more next to it.
+- **Check the list.** Each file is converted as soon as it's added, so
+  you see right away if one can't be read — remove it, and the rest can
+  be merged. Drag files to change their order. Links and audio
+  recordings can go into the list too.
+- **Press "Merge".** You get one document: each file under a heading
+  with its name, files separated by a line. Copy it or save it as `.md`,
+  as usual.
 
-**The list.** Each file is converted as soon as it's added, one at a
-time — that's the check that it isn't corrupted. A file that fails shows
-its error in its row, and "Merge" stays unavailable until it's removed:
-an error stops the merge rather than leaving a gap in it. Order is
-changed by dragging; links (pages, YouTube, Wikipedia) and audio with
-speech recognition (percentage and "Stop" in the row) go in like files.
+If you drop or share a file while something is already on screen, the
+app asks whether to add it or start over.
 
-**The result.** Each file under a `# name` heading (a page by link: a
-heading linking to it), files separated by `---`, each file's own
-Markdown untouched. Warnings are prefixed with the file they came from.
-"Save as .md" suggests `<first file>_and_N_more.md`.
+## 0.9.0 — links, and more formats on Android
 
-## 0.9.0 — everything markitdown can do, plus links
+- **Convert a web page by its link.** Press "Paste link", or on Android
+  share a link from a browser or YouTube. A YouTube video gives its
+  title, description, and subtitles; a Wikipedia article gives just the
+  article text, without menus; a link to a file (PDF, Word, audio…)
+  works as if you had opened the file itself.
+- **Old Excel files (`.xls`) and Outlook emails (`.msg`) now open on
+  Android too**, not only on Windows.
+- **RSS and Atom news feeds** are converted into a readable list of
+  entries.
+- **Text in GIF, WebP, and TIFF images** is now recognized too,
+  including stickers with a transparent background.
 
-Author's request: "do everything regular markitdown can do, … internet
-access is fine." The network is reached only via an explicit link;
-LLM-generated captions, Azure, and Bing search are not implemented.
-
-**Offline, on all platforms.** `xls` (Excel 97–2003 and Excel 95) and
-`msg` (Outlook) now open on Android too — via a homegrown Dart-core
-parser; on Windows, the bundled markitdown still goes first, with the
-Dart parser as a fallback if it fails. A message now looks exactly like
-markitdown's output, character for character; a message with only an
-HTML body is no longer empty. RSS and Atom feeds (`.rss`, `.atom`, `.xml`,
-and no extension) — channel, entries, dates, entry text. Text is now also
-recognized on GIF, WebP, and TIFF images, including on a transparent
-background (stickers).
-
-**Links.** A "Paste link" button (fills in the link from the clipboard),
-and on Android also "Share" a link from YouTube or a browser. A YouTube
-video gives title, view count, description, and subtitles (manual ones in
-the video's language are preferred over automatic ones); a Wikipedia
-article gives just the article text; any page comes through with no
-scripts or styles, and its links are made absolute; a link to a file
-(PDF, docx, audio…) is handled like the file itself, with on-device speech
-recognition and OCR.
-
-**Privacy.** The Android build now has the `INTERNET` permission — for
-links. Files still never leave the device: all networking code lives in a
-single module, and CI checks on every commit that there's no networking
-outside it.
-Details — `docs/offline-and-privacy.md`.
-
-Also: plain HTML output no longer gets an extra line from `<title>`
-leaking into the result; `archive` 4 and `image` 4.12. Tesseract4Android
-(the `.so` used for OCR on Android) disappeared from JitPack — the build
-now downloads the same file (same sha256) from this repository's own
-`deps-tesseract4android-4.9.0` prerelease.
+Your files still never leave the device. The app goes online only when
+you give it a link, and only to download what that link points to —
+that's why the Android app now asks for internet access.
 
 ## 0.8.2 — GitHub Releases only
 
