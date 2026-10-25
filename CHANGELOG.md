@@ -10,7 +10,9 @@ appeared in which version.
 
 **Since 0.9, a version's section is the "What's new" of its GitHub
 Release** (`tool/release_notes.sh`), so it's written for someone who just
-downloads the app: plain language, what they can now do and how — no
+downloads the app: a list of points, each opening with a bold phrase, in
+the style of the earlier releases' pages; plain language, what they can
+now do and how — no
 "author's request," no library names, parsers, or CI details (those go in
 `git log` and `docs/`).
 
@@ -22,22 +24,20 @@ monotonically. Bumped in every PR, see "Working conventions" in
 
 ## 0.10.0 — merging files into one `.md`
 
-You can now turn several files into a single Markdown document — for
-example, a few PDFs you want to paste into a chat together.
-
-- **Pick several files at once** — in the file dialog, by dragging them
-  onto the window (Windows), or with "Share" on Android. Already
-  converted one file? Press "Add files" to put more next to it.
-- **Check the list.** Each file is converted as soon as it's added, so
-  you see right away if one can't be read — remove it, and the rest can
-  be merged. Drag files to change their order. Links and audio
-  recordings can go into the list too.
-- **Press "Merge".** You get one document: each file under a heading
-  with its name, files separated by a line. Copy it or save it as `.md`,
-  as usual.
-
-If you drop or share a file while something is already on screen, the
-app asks whether to add it or start over.
+- **Several files into one document.** Pick a few files at once — in
+  the file dialog, by dragging them onto the window (Windows), or with
+  "Share" on Android — and get a single Markdown document, for example a
+  few PDFs to paste into a chat together. Each file goes under a heading
+  with its name.
+- **Already converted one file?** Press "Add files" to put more next to
+  it.
+- **A broken file is visible right away.** Files are converted as soon
+  as they're added; remove the one that can't be read, and the rest can
+  be merged.
+- **Drag files to change their order.** Links and audio recordings can
+  go into the list too.
+- **Dropped or shared a file while something is already on screen?**
+  The app asks whether to add it or start over.
 
 ## 0.9.0 — links, and more formats on Android
 
@@ -52,10 +52,9 @@ app asks whether to add it or start over.
   entries.
 - **Text in GIF, WebP, and TIFF images** is now recognized too,
   including stickers with a transparent background.
-
-Your files still never leave the device. The app goes online only when
-you give it a link, and only to download what that link points to —
-that's why the Android app now asks for internet access.
+- **Your files still never leave the device.** The app goes online only
+  when you give it a link, and only to download what that link points
+  to — that's why the Android app now asks for internet access.
 
 ## 0.8.2 — GitHub Releases only
 

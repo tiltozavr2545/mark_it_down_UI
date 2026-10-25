@@ -3,7 +3,7 @@
 #
 #   tool/release_notes.sh VERSION      (e.g. 0.10.0, no leading "v")
 #
-# Output: "What's new in VERSION" — that version's section of
+# Output: "What's new" — that version's section of
 # CHANGELOG.md — followed by .github/release-notes.md (install
 # instructions). Fails if CHANGELOG.md has no `## VERSION` section: a
 # release without a "what's new" isn't published.
@@ -61,10 +61,11 @@ absolute_links() {
     | sed "s#](REPO/#](${REPO_URL}/#g"
 }
 
-# The section's own heading becomes "What's new in …", one level below
-# the page title, like the template's headings.
+# The same layout as every release since 0.5: "## What's new", the list,
+# a rule, then the instructions. The version is already in the release
+# title, so the section's own heading is replaced.
 printf '%s\n' "$section" \
-  | sed -E "1s/^## [^ ]+ *(— *)?/### What's new in $VERSION: /; 1s/: \$//" \
+  | sed "1s/.*/## What's new/" \
   | unwrap | absolute_links
-printf '\n'
+printf '\n---\n\n'
 unwrap < .github/release-notes.md | absolute_links
