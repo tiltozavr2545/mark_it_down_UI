@@ -22,6 +22,15 @@ monotonically. Bumped in every PR, see "Working conventions" in
 
 ---
 
+## 0.10.1 — tables in large PDFs
+
+- **Tables in PDFs are kept on every device.** A table in a PDF now
+  comes out as a Markdown table on Android too, and on Windows for PDFs
+  longer than 50 pages or with scanned pages — before, those turned into
+  plain text.
+- **PDFs on Windows convert much faster.** A PDF that used to take tens
+  of seconds is now ready in about a second.
+
 ## 0.10.0 — merging files into one `.md`
 
 - **Several files into one document.** Pick a few files at once — in

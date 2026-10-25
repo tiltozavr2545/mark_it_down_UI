@@ -76,7 +76,7 @@ Why that is and what to do about it — [docs/future-development.md](docs/future
 | RSS and Atom feeds (`.rss`, `.atom`, `.xml`) | ✅ | ✅ | Dart core: channel, entries, dates, entry text |
 | `docx`, `xlsx`, `pptx` | ✅ | ✅ | Dart core (lists, tables, footnotes, sheets, speaker notes) |
 | `epub`, `ipynb`, `zip` (recursive, with zip-bomb protection) | ✅ | ✅ | Dart core |
-| `pdf` with text | ✅ with tables (up to 50 pages) | ✅ without tables | sidecar up to 50 pages, beyond that and on Android — Dart core via PDFium |
+| `pdf` with text | ✅ with tables | ✅ with tables | Dart core via PDFium; tables found the same way as in markitdown |
 | scanned `pdf` | ✅ | ✅ | OCR (Tesseract, Russian and English), up to 20 scanned pages |
 | `xls` (Excel 95–2003), `msg` (Outlook) | ✅ | ✅ | on Windows — sidecar, falling back to the Dart core on failure and on Android |
 | images: JPEG, PNG, BMP, GIF, WebP, TIFF | ✅ | ✅ | EXIF metadata + recognized text (OCR) |
@@ -271,11 +271,10 @@ file ─► type detection ─► converter registry ─► Markdown + warnings
   button.
 - **Sidecar** — on desktop, one more converter is added to the registry: a
   subprocess with a bundled Python and real markitdown. It goes first
-  wherever it beats the Dart core: `xls`/`msg` (only it can handle these)
-  and PDFs up to 50 pages (it can handle tables). If it crashes, hangs, or
+  wherever it beats the Dart core: `xls`/`msg`. If it crashes, hangs, or
   returns garbage, the Dart core supplies the result instead, and this is
   visible in the warnings. The sidecar can also handle
-  `docx`/`xlsx`/`pptx`, but the app never routes to it there: the Dart core
+  `pdf`/`docx`/`xlsx`/`pptx`, but the app never routes to it there: the Dart core
   is no worse, and dozens of times faster.
 - **Errors** — the user sees one of three clear cases ("format not
   supported," "file is corrupted," "limit exceeded"), never raw exception

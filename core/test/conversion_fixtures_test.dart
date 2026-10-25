@@ -104,10 +104,7 @@ const _fixtures = [
   ), // the <rss> root is recognized with no extension
   // Stage 3 — PDF.
   _Fixture('pdf/simple.pdf', 'pdf/simple.expected.md'),
-  // KNOWN GAP: the PDFium converter does not recognize tables; row cells
-  // get glued into one (and table rows into a paragraph), whereas
-  // pdfplumber in the sidecar produces a real Markdown table. The expected
-  // output locks in the current behavior; update it if PDF tables appear.
+  // A ruled grid: found by word alignment, as markitdown does (0.10.1).
   _Fixture('pdf/table.pdf', 'pdf/table.expected.md'),
   _Fixture(
     'pdf/scanned.pdf',

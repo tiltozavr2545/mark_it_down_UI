@@ -78,7 +78,9 @@ of them, the decision is worth revisiting.
 
 **Decided by the author in [Stage 5, item 5](implementation-plan.md#stage-5--windows-05):**
 in the app, the sidecar only goes first for `pdf`/`xls`/`msg`, and for PDF
-only up to 50 pages; `docx`/`xlsx`/`pptx` go straight to Dart. How this
+only up to 50 pages; `docx`/`xlsx`/`pptx` go straight to Dart. Since
+0.10.1 PDF goes straight to Dart too: the Dart core finds tables the
+same way (author's decision). How this
 works is in
 [conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter).
 
@@ -93,17 +95,10 @@ back to Dart and return a result in a second.
 
 **What's still open:**
 
-- **Large `xls`/`msg`** — there's no fallback to Dart for these, so the
-  threshold doesn't apply; a slow file runs into the 120 s timeout and
+- **Large `xls`/`msg`** — the sidecar goes first for these with no page
+  or size threshold; a slow file runs into the 120 s timeout and
   gets rejected. Options are a timeout based on file size, or a "this may
   take minutes" indicator in the UI.
-- **Tables in PDFs longer than 50 pages** get lost (Dart returns them as
-  text, and says so in `warnings`). Only building our own table
-  recognition into the Dart core could close this gap — see
-  [format-coverage.md](format-coverage.md).
-- **The threshold is based on Mac measurements**, not Windows ones: the
-  Windows numbers come from the manual check in Stage 5, item 8; if they
-  turn out to be very different, the threshold should be revisited.
 
 ### Size of the Windows sidecar
 
@@ -149,14 +144,6 @@ point it will come up.
 ---
 
 ## Deferred
-
-### Tables from PDF
-
-`pdfplumber` can find tables in a PDF, PDFium on its own can't (the
-engine decision from Stage 3, see
-[format-coverage.md](format-coverage.md#stage-3-decisions)). This is a
-task on the scale of its own stage, and until then, returning text is more
-honest than a broken grid.
 
 ### macOS (build)
 

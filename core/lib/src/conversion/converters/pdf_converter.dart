@@ -12,8 +12,9 @@ import '../pdf/pdf_text_extraction.dart';
 
 /// Text extraction via PDFium (FFI, not a plugin — see
 /// `docs/format-coverage.md#решения-этапа-3` for the engine choice).
-/// We don't do tables — it's more honest to return text than a broken
-/// grid (see the same section). Headings are detected by font size
+/// Tables are found the way markitdown finds them — by words lining up
+/// into columns (`pdf_tables.dart`), so the Dart core and the sidecar
+/// agree on what is a table. Headings are detected by font size
 /// relative to the document's typical text size; if a PDF has not a
 /// single character of text, that's not an error: pages with no text
 /// layer go into `warnings`, and the rest of the text is returned as-is
@@ -162,6 +163,7 @@ String _render(List<PdfPage> pages, double? bodySize) {
   for (final page in pages) {
     prevTop = null;
     prevFontSize = null;
+    final writtenTables = <int>{};
 
     final ocrText = page.ocrText;
     if (ocrText != null) {
@@ -176,6 +178,21 @@ String _render(List<PdfPage> pages, double? bodySize) {
     for (final line in page.lines) {
       if (line.isBlank) {
         pendingParagraphBreak = true;
+        continue;
+      }
+
+      // The whole table goes out at its first row; the rest of its rows
+      // are already in it.
+      final tableIndex = line.tableIndex;
+      if (tableIndex != null) {
+        if (writtenTables.add(tableIndex)) {
+          final rows = page.tables[tableIndex].rows;
+          startParagraph();
+          buffer.write(md.table(rows.first, rows.skip(1).toList()).trimRight());
+        }
+        pendingParagraphBreak = true;
+        prevTop = null;
+        prevFontSize = null;
         continue;
       }
 

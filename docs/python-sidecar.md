@@ -433,8 +433,8 @@ below is what changes and why.
 - **Speed.** The measurements in this document and in
   [format-coverage.md](format-coverage.md#reconciliation-with-the-reference-stage-4) are
   from macOS; revisit on Windows. The order of "sidecar or Dart" has been
-  decided (Stage 5, item 5): in the app, the sidecar goes first only for
-  `pdf` up to 50 pages and for `xls`/`msg` — see
+  decided (Stage 5, item 5; PDF taken out in 0.10.1): in the app, the
+  sidecar goes first only for `xls`/`msg` — see
   [conversion-pipeline.md](conversion-pipeline.md#sidecar--just-another-converter).
 
 ## Signing and notarization on macOS

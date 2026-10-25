@@ -30,7 +30,7 @@ still the target state.
 | `pptx` | `python-pptx` | `archive` + `xml` (slides + notes) | — | all | ✅ Stage 2 |
 | `epub` | zip + html converter | `archive` + the Stage 1 `HtmlConverter` via `recurse` | — | all | ✅ Stage 2 |
 | `ipynb` | `_ipynb_converter` | `dart:convert` + our own cell rendering | — | all | ✅ Stage 2 |
-| `pdf` | `pdfminer.six`, `pdfplumber` | PDFium via our own FFI bindings, see below | better on tables (which we don't do), see the [reconciliation](#reconciliation-with-the-reference-stage-4) | all | ✅ Stage 3 |
+| `pdf` | `pdfminer.six`, `pdfplumber` | PDFium via our own FFI bindings, see below; tables — markitdown's word-alignment heuristic, ported ([0.10.1](#0101-decisions-pdf-tables)) | — (went first on desktop up to 50 pages until 0.10.1) | all | ✅ Stage 3, tables 0.10.1 |
 | `xls` (BIFF8, BIFF5) | `xlrd` | our own CFB and BIFF parsing ([0.9 decisions](#09-decisions-xls-msg-rss)), sheet rendering shared with `xlsx` | goes first on desktop | all | ✅ Stage 4 (sidecar), 0.9 (Dart) |
 | `doc` (OLE2) | — (not in markitdown either) | recognized as `.doc`, no converter | — | — | ❌ an honest "not supported" |
 | `msg` (Outlook) | `olefile` | our own CFB parsing, output character-for-character matching markitdown | goes first on desktop | all | ✅ Stage 4 (sidecar), 0.9 (Dart); fixtures are synthetic |
@@ -167,8 +167,9 @@ done, see [0.9 decisions](#09-decisions-links) and
   `FPDFPage_CountObjects`/`FPDFPageObj_GetType` against the fixed
   `FPDF_PAGEOBJ_IMAGE = 3` — part of PDFium's public ABI, a number that
   hasn't changed across releases.
-- **Tables in PDF are not supported** — the decision was made earlier (see
-  the plan), here it's simply implemented: PDFium gives us text and font
+- **Tables in PDF are not supported** (superseded in 0.10.1, see
+  [0.10.1 decisions](#0101-decisions-pdf-tables)) — the decision was made
+  earlier (see the plan), here it's simply implemented: PDFium gives us text and font
   size, but not table structure, and a heuristic for "which vertical lines
   are cell borders" is a separate task at the level of `pdfplumber`, not a
   one-evening job.
@@ -318,18 +319,13 @@ improvement):
 | `pptx` | `<!-- Slide number: N -->`, slide title as `#`, notes as `### Notes:` vs `##` and `**Speaker notes:**` | ours | a slide is a section of the document, not the document itself; comments burn tokens |
 | `pdf` | an empty PDF: warning "result is empty" vs "no text found in PDF" | ours | the Markdown is identical either way (empty) |
 
-**Known core gap: tables in PDF.** For `pdf/table.pdf` (a ruled grid, three
-columns, four rows) the sidecar produces a real Markdown table
-(`pdfplumber`), while the Dart core produces the line `City Population
-Country`, and merges the remaining three rows into a single paragraph
-(a 24pt line pitch is below the "double point size" merge threshold). The
-decision was made at Stage 3 ("no PDF tables"), and the reconciliation only
-confirmed the cost; `pdf/table.expected.md` captures the **current**
-behavior and will be updated once table support lands. That's why on
-desktop the sidecar still goes first for PDF — but only up to 50 pages
-(Stage 5, item 5: beyond that it's too slow, and such a PDF falls back to
-Dart with a warning about tables), while on a phone a PDF table means lost
-structure (the text itself is kept).
+**Known core gap: tables in PDF (closed in 0.10.1).** For `pdf/table.pdf` (a
+ruled grid, three columns, four rows) the sidecar produced a real Markdown
+table (`pdfplumber`), while the Dart core produced the line `City Population
+Country` and merged the remaining three rows into a single paragraph. Since
+0.10.1 the Dart core finds the table the same way markitdown does (see
+[0.10.1 decisions](#0101-decisions-pdf-tables)), and `pdf/table.expected.md`
+holds the table.
 
 **`pptx/no_sppr.pptx`** used to be `pptx/simple.pptx`, hand-built for the
 Dart parser: its shapes lack `<p:spPr>`, which is mandatory per the schema,
@@ -522,12 +518,11 @@ magnitude as on Mac.
   don't build them either, to avoid piling on dependencies). GIF, WebP,
   TIFF, HEIC get metadata and an honest "recognition isn't supported for
   this format."
-- **The sidecar yields to PDF-with-scans handling when OCR is available**
-  (`SidecarConverter.scannedPdfToDart`). Otherwise, on Windows, a scanned
-  PDF of up to 50 pages would have gone to the sidecar (the Stage 5, item 5
-  decision), pdfminer would have returned emptiness as a "success," and OCR
-  would never have run at all. The cost: tables on text pages of such a PDF
-  are extracted as plain text; a warning notes this.
+- **The sidecar yielded to PDF-with-scans handling when OCR was
+  available** (until 0.10.1, when PDF stopped going to the sidecar at
+  all). Otherwise, on Windows, a scanned PDF of up to 50 pages would have
+  gone to the sidecar (the Stage 5, item 5 decision), pdfminer would have
+  returned emptiness as a "success," and OCR would never have run.
 - **OCR tests compare phrases, not a byte-for-byte reference**
   (`ocr_test.dart`): the output depends on the engine version, and on CI
   Linux, Tesseract is the distro package (5.3), not our build. Fixtures
@@ -535,6 +530,48 @@ magnitude as on Mac.
   (`conversion_fixtures_test.dart`) — their output doesn't depend on the
   engine. Fixtures come from `make_samples.py --only ocr` (Arial on macOS,
   text containing "№", "ё" and guillemet quotes).
+
+### 0.10.1 decisions: PDF tables
+
+- **The same heuristic as markitdown, not ruling lines.** markitdown 0.1.8
+  doesn't use pdfplumber's line-based table finder at all: it groups
+  words into rows by `top` and looks for columns by how words line up
+  (`_extract_form_content_from_words`). `core/lib/src/conversion/pdf/pdf_tables.dart`
+  is a port of it with the same thresholds, so the Dart core and the
+  sidecar agree on what is a table — the user's complaint was exactly that
+  a PDF over 50 pages, or one with scans, lost its tables. Ruling-line
+  detection would catch ruled tables better, but would disagree with the
+  sidecar the other way.
+- **Only the tables come from the heuristic.** On a page markitdown
+  considers a form, everything that isn't a table row goes out line by
+  line; ours keeps the headings and paragraph joining from Stage 3, and a
+  table takes the place of its first line (`PdfLine.tableIndex`).
+- **The words have to match pdfplumber's, and PDFium gives different
+  characters.** What it took, each found on a real 83-page Word PDF:
+  - `top` is the **baseline** (`FPDFText_GetCharOrigin`), not the box: boxes
+    of different fonts on one line differ by 2.5pt and land in different
+    5pt rows. pdfplumber has the same problem in places — there markitdown
+    breaks a sentence in mixed fonts into a "table" and we don't; these are
+    the only remaining differences on that document (4 pages of 83).
+  - **Spaces are rebuilt.** PDFium flags every space as "generated" and
+    makes it zero-width, drops objects made of nothing but spaces, and of
+    a run of spaces inside one object keeps only the first. pdfminer keeps
+    every glyph, and those glyphs are what hold `New York` or
+    `id     serial` together as one word. So a generated space is as wide
+    as the font's own space (`FPDFFont_GetGlyphWidth` × the object's
+    matrix), blank objects are added from their bounds, and a real space
+    is stretched over the rest of its run. Without this a code listing
+    became a table.
+  - Words keep pdfplumber's trailing space: markitdown tells prose from a
+    table row by "longer than 60 characters", counted with those spaces.
+  - `List.sort` in Dart isn't stable; ties are broken explicitly.
+- **Cells go through `markdown_writer.table`**, like every other table in
+  the core: escaped, not padded with spaces as in markitdown.
+- **PDF no longer goes to the sidecar in the app** (author's decision:
+  "no point using the sidecar for PDF"). Tables were the only reason it
+  went first, and it was tens of times slower (a 300-page PDF: 112 s vs
+  1.2 s) — hence the 50-page threshold and the scans workaround, both
+  removed. `make compare-sidecar` still compares PDFs against it.
 
 ### Transcription decisions (0.8)
 

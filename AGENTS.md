@@ -87,7 +87,8 @@ Windows). Author's decisions: item 5 — in the app, the sidecar only goes
 first for `pdf` (up to 50 pages) and `xls`/`msg`, with `docx`/`xlsx`/`pptx`
 going straight to Dart (`SidecarConverter.appFormats`/`appMaxPdfPages`,
 applied in `discover()`; `fromDirectory()` for comparison sees the whole
-manifest); item 6 — zip packaging is "ship now, decide later" (finalized
+manifest; since 0.10.1 PDF goes straight to Dart too, the threshold is
+gone); item 6 — zip packaging is "ship now, decide later" (finalized
 in Stage 7). Done in code: `app/windows/`, `.gitattributes` (LF), the
 `windows` job in `ci.yml`, `pdfium.dll` (`fetch.sh` + `install` in
 `windows/CMakeLists.txt`), locating the sidecar next to the `.exe`,
@@ -149,6 +150,14 @@ time as they're added, reorderable, and joined under `# name` headings
 with `---` between files. A failed file blocks the merge until removed.
 All the "why" is in
 [client-architecture.md](docs/client-architecture.md#merging-files-010).
+
+**0.10.1 — tables in PDF from the Dart core** (outside the plan, at the
+author's request: a PDF over 50 pages or with scans went to Dart and
+lost its tables): a port of markitdown's word-alignment heuristic
+(`core/lib/src/conversion/pdf/pdf_tables.dart`), with PDFium's
+characters brought in line with pdfplumber's words. With that, PDF no
+longer goes to the sidecar in the app (author's decision). All the "why" is in
+[format-coverage.md](docs/format-coverage.md#0101-decisions-pdf-tables).
 
 Many sections in `docs/` are still stubs, and they say so directly. Working
 commands (signing, notarization, building the sidecar) get written down as
@@ -376,9 +385,9 @@ properties of the formats. The list grows as work continues.
   ones and there shouldn't be (checked by CI).
 - **The sidecar is tens to hundreds of times slower than Dart on large
   files** (a 300-page PDF: 112s versus 1.2s). That's why in the app it
-  only goes first for `pdf` up to 50 pages and for `xls`/`msg` — an
-  author's decision (Stage 5, item 5). Expanding `appFormats` or raising
-  the threshold is again the author's decision, not something to slip in.
+  only goes first for `xls`/`msg` — an author's decision (Stage 5, item 5;
+  PDF taken out in 0.10.1). Expanding `appFormats` is again the author's
+  decision, not something to slip in.
 - **The Windows build can't be verified locally.** Anything touching
   `app/windows/`, `pdfium.dll`, or the steps of the `windows` job can only
   be verified by pushing to CI; the Makefile and the `windows` job are two
@@ -427,10 +436,6 @@ properties of the formats. The list grows as work continues.
   debug ScrollView). `build.sh` strips it from the CMakeLists and, at the
   end, greps the built libraries for networking symbols — don't remove
   either step.
-- **On Windows the sidecar goes first for PDFs up to 50 pages** — and
-  would return emptiness from a scan as a success. That's why, when OCR
-  is available, it rejects a PDF made of scanned pages
-  (`scannedPdfToDart`); keep this in mind when touching converter order.
 - **whisper.cpp writes all its libraries to `${CMAKE_BINARY_DIR}/bin`**,
   and its `cmake_minimum_required` predates 3.13: without `CMP0077=NEW`,
   its `option(BUILD_SHARED_LIBS …)` overwrites the value set in our own

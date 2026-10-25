@@ -134,6 +134,93 @@ typedef _FPDFText_GetCharBoxDart =
       Pointer<Double> top,
     );
 
+/// `FS_RECTF` from `fpdfview.h` — note the field order: left, top, right,
+/// bottom (not left, right, bottom, top as in `FPDFText_GetCharBox`).
+final class FS_RECTF extends Struct {
+  @Float()
+  external double left;
+  @Float()
+  external double top;
+  @Float()
+  external double right;
+  @Float()
+  external double bottom;
+}
+
+/// `FS_MATRIX` from `fpdfview.h`.
+final class FS_MATRIX extends Struct {
+  @Float()
+  external double a;
+  @Float()
+  external double b;
+  @Float()
+  external double c;
+  @Float()
+  external double d;
+  @Float()
+  external double e;
+  @Float()
+  external double f;
+}
+
+typedef _FPDFText_GetTextObjectNative =
+    Pointer<Void> Function(Pointer<Void> textPage, Int32 index);
+typedef _FPDFText_GetTextObjectDart =
+    Pointer<Void> Function(Pointer<Void> textPage, int index);
+
+typedef _FPDFTextObj_GetFontNative =
+    Pointer<Void> Function(Pointer<Void> textObject);
+
+typedef _FPDFTextObj_GetFontSizeNative =
+    Int32 Function(Pointer<Void> textObject, Pointer<Float> size);
+typedef _FPDFTextObj_GetFontSizeDart =
+    int Function(Pointer<Void> textObject, Pointer<Float> size);
+
+typedef _FPDFFont_GetGlyphWidthNative =
+    Int32 Function(
+      Pointer<Void> font,
+      Uint32 glyph,
+      Float fontSize,
+      Pointer<Float> width,
+    );
+typedef _FPDFFont_GetGlyphWidthDart =
+    int Function(
+      Pointer<Void> font,
+      int glyph,
+      double fontSize,
+      Pointer<Float> width,
+    );
+
+typedef _FPDFPageObj_GetMatrixNative =
+    Int32 Function(Pointer<Void> pageObject, Pointer<FS_MATRIX> matrix);
+typedef _FPDFPageObj_GetMatrixDart =
+    int Function(Pointer<Void> pageObject, Pointer<FS_MATRIX> matrix);
+
+typedef _FPDFText_GetLooseCharBoxNative =
+    Int32 Function(Pointer<Void> textPage, Int32 index, Pointer<FS_RECTF> rect);
+typedef _FPDFText_GetLooseCharBoxDart =
+    int Function(Pointer<Void> textPage, int index, Pointer<FS_RECTF> rect);
+
+typedef _FPDFText_GetCharOriginNative =
+    Int32 Function(
+      Pointer<Void> textPage,
+      Int32 index,
+      Pointer<Double> x,
+      Pointer<Double> y,
+    );
+typedef _FPDFText_GetCharOriginDart =
+    int Function(
+      Pointer<Void> textPage,
+      int index,
+      Pointer<Double> x,
+      Pointer<Double> y,
+    );
+
+typedef _FPDFText_IsGeneratedNative =
+    Int32 Function(Pointer<Void> textPage, Int32 index);
+typedef _FPDFText_IsGeneratedDart =
+    int Function(Pointer<Void> textPage, int index);
+
 typedef _FPDFPage_CountObjectsNative = Int32 Function(Pointer<Void> page);
 typedef _FPDFPage_CountObjectsDart = int Function(Pointer<Void> page);
 
@@ -144,6 +231,38 @@ typedef _FPDFPage_GetObjectDart =
 
 typedef _FPDFPageObj_GetTypeNative = Int32 Function(Pointer<Void> pageObject);
 typedef _FPDFPageObj_GetTypeDart = int Function(Pointer<Void> pageObject);
+
+typedef _FPDFPageObj_GetBoundsNative =
+    Int32 Function(
+      Pointer<Void> pageObject,
+      Pointer<Float> left,
+      Pointer<Float> bottom,
+      Pointer<Float> right,
+      Pointer<Float> top,
+    );
+typedef _FPDFPageObj_GetBoundsDart =
+    int Function(
+      Pointer<Void> pageObject,
+      Pointer<Float> left,
+      Pointer<Float> bottom,
+      Pointer<Float> right,
+      Pointer<Float> top,
+    );
+
+typedef _FPDFTextObj_GetTextNative =
+    UnsignedLong Function(
+      Pointer<Void> textObject,
+      Pointer<Void> textPage,
+      Pointer<Uint16> buffer,
+      UnsignedLong length,
+    );
+typedef _FPDFTextObj_GetTextDart =
+    int Function(
+      Pointer<Void> textObject,
+      Pointer<Void> textPage,
+      Pointer<Uint16> buffer,
+      int length,
+    );
 
 typedef _FPDF_GetPageSizeNative = Float Function(Pointer<Void> page);
 typedef _FPDF_GetPageSizeDart = double Function(Pointer<Void> page);
@@ -227,6 +346,9 @@ const fpdfRenderAnnot = 0x01;
 /// public ABI, doesn't change between PDFium releases.
 const fpdfPageObjImage = 3;
 
+/// `FPDF_PAGEOBJ_TEXT` from `fpdf_edit.h`, same as above.
+const fpdfPageObjText = 1;
+
 /// A thin wrapper over the needed subset of `fpdfview.h`/`fpdf_text.h`/
 /// `fpdf_edit.h`. One process — one library initialization: PDFium
 /// doesn't support calling `FPDF_InitLibrary`/`FPDF_DestroyLibrary`
@@ -284,6 +406,46 @@ class PdfiumBindings {
           .lookupFunction<_FPDFText_GetCharBoxNative, _FPDFText_GetCharBoxDart>(
             'FPDFText_GetCharBox',
           ),
+      _textGetLooseCharBox = lib
+          .lookupFunction<
+            _FPDFText_GetLooseCharBoxNative,
+            _FPDFText_GetLooseCharBoxDart
+          >('FPDFText_GetLooseCharBox'),
+      _textGetCharOrigin = lib
+          .lookupFunction<
+            _FPDFText_GetCharOriginNative,
+            _FPDFText_GetCharOriginDart
+          >('FPDFText_GetCharOrigin'),
+      _textGetTextObject = lib
+          .lookupFunction<
+            _FPDFText_GetTextObjectNative,
+            _FPDFText_GetTextObjectDart
+          >('FPDFText_GetTextObject'),
+      _textObjGetFont = lib
+          .lookupFunction<
+            _FPDFTextObj_GetFontNative,
+            _FPDFTextObj_GetFontNative
+          >('FPDFTextObj_GetFont'),
+      _textObjGetFontSize = lib
+          .lookupFunction<
+            _FPDFTextObj_GetFontSizeNative,
+            _FPDFTextObj_GetFontSizeDart
+          >('FPDFTextObj_GetFontSize'),
+      _fontGetGlyphWidth = lib
+          .lookupFunction<
+            _FPDFFont_GetGlyphWidthNative,
+            _FPDFFont_GetGlyphWidthDart
+          >('FPDFFont_GetGlyphWidth'),
+      _pageObjGetMatrix = lib
+          .lookupFunction<
+            _FPDFPageObj_GetMatrixNative,
+            _FPDFPageObj_GetMatrixDart
+          >('FPDFPageObj_GetMatrix'),
+      _textIsGenerated = lib
+          .lookupFunction<
+            _FPDFText_IsGeneratedNative,
+            _FPDFText_IsGeneratedDart
+          >('FPDFText_IsGenerated'),
       _pageCountObjects = lib
           .lookupFunction<
             _FPDFPage_CountObjectsNative,
@@ -296,6 +458,15 @@ class PdfiumBindings {
       _pageObjGetType = lib
           .lookupFunction<_FPDFPageObj_GetTypeNative, _FPDFPageObj_GetTypeDart>(
             'FPDFPageObj_GetType',
+          ),
+      _pageObjGetBounds = lib
+          .lookupFunction<
+            _FPDFPageObj_GetBoundsNative,
+            _FPDFPageObj_GetBoundsDart
+          >('FPDFPageObj_GetBounds'),
+      _textObjGetText = lib
+          .lookupFunction<_FPDFTextObj_GetTextNative, _FPDFTextObj_GetTextDart>(
+            'FPDFTextObj_GetText',
           ),
       _getPageWidth = lib
           .lookupFunction<_FPDF_GetPageSizeNative, _FPDF_GetPageSizeDart>(
@@ -355,9 +526,19 @@ class PdfiumBindings {
   final _FPDFText_GetFontSizeDart _textGetFontSize;
   final _FPDFText_GetTextDart _textGetText;
   final _FPDFText_GetCharBoxDart _textGetCharBox;
+  final _FPDFText_GetLooseCharBoxDart _textGetLooseCharBox;
+  final _FPDFText_GetCharOriginDart _textGetCharOrigin;
+  final _FPDFText_IsGeneratedDart _textIsGenerated;
+  final _FPDFText_GetTextObjectDart _textGetTextObject;
+  final _FPDFTextObj_GetFontNative _textObjGetFont;
+  final _FPDFTextObj_GetFontSizeDart _textObjGetFontSize;
+  final _FPDFFont_GetGlyphWidthDart _fontGetGlyphWidth;
+  final _FPDFPageObj_GetMatrixDart _pageObjGetMatrix;
   final _FPDFPage_CountObjectsDart _pageCountObjects;
   final _FPDFPage_GetObjectDart _pageGetObject;
   final _FPDFPageObj_GetTypeDart _pageObjGetType;
+  final _FPDFPageObj_GetBoundsDart _pageObjGetBounds;
+  final _FPDFTextObj_GetTextDart _textObjGetText;
   final _FPDF_GetPageSizeDart _getPageWidth;
   final _FPDF_GetPageSizeDart _getPageHeight;
   final _FPDFBitmap_CreateExDart _bitmapCreateEx;
@@ -406,12 +587,79 @@ class PdfiumBindings {
     Pointer<Double> top,
   ) => _textGetCharBox(textPage, index, left, right, bottom, top) != 0;
 
+  /// The character box from the font's metrics and the advance width, not
+  /// the glyph outline: every character of a line gets the same top and
+  /// bottom, and `left` is the character's origin — the same box
+  /// pdfminer gives a character.
+  bool textGetLooseCharBox(
+    Pointer<Void> textPage,
+    int index,
+    Pointer<FS_RECTF> rect,
+  ) => _textGetLooseCharBox(textPage, index, rect) != 0;
+
+  /// The character's origin: `y` is the baseline.
+  bool textGetCharOrigin(
+    Pointer<Void> textPage,
+    int index,
+    Pointer<Double> x,
+    Pointer<Double> y,
+  ) => _textGetCharOrigin(textPage, index, x, y) != 0;
+
+  /// The character was inserted by PDFium itself (a space for a gap, a
+  /// line break), it isn't in the page's content stream. `-1` on an
+  /// error is treated as "not generated".
+  bool textIsGenerated(Pointer<Void> textPage, int index) =>
+      _textIsGenerated(textPage, index) == 1;
+
   int pageCountObjects(Pointer<Void> page) => _pageCountObjects(page);
 
   Pointer<Void> pageGetObject(Pointer<Void> page, int index) =>
       _pageGetObject(page, index);
 
   int pageObjGetType(Pointer<Void> pageObject) => _pageObjGetType(pageObject);
+
+  /// The text object a character of the text page came from.
+  Pointer<Void> textGetTextObject(Pointer<Void> textPage, int index) =>
+      _textGetTextObject(textPage, index);
+
+  Pointer<Void> textObjGetFont(Pointer<Void> textObject) =>
+      _textObjGetFont(textObject);
+
+  /// The font size as set in the content stream (`Tf`), before the
+  /// object's matrix.
+  bool textObjGetFontSize(Pointer<Void> textObject, Pointer<Float> size) =>
+      _textObjGetFontSize(textObject, size) != 0;
+
+  /// The advance width of the character [unicode] at [fontSize].
+  bool fontGetGlyphWidth(
+    Pointer<Void> font,
+    int unicode,
+    double fontSize,
+    Pointer<Float> width,
+  ) => _fontGetGlyphWidth(font, unicode, fontSize, width) != 0;
+
+  /// The object's matrix — for a text object, the text matrix with the
+  /// page's CTM already applied.
+  bool pageObjGetMatrix(Pointer<Void> pageObject, Pointer<FS_MATRIX> matrix) =>
+      _pageObjGetMatrix(pageObject, matrix) != 0;
+
+  /// The object's bounding box in page coordinates.
+  bool pageObjGetBounds(
+    Pointer<Void> pageObject,
+    Pointer<Float> left,
+    Pointer<Float> bottom,
+    Pointer<Float> right,
+    Pointer<Float> top,
+  ) => _pageObjGetBounds(pageObject, left, bottom, right, top) != 0;
+
+  /// A text object's text into [buffer] of [length] bytes (UTF-16LE with
+  /// a trailing NUL); returns the byte count needed, `0` on an error.
+  int textObjGetText(
+    Pointer<Void> textObject,
+    Pointer<Void> textPage,
+    Pointer<Uint16> buffer,
+    int length,
+  ) => _textObjGetText(textObject, textPage, buffer, length);
 
   /// Page size in points (1/72 inch).
   double getPageWidth(Pointer<Void> page) => _getPageWidth(page);

@@ -8,7 +8,6 @@ import '../conversion_failure.dart';
 import '../conversion_request.dart';
 import '../conversion_result.dart';
 import '../document_converter.dart';
-import '../pdf/pdf_text_extraction.dart';
 import 'sidecar_manifest.dart';
 
 /// What to run for a single sidecar invocation.
@@ -76,19 +75,6 @@ class SidecarConverter implements DocumentConverter {
   final String? markitdownVersion;
   final String? pythonVersion;
 
-  /// A PDF longer than this many pages is declined by the sidecar without
-  /// launching Python — the registry hands the file to the Dart converter.
-  /// `null` means no limit (reference comparison, integration tests). Why —
-  /// see [appFormats].
-  final int? maxPdfPages;
-
-  /// A PDF that has scanned pages (no text, just an image) is declined by
-  /// the sidecar without launching Python: pdfminer would return empty text
-  /// for them as a "success", and OCR in the Dart core would never run.
-  /// Enabled in the app when OCR is available (Stage 6): scanned text
-  /// matters more than tables on the other pages.
-  final bool scannedPdfToDart;
-
   SidecarConverter({
     required Set<String> formats,
     required this.commandBuilder,
@@ -97,8 +83,6 @@ class SidecarConverter implements DocumentConverter {
     this.maxOutputBytes = 200 * 1024 * 1024,
     this.markitdownVersion,
     this.pythonVersion,
-    this.maxPdfPages,
-    this.scannedPdfToDart = false,
   }) : formats = Set.unmodifiable(
          formats.where(sidecarFormatKinds.containsKey),
        );
@@ -116,8 +100,6 @@ class SidecarConverter implements DocumentConverter {
     Duration timeout = const Duration(seconds: 120),
     Directory? tempDirectory,
     Set<String>? onlyFormats,
-    int? maxPdfPages,
-    bool scannedPdfToDart = false,
   }) {
     final manifestFile = File(_join(directory, 'manifest.json'));
     final python = _join(
@@ -154,8 +136,6 @@ class SidecarConverter implements DocumentConverter {
       tempDirectory: tempDirectory,
       markitdownVersion: manifest.markitdownVersion,
       pythonVersion: manifest.pythonVersion,
-      maxPdfPages: maxPdfPages,
-      scannedPdfToDart: scannedPdfToDart,
     );
   }
 
@@ -167,15 +147,12 @@ class SidecarConverter implements DocumentConverter {
   /// where it offers something Dart didn't have: `xls`/`msg` (before 0.9 —
   /// it was the only option; since 0.9 Dart has its own parser and the
   /// sidecar stays as a fallback — removing them from here is the author's
-  /// call) and `pdf` (tables) — and for `pdf` only up to [appMaxPdfPages]
-  /// pages. The sidecar can still handle `docx`/`xlsx`/`pptx` — as a
-  /// reference for `make compare-sidecar`, not as an app code path.
-  static const appFormats = {'pdf', 'xls', 'msg'};
-
-  /// The PDF threshold for the app: ≈0.37s per page for the sidecar — about
-  /// 20s in the worst case. Longer than that — the Dart core, with a
-  /// warning that tables were extracted as text.
-  static const appMaxPdfPages = 50;
+  /// call). `pdf` was here for its tables (up to 50 pages, longer was too
+  /// slow); since 0.10.1 the Dart core finds them the same way, so PDF
+  /// goes straight to Dart (author's decision). The sidecar can still
+  /// handle `pdf`/`docx`/`xlsx`/`pptx` — as a reference for
+  /// `make compare-sidecar`, not as an app code path.
+  static const appFormats = {'xls', 'msg'};
 
   /// Looks for the sidecar where it should live on this platform:
   ///
@@ -191,12 +168,9 @@ class SidecarConverter implements DocumentConverter {
   ///
   /// On Android and iOS — always `null`, even if the variable is set: there
   /// is no sidecar there and never will be (native wheels for mobile ABIs
-  /// don't exist). The discovered sidecar is limited to [appFormats] and
-  /// [appMaxPdfPages] — this is the app's code path. [scannedPdfToDart] —
-  /// the app passes `true` when OCR is available. The remaining parameters
-  /// are for tests.
+  /// don't exist). The discovered sidecar is limited to [appFormats] —
+  /// this is the app's code path. The parameters are for tests.
   static SidecarConverter? discover({
-    bool scannedPdfToDart = false,
     Map<String, String>? environment,
     String? operatingSystem,
     String? resolvedExecutable,
@@ -219,13 +193,7 @@ class SidecarConverter implements DocumentConverter {
     } else {
       return null;
     }
-    return fromDirectory(
-      directory,
-      timeout: timeout,
-      onlyFormats: appFormats,
-      maxPdfPages: appMaxPdfPages,
-      scannedPdfToDart: scannedPdfToDart,
-    );
+    return fromDirectory(directory, timeout: timeout, onlyFormats: appFormats);
   }
 
   static const sidecarDirEnvVar = 'MARKITDOWN_SIDECAR_DIR';
@@ -246,34 +214,6 @@ class SidecarConverter implements DocumentConverter {
   Future<ConversionResult> convert(ConversionRequest request) async {
     final info = request.info;
     final formatId = _formatIdFor(info)!;
-
-    final maxPages = maxPdfPages;
-    if (formatId == 'pdf' && maxPages != null) {
-      // Couldn't be opened — let the sidecar try itself: there's still a
-      // fallback to Dart if it declines.
-      final pages = countPdfPages(request.bytes);
-      if (pages != null && pages > maxPages) {
-        throw ConversionDeclinedException(
-          failure: LimitExceededFailure(
-            'PDF длиннее $maxPages страниц ($pages) не обрабатывается сайдкаром',
-          ),
-          fallbackWarning:
-              'PDF длиннее $maxPages страниц ($pages) обработан Dart-ядром, '
-              'а не сайдкаром: так в десятки раз быстрее, но таблицы '
-              'извлечены как текст',
-        );
-      }
-    }
-    if (formatId == 'pdf' &&
-        scannedPdfToDart &&
-        pdfHasScanPages(request.bytes) == true) {
-      throw const ConversionDeclinedException(
-        failure: UnsupportedFormatFailure('PDF со сканированными страницами'),
-        fallbackWarning:
-            'в PDF есть сканированные страницы — он обработан Dart-ядром с '
-            'OCR, а не сайдкаром: таблицы извлечены как текст',
-      );
-    }
 
     // The temp directory is only created if the file has no path on disk,
     // and is removed right here, in finally: the caller owns the file, not

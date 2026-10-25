@@ -147,16 +147,16 @@ no Dart converters for them, so on mobile they remain "unsupported" — a
 deliberate decision of the plan. If the manifest is corrupt or has an unknown
 `schema`, the sidecar simply isn't registered; the app doesn't crash.
 
-**In the app — only `pdf`/`xls`/`msg`, PDF up to 50 pages** (the author's
-decision, Stage 5, item 5). `discover()` narrows the manifest down to
-`SidecarConverter.appFormats` and sets `maxPdfPages = appMaxPdfPages`: the
-sidecar is tens of times slower than Dart, and for `docx`/`xlsx`/`pptx` Dart
-is no worse by comparison, so the sidecar goes first only where it provides
-something missing — `xls`/`msg` and tables in PDFs. The sidecar rejects a PDF
-longer than the threshold without launching Python (`countPdfPages` via
-PDFium — the page tree, without parsing text), the registry hands the file to
-the Dart converter, and `warnings` notes that the tables were extracted as
-text. `fromDirectory()` without `onlyFormats` sees the whole manifest — that's
+**In the app — only `xls`/`msg`** (the author's decision, Stage 5, item 5;
+PDF taken out in 0.10.1). `discover()` narrows the manifest down to
+`SidecarConverter.appFormats`: the sidecar is tens of times slower than Dart,
+and for `docx`/`xlsx`/`pptx` Dart is no worse by comparison, so the sidecar
+goes first only where it provided something missing. Until 0.10.1 that also
+meant tables in PDFs up to 50 pages (longer ones and PDFs with scans were
+declined before launching Python); since 0.10.1 Dart finds PDF tables the
+same way (see
+[format-coverage.md](format-coverage.md#0101-decisions-pdf-tables)), and PDF
+goes straight to Dart. `fromDirectory()` without `onlyFormats` sees the whole manifest — that's
 how the sidecar stays the reference for `make compare-sidecar` and the
 integration tests.
 

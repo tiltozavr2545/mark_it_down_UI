@@ -11,7 +11,6 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/cfb_builder.dart';
-import 'support/pdf_builder.dart';
 
 /// Fake sidecar: a directory in the standard layout where the
 /// "interpreter" is a shell script emulating the protocol from
@@ -131,15 +130,11 @@ void main() {
   SidecarConverter converter({
     Duration timeout = const Duration(seconds: 20),
     int? maxOutputBytes,
-    int? maxPdfPages,
-    bool scannedPdfToDart = false,
   }) {
     final base = SidecarConverter.fromDirectory(
       fake.dir.path,
       timeout: timeout,
       tempDirectory: scratch,
-      maxPdfPages: maxPdfPages,
-      scannedPdfToDart: scannedPdfToDart,
     )!;
     if (maxOutputBytes == null) return base;
     return SidecarConverter(
@@ -456,22 +451,22 @@ void main() {
       expect(c, isNotNull);
     });
 
-    test('in the app — only pdf/xls/msg with a page threshold (item 5)', () {
+    test('in the app — only xls/msg (PDF goes to Dart since 0.10.1)', () {
       final c = SidecarConverter.discover(
         environment: {SidecarConverter.sidecarDirEnvVar: fake.dir.path},
         operatingSystem: 'linux',
       )!;
-      // The fake's manifest also has docx/xlsx/pptx — the app hands those to Dart.
-      expect(c.formats, {'pdf', 'xls', 'msg'});
-      expect(c.maxPdfPages, SidecarConverter.appMaxPdfPages);
+      // The fake's manifest also has pdf/docx/xlsx/pptx — the app hands
+      // those to Dart.
+      expect(c.formats, {'xls', 'msg'});
       // While the reference check (fromDirectory) sees all the manifest's formats.
       expect(
         SidecarConverter.fromDirectory(fake.dir.path)!.formats,
-        containsAll(['docx', 'xlsx', 'pptx']),
+        containsAll(['pdf', 'docx', 'xlsx', 'pptx']),
       );
     });
 
-    test('manifest has none of pdf, xls, msg → null in the app', () async {
+    test('manifest has neither xls nor msg → null in the app', () async {
       final docxOnly = await _FakeSidecar.create(
         root,
         name: 'docx_only',
@@ -598,91 +593,6 @@ void main() {
       );
       expect(outcome, isA<ConversionError>());
       expect((outcome as ConversionError).failure, isA<CorruptedFileFailure>());
-    });
-
-    group('PDF page threshold (item 5)', () {
-      Future<ConversionResult> convertPdf(int pages) async {
-        final pdf = buildBlankPdf(pages);
-        final outcome = await ConverterRegistry.defaultRegistry(
-          extra: [converter(maxPdfPages: 3)],
-        ).convert(pdf, StreamInfo.fromHead(pdf, filename: 'p.pdf'));
-        return (outcome as ConversionSuccess).result;
-      }
-
-      test('at the threshold — sidecar', () async {
-        final result = await convertPdf(3);
-        expect(result.converterId, 'sidecar');
-        expect(result.markdown, contains('format=pdf'));
-      });
-
-      test('above the threshold — Dart, sidecar never even ran', () async {
-        final result = await convertPdf(4);
-        expect(result.converterId, 'pdf');
-        expect(
-          result.warnings.first.message,
-          contains('длиннее 3 страниц (4)'),
-        );
-        expect(result.warnings.first.message, contains('таблицы'));
-        expect(fake.has('last_input_path'), isFalse);
-      });
-
-      test('no threshold — sidecar on any PDF', () async {
-        final pdf = buildBlankPdf(10);
-        final outcome = await ConverterRegistry.defaultRegistry(
-          extra: [converter()],
-        ).convert(pdf, StreamInfo.fromHead(pdf, filename: 'p.pdf'));
-        expect((outcome as ConversionSuccess).result.converterId, 'sidecar');
-      });
-
-      test(
-        'PDF failed to open — sidecar decides, threshold doesn\'t matter',
-        () async {
-          final broken = Uint8List.fromList(
-            '%PDF-1.4\nне PDF дальше'.codeUnits,
-          );
-          final result = await converter(maxPdfPages: 3).convert(
-            _request(broken, _info(FileKind.pdf, 'PDF', size: broken.length)),
-          );
-          expect(result.converterId, 'sidecar');
-        },
-      );
-    });
-
-    group('PDF with scans when OCR is available (Stage 6)', () {
-      final scanned = Uint8List.fromList(
-        File('test/fixtures/pdf/scanned.pdf').readAsBytesSync(),
-      );
-      Future<ConversionResult> convertScanned({required bool toDart}) async {
-        final outcome = await ConverterRegistry.defaultRegistry(
-          extra: [converter(maxPdfPages: 50, scannedPdfToDart: toDart)],
-        ).convert(scanned, StreamInfo.fromHead(scanned, filename: 's.pdf'));
-        return (outcome as ConversionSuccess).result;
-      }
-
-      test('has scanned pages — Dart, sidecar never even ran', () async {
-        final result = await convertScanned(toDart: true);
-        expect(result.converterId, 'pdf');
-        expect(
-          result.warnings.first.message,
-          contains('сканированные страницы'),
-        );
-        expect(fake.has('last_input_path'), isFalse);
-      });
-
-      test('OCR unavailable — still sidecar', () async {
-        final result = await convertScanned(toDart: false);
-        expect(result.converterId, 'sidecar');
-      });
-
-      test('PDF without scans — sidecar even when OCR is available', () async {
-        final pdf = Uint8List.fromList(
-          File('test/fixtures/pdf/simple.pdf').readAsBytesSync(),
-        );
-        final outcome = await ConverterRegistry.defaultRegistry(
-          extra: [converter(maxPdfPages: 50, scannedPdfToDart: true)],
-        ).convert(pdf, StreamInfo.fromHead(pdf, filename: 'p.pdf'));
-        expect((outcome as ConversionSuccess).result.converterId, 'sidecar');
-      });
     });
 
     group('xls/msg: sidecar failure — fallback Dart parsing (0.9)', () {

@@ -28,10 +28,7 @@ Future<ConversionOutcome> isolatedConvert(
   TranscriptionSettings? transcription,
 }) {
   return Isolate.run(() {
-    // With OCR, scanned PDFs must reach the Dart core: the sidecar would
-    // return emptiness as success for them (see
-    // SidecarConverter.scannedPdfToDart).
-    final sidecar = SidecarConverter.discover(scannedPdfToDart: ocr != null);
+    final sidecar = SidecarConverter.discover();
     final registry = ConverterRegistry.defaultRegistry(
       extra: [if (sidecar != null) sidecar],
       ocr: ocr,
