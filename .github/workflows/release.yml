@@ -173,8 +173,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${GITHUB_REF_NAME#v}"
+          # "What's new" from CHANGELOG.md + install instructions, unwrapped
+          # into single lines — see the script's header.
+          tool/release_notes.sh "$v" > dist/release-notes.md
           gh release create "$GITHUB_REF_NAME" \
             --title "MarkItDown UI $v" \
-            --notes-file .github/release-notes.md \
+            --notes-file dist/release-notes.md \
             "dist/markitdown_ui-$v-windows-x64.zip" \
             "dist/markitdown_ui-$v-android-arm64.apk"

@@ -1,9 +1,9 @@
 The app turns a file into Markdown right on the device: open a file, get
 the text, copy it to a chat or editor with one button. Or, given a link —
-a page, a Wikipedia article, or a YouTube video with subtitles. What's new
-in this version — see the
+a page, a Wikipedia article, or a YouTube video with subtitles. Earlier
+versions — in the
 [CHANGELOG](https://github.com/tiltozavr2545/mark_it_down_UI/blob/main/CHANGELOG.md);
-what each platform can do — see the
+what each platform can do — in the
 [README](https://github.com/tiltozavr2545/mark_it_down_UI#what-it-can-convert).
 
 ### Windows — `markitdown_ui-…-windows-x64.zip`

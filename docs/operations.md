@@ -381,9 +381,15 @@ needed, is Xcode Cloud; details and what that would entail are in
    It fails if the version in `app/pubspec.yaml` doesn't match the tag, if
    the APK ended up with a network permission beyond `INTERNET`, or if the
    Windows build is missing the sidecar — a crippled release doesn't get
-   published. The release text comes from
-   `.github/release-notes.md` (install instructions for each platform),
-   with what's new linked from `CHANGELOG.md`.
+   published. The release text is built by `tool/release_notes.sh`:
+   "What's new" — the version's own section of `CHANGELOG.md` (no section
+   — the release fails), then `.github/release-notes.md` (install
+   instructions for each platform). Both are hard-wrapped like all repo
+   Markdown, but GitHub renders every line break in a release body as a
+   real one, so the script joins paragraphs into single lines; preview it
+   with `tool/release_notes.sh 0.10.0`. To fix the text of a published
+   release: `tool/release_notes.sh X.Y.Z > /tmp/notes.md && gh release
+   edit vX.Y.Z --notes-file /tmp/notes.md`.
 
    **Signing is still temporary.** The APK is signed with the runner's debug
    key (there's no own key yet) — enough for installing from a file, but
