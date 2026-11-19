@@ -189,6 +189,7 @@ jobs:
           ./sidecar/build.sh
 
       - name: Test the bundled conversion engines
+        timeout-minutes: 12
         env:
           MARKITDOWN_SIDECAR_DIR: ${{ github.workspace }}/sidecar/dist/macos-${{ matrix.arch }}
           MARKITDOWN_TESSERACT_DIR: ${{ github.workspace }}/tesseract/native/host
@@ -197,7 +198,9 @@ jobs:
         run: |
           export MARKITDOWN_PDFIUM_PATH="$MARKITDOWN_SIDECAR_DIR/lib/pypdfium2_raw/libpdfium.dylib"
           dart pub get
-          dart test
+          # CI runs the long Whisper fixtures on Linux and Windows. Short
+          # recordings exercise the native engine on both macOS runners.
+          dart test --exclude-tags=long-transcription --reporter expanded
 
       - name: Build the macOS app
         working-directory: app

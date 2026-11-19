@@ -243,7 +243,9 @@ bash tool/package_macos.sh "app/build/macos/Build/Products/Release/$app_name" \
 
 The macOS packages use the PDFium binary from the locked `pypdfium2`
 wheel for Monterey compatibility. The release workflow tests the
-bundled PDFium, OCR, speech and Python components. Packaging checks the
+bundled PDFium, OCR, speech and Python components. It uses short speech
+fixtures on macOS. The full suite, including the long-transcription
+fixtures, runs on Linux and Windows CI. Packaging checks the
 declared minimum OS of the app and its Mach-O binaries for the packaged
 architecture. It creates an HFS+ disk image with a shortcut to
 **Applications** and verifies its checksum.

@@ -114,29 +114,39 @@ void main() {
     // speech at the end: several consecutive 30-second windows, language
     // detected automatically. The 0.8 measurement on these recordings is
     // WER 0% (English) and 1.6% (Italian: "ha" → "a", "caldaia" → "caldàia").
-    test('English, 50 seconds, four voices', () async {
-      final result = await convert('speech/en_long.flac');
-      expect(result.markdown, contains('- **Язык речи:** английский'));
-      expectMostOf(result.markdown, [
-        'thank the whole team',
-        'office will be closed on friday',
-        'three main risks',
-        'responsible for the final testing',
-        'payments and penalties',
-      ]);
-    }, skip: noModel);
+    test(
+      'English, 50 seconds, four voices',
+      () async {
+        final result = await convert('speech/en_long.flac');
+        expect(result.markdown, contains('- **Язык речи:** английский'));
+        expectMostOf(result.markdown, [
+          'thank the whole team',
+          'office will be closed on friday',
+          'three main risks',
+          'responsible for the final testing',
+          'payments and penalties',
+        ]);
+      },
+      skip: noModel,
+      tags: 'long-transcription',
+    );
 
-    test('Italian, 50 seconds, four voices', () async {
-      final result = await convert('speech/it_long.flac');
-      expect(result.markdown, contains('- **Язык речи:** итальянский'));
-      expectMostOf(result.markdown, [
-        'ringraziare la squadra',
-        'chiuso venerdì pomeriggio',
-        'tre rischi principali',
-        'collaudo finale',
-        'pagamenti e sulle penali',
-      ]);
-    }, skip: noModel);
+    test(
+      'Italian, 50 seconds, four voices',
+      () async {
+        final result = await convert('speech/it_long.flac');
+        expect(result.markdown, contains('- **Язык речи:** итальянский'));
+        expectMostOf(result.markdown, [
+          'ringraziare la squadra',
+          'chiuso venerdì pomeriggio',
+          'tre rischi principali',
+          'collaudo finale',
+          'pagamenti e sulle penali',
+        ]);
+      },
+      skip: noModel,
+      tags: 'long-transcription',
+    );
 
     test('FLAC — same path through miniaudio', () async {
       final result = await convert('speech/en.flac');
@@ -273,6 +283,7 @@ void main() {
         }
       },
       skip: noModel,
+      tags: 'long-transcription',
     );
 
     // Chunk boundary in the middle of speech: silence until 9:40, then the
@@ -280,25 +291,33 @@ void main() {
     // 15 seconds of the chunk, and it's cut in the pause between phrases.
     // The remainder of the chunk carries over into the next one: lose or
     // corrupt it and a phrase would be missing.
-    test('chunk boundary within speech — no phrase lost', () async {
-      final (speech, _) = engine!.decodeMemory(read('speech/ru.wav'), 1 << 30);
-      final words = Float32List.fromList(
-        speech!.samples.asTypedList(speech.length),
-      );
-      speech.dispose();
-      const silence = 16000 * 580;
-      final all = Float32List(silence + words.length * 6);
-      for (var i = 0; i < 6; i++) {
-        all.setAll(silence + words.length * i, words);
-      }
-      final bytes = _wav16(all);
-      final info = StreamInfo.fromHead(bytes, filename: 'boundary.wav');
-      final outcome = await registry.convert(bytes, info);
-      final markdown = (outcome as ConversionSuccess).result.markdown;
-      final count = 'понедельник'.allMatches(markdown.toLowerCase()).length;
-      expect(count, greaterThanOrEqualTo(5), reason: markdown);
-      expect(markdown, contains('- **Язык речи:** русский'));
-    }, skip: noModel);
+    test(
+      'chunk boundary within speech — no phrase lost',
+      () async {
+        final (speech, _) = engine!.decodeMemory(
+          read('speech/ru.wav'),
+          1 << 30,
+        );
+        final words = Float32List.fromList(
+          speech!.samples.asTypedList(speech.length),
+        );
+        speech.dispose();
+        const silence = 16000 * 580;
+        final all = Float32List(silence + words.length * 6);
+        for (var i = 0; i < 6; i++) {
+          all.setAll(silence + words.length * i, words);
+        }
+        final bytes = _wav16(all);
+        final info = StreamInfo.fromHead(bytes, filename: 'boundary.wav');
+        final outcome = await registry.convert(bytes, info);
+        final markdown = (outcome as ConversionSuccess).result.markdown;
+        final count = 'понедельник'.allMatches(markdown.toLowerCase()).length;
+        expect(count, greaterThanOrEqualTo(5), reason: markdown);
+        expect(markdown, contains('- **Язык речи:** русский'));
+      },
+      skip: noModel,
+      tags: 'long-transcription',
+    );
   });
 
   // The directory is set explicitly (make test, CI) — meaning the libraries
