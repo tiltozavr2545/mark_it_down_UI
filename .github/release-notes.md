@@ -16,7 +16,7 @@ what each platform can do — in the
    **"More info" → "Run anyway"**. The build isn't signed (there's no
    certificate yet) — that's the reason for the warning.
 
-The first `xls`/`msg`/`pdf` conversion may take a few seconds: Windows
+The first `xls` or `msg` conversion may take a few seconds while Windows
 Defender scans the bundled Python.
 
 Speech in audio (voice messages, voice-recorder recordings, MP3) is
@@ -30,9 +30,8 @@ percentage is shown, and it can be stopped at any time.
    this source if Android asks.
 2. Requires Android 6.0+ and an arm64 processor (practically any phone
    from recent years).
-3. If the app was already installed from a build that isn't this release,
-   uninstall it first — builds are signed with different keys and can't
-   be installed over one another.
+3. If Android reports a signature mismatch, uninstall the previous
+   build before installing the new one.
 
 A file can be opened in the app with the "Choose file" button or via
 "Share" from any other app; a link can be shared from YouTube or a

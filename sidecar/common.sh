@@ -7,9 +7,9 @@
 # reference that changes silently isn't a reference at all. Bumping the
 # version is a deliberate action, done together with re-checking fixtures
 # and updating the lock file (make sidecar-lock, see docs/python-sidecar.md).
-PBS_TAG="20260929"
-PY_VERSION="3.12.14"
-MARKITDOWN_VERSION="0.1.8"
+PBS_TAG="20261110"
+PY_VERSION="3.12.16"
+MARKITDOWN_VERSION="0.1.9"
 MARKITDOWN_EXTRAS="pdf,docx,xlsx,xls,pptx,outlook"
 # Formats the sidecar actually handles (the --format option in run.py).
 # Goes into manifest.json; change only together with run.py and the check below.
@@ -19,8 +19,7 @@ SIDECAR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE_DIR="${SIDECAR_DIR}/cache"
 BASE_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}"
 
-# Host -> asset and sha256. Checksums verified against the ${PBS_TAG}
-# release's SHA256SUMS.
+# Host -> asset and SHA-256 from the GitHub release asset metadata.
 # PY_REL — the interpreter inside the unpacked python/: on Windows,
 # python-build-standalone uses the same layout as the official installer
 # (python.exe at the root, stdlib in Lib/), not bin/ + lib/python3.X/.
@@ -28,20 +27,20 @@ PY_REL="python/bin/python3"
 case "$(uname -s)-$(uname -m)" in
   Darwin-x86_64)
     HOST="macos-x86_64"; TRIPLE="x86_64-apple-darwin"
-    SHA256="f51ec8a7fa0ede129a5e2e942a2a453ba4830adaca2289da4449390e42443292" ;;
+    SHA256="83f2922437e6d546d0fcdb8c11f150a8e52787e8d9ea8651b1974e20908eb1bc" ;;
   Darwin-arm64)
     HOST="macos-arm64"; TRIPLE="aarch64-apple-darwin"
-    SHA256="de6b8f94fa765639b423ea353ab340669704c7186f96ee3cab389dcfde770c3c" ;;
+    SHA256="e956e60bc9465d577ef8062059aa05cd3a2665b4b8678a2ed24e432368330b8f" ;;
   Linux-x86_64)
     HOST="linux-x86_64"; TRIPLE="x86_64-unknown-linux-gnu"
-    SHA256="06c90b93f419b63371c18f20fed0558a1a901f6518c3c24f755077e048447e7f" ;;
+    SHA256="c2f87d4b4e8db3abddb0f116c6ccfc503d0cbdbb9ee8faacddad1b679ec12e99" ;;
   Linux-aarch64)
     HOST="linux-aarch64"; TRIPLE="aarch64-unknown-linux-gnu"
-    SHA256="9c797cf657f6dced51d3e74eeabd7c1ca742d5bf10f66080a290e424ced8edaf" ;;
+    SHA256="4792f81750282597fb2a3389fe18b945ed2ba6aad5e45ad406d122c58cb33081" ;;
   # Git Bash (CI on windows-latest, Stage 5): uname -s is MINGW64_NT-…/MSYS_NT-….
   MINGW*-x86_64 | MSYS*-x86_64)
     HOST="windows-x86_64"; TRIPLE="x86_64-pc-windows-msvc"
-    SHA256="28728baf30b65e263f0b25c5a85be8226e7ab0d212fbadd6a8f0f796139fa804"
+    SHA256="e23fe5b16926de1d81661b1a97352e89fb167549c55a6825796ccd0f32ec7f1b"
     PY_REL="python/python.exe" ;;
   *)
     echo "sidecar: неизвестный хост: $(uname -s)-$(uname -m)" >&2

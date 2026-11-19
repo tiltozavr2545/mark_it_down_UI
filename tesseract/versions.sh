@@ -30,25 +30,25 @@ T4A_URL="https://github.com/tiltozavr2545/mark_it_down_UI/releases/download/deps
 T4A_SHA256="bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a"
 
 # --- desktop: sources for build.sh ---
-ZLIB_VERSION="1.3.2"
+ZLIB_VERSION="1.4"
 ZLIB_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
-ZLIB_SHA256="bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
+ZLIB_SHA256="02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584"
 
-LIBPNG_VERSION="1.6.48"
+LIBPNG_VERSION="1.6.59"
 LIBPNG_URL="https://github.com/pnggroup/libpng/archive/refs/tags/v${LIBPNG_VERSION}.tar.gz"
-LIBPNG_SHA256="b17e99026055727e8cba99160c3a9a7f9af788e9f786daeadded5a42243f1dd0"
+LIBPNG_SHA256="2540302a1844ad2b2b501977abecfa850f265f97b78f065a712ab4074a89f5b5"
 
-LIBJPEG_VERSION="3.2.0"
+LIBJPEG_VERSION="3.2.1"
 LIBJPEG_URL="https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/${LIBJPEG_VERSION}.tar.gz"
-LIBJPEG_SHA256="980dd81f425082aa6d7c9e47fef27554ce7a9ffc8e2f6e863b97d263c5c50858"
+LIBJPEG_SHA256="6f5819c51649bce2571a23b1b0cd41eae2f57fc3f8908c7ec9e7047efb65ca13"
 
 LEPTONICA_VERSION="1.87.0"
 LEPTONICA_URL="https://github.com/DanBloomberg/leptonica/releases/download/${LEPTONICA_VERSION}/leptonica-${LEPTONICA_VERSION}.tar.gz"
 LEPTONICA_SHA256="c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7"
 
-TESSERACT_VERSION="5.5.1"
+TESSERACT_VERSION="5.5.4"
 TESSERACT_URL="https://github.com/tesseract-ocr/tesseract/archive/refs/tags/${TESSERACT_VERSION}.tar.gz"
-TESSERACT_SHA256="a7a3f2a7420cb6a6a94d80c24163e183cf1d2f1bed2df3bbc397c81808a57237"
+TESSERACT_SHA256="a8dbf8b8c8ee427ff6ad1d99116502feaf59440af1adb893caf60a6576826cf4"
 
 # A download-with-sha256-check shared by both scripts. The cache lives in
 # tesseract/cache/ (in .gitignore); running again doesn't re-download.

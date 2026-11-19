@@ -24,7 +24,7 @@ import 'support/cfb_builder.dart';
 /// (`@TestOn` above): a shell script can't run there, and the real sidecar
 /// on the Windows runner is checked by `sidecar_integration_test.dart`.
 const _fakePython = r'''#!/bin/sh
-here="$(cd "$(dirname "$0")/../.." && pwd)"
+here="$(cd "${0%/*}/../.." && pwd)"
 in=""; fmt=""; extra=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -36,9 +36,14 @@ done
 echo "$in" > "$here/last_input_path"
 echo "$fmt" > "$here/last_format"
 echo "$extra" > "$here/last_extra_args"
-cp "$in" "$here/input_copy" 2>/dev/null
 mode="ok"
-[ -f "$here/mode" ] && mode="$(cat "$here/mode")"
+[ -f "$here/mode" ] && IFS= read -r mode < "$here/mode"
+# Record the PID before launching any external commands.
+if [ "$mode" = "hang" ]; then
+  echo $$ > "$here/pid"
+  exec sleep 600
+fi
+cp "$in" "$here/input_copy" 2>/dev/null
 case "$mode" in
   ok)
     size="$(wc -c < "$in" | tr -d ' ')"
@@ -50,7 +55,6 @@ case "$mode" in
   garbage) echo "this is not json"; exit 0;;
   prefixed) echo "Loading model..."; printf '{"markdown": "x", "title": null, "warnings": []}'; exit 0;;
   wrongshape) printf '{"markdown": 5, "title": null, "warnings": []}'; exit 0;;
-  hang) echo $$ > "$here/pid"; exec sleep 600;;
 esac
 exit 99
 ''';
@@ -85,7 +89,7 @@ class _FakeSidecar {
   }
 
   set mode(String mode) =>
-      File(p.join(dir.path, 'mode')).writeAsStringSync(mode);
+      File(p.join(dir.path, 'mode')).writeAsStringSync('$mode\n');
 
   String read(String name) =>
       File(p.join(dir.path, name)).readAsStringSync().trim();
@@ -255,9 +259,8 @@ void main() {
     test('timeout: the process is actually killed, error is "limit"', () async {
       fake.mode = 'hang';
       final stopwatch = Stopwatch()..start();
-      final e = await declined(
-        converter(timeout: const Duration(milliseconds: 1500)),
-      );
+      // The child needs time to record its PID under a loaded test runner.
+      final e = await declined(converter(timeout: const Duration(seconds: 5)));
       stopwatch.stop();
 
       expect(e.failure, isA<LimitExceededFailure>());

@@ -1,16 +1,12 @@
-# markitdown_ui
+# MarkItDown UI Flutter app
 
-A new Flutter project.
+This package handles file intake, the Markdown preview, merging, saving,
+and the clipboard. It runs the conversion pipeline from `../core/` in a
+worker isolate.
 
-## Getting Started
+- [Install the app or set up development](../README.md)
+- [Build for Windows and Android](../docs/operations.md#build)
+- [Client architecture](../docs/client-architecture.md)
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+English and Russian UI strings are in `lib/l10n/`. After editing the ARB
+files, run `flutter gen-l10n` from this directory.

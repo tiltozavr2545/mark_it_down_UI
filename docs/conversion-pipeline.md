@@ -31,7 +31,7 @@ Wherever we deviate from it, that is called out directly in the text.
 ## Stages
 
 ```
-source (picker / drag&drop / share / clipboard)
+source (picker / drag-and-drop / Android share / downloaded link)
    ↓  bytes + filename + mime from the OS (which cannot be trusted)
 [1] type detection              → StreamInfo
    ↓
@@ -60,6 +60,7 @@ are the same as in markitdown:
 | `mimeType` | from the OS (share/picker) | on Android often `application/octet-stream` |
 | `charset` | determined for text files | absent for binary ones |
 | `localPath` | if the file is on disk (dialog, drag&drop) | needed by the sidecar, see below; Dart converters don't read it |
+| `url` | final URL of a download | selects link-specific converters and resolves relative links |
 
 Detection order goes from cheap to expensive, and the first confident answer
 wins:
@@ -109,9 +110,8 @@ markitdown:
 
 - **0.0 — a specific format.** `docx`, `pdf`, `xlsx`: the converter knows
   exactly what it's looking at.
-- **10.0 — a generic format.** `html` and `plain text`: they'll take anything
-  text-like, so they're asked last. Otherwise the `html` converter would grab
-  a `.docx` with XML peeking out of it.
+- **9.0 — HTML**, after specific web and file converters.
+- **10.0 — plain text**, the final text fallback.
 
 `accepts()` receives `head` — the already-read first bytes, not a stream:
 otherwise every converter in the chain would start reading the file from the
@@ -133,7 +133,7 @@ know about the sidecar at all; on mobile it simply isn't registered.
 The only thing that leaks out: the sidecar needs a **file on disk**
 (`localPath`), not bytes in memory — it receives the path as an argument. If
 the file has a `StreamInfo.localPath` (dialog, drag&drop), that's what's
-passed; for data without a path (clipboard, a file nested in an archive)
+passed. For data without a path (a download or a file nested in an archive),
 `SidecarConverter` writes the bytes to a temp folder with an extension based
 on the format id, and removes it in `finally`. Deletion is the caller's (the
 converter's) responsibility, not the sidecar's — otherwise it's unclear who
@@ -141,11 +141,9 @@ owns it; a file that came in via someone else's `localPath` is never deleted.
 
 **Which formats it takes.** Only the ones listed in `manifest.json` and known
 to the app (`pdf`, `docx`, `xlsx`, `xls`, `pptx`, `msg`; the `FileKind` ↔ id
-mapping lives in `sidecar_manifest.dart`). `xls`/`msg` are recognized via the
-OLE2 directory (see above) and **exist only through the sidecar**: there are
-no Dart converters for them, so on mobile they remain "unsupported" — a
-deliberate decision of the plan. If the manifest is corrupt or has an unknown
-`schema`, the sidecar simply isn't registered; the app doesn't crash.
+mapping lives in `sidecar_manifest.dart`). The Dart core also handles
+`xls` and `msg`, including on Android. A corrupt manifest or an
+unrecognized schema prevents sidecar registration.
 
 **In the app — only `xls`/`msg`** (the author's decision, Stage 5, item 5;
 PDF taken out in 0.10.1). `discover()` narrows the manifest down to
@@ -177,23 +175,13 @@ arguments). `SidecarConverter.fromDirectory` builds the standard one
 `python/python.exe`); tests either drop a shell script into the directory in
 place of the interpreter, or pass their own builder into the constructor.
 
-**Sidecar failure — fall back to the Dart converter.** The registry hands the
-file to the first matching converter, and normally its refusal is final. The
-sidecar is the exception: any failure of it (code 2, 3, 1, timeout, invalid
-JSON with code 0, failed to start, output over the limit) throws
-`ConversionDeclinedException`, and the registry moves on to the next
-converter whose `accepts()` also said "yes" — i.e., the Dart implementation of
-the same format (`pdf`, `docx`, `xlsx`, `pptx`). Why: the sidecar is an
-enhancement on top of the Dart core, not a replacement for it; a hung or
-crashed subprocess shouldn't take away a result the core can produce on its
-own ("a partial result is more useful than a refusal"). That holds for code 3
-too: `pdfminer` is stricter than PDFium, and a genuinely corrupt file will be
-rejected by the Dart converter anyway — with its own, usually more precise,
-description of where. If the fallback succeeds, the first line added to
-`warnings` is "the sidecar failed to process the file (reason)", so the
-discrepancy from the reference isn't a mystery. If there's no fallback
-(`xls`/`msg`) or it also fails, the user gets the refusal described under
-"Errors" below.
+**Sidecar failure falls back to Dart.** A timeout, subprocess error,
+output overflow or invalid response produces a
+`ConversionDeclinedException`. The registry advances to the next
+matching converter. In the app this is the Dart implementation of `xls`
+or `msg`. A successful fallback includes a warning about the sidecar.
+When the Dart converter also fails, the UI shows the applicable
+[conversion error](#errors).
 
 ## [3] Conversion
 
@@ -202,7 +190,8 @@ class ConversionRequest {
   final Uint8List bytes;
   final StreamInfo info;
   final ConversionLimits limits;
-  final Future<ConversionResult> Function(ConversionRequest) recurse;
+  final Future<ConversionOutcome> Function(Uint8List bytes, StreamInfo info)
+      recurse;
 }
 
 class ConversionResult {
@@ -217,9 +206,8 @@ class ConversionResult {
 `recurse` in the request is not decoration: `zip` and `epub` must run their
 nested files through the same registry, and do it without importing the
 registry directly, otherwise you get a dependency cycle. Alongside this comes
-a hard rule: **recursion is bounded by depth and by the total number of
-files** (`ConversionLimits`). A zip that contains itself isn't a theoretical
-case — it's a well-known way to crash any unpacker.
+limits on recursion depth, total file count and total unpacked bytes
+(`ConversionLimits`).
 
 `warnings` is a separate list rather than an exception, because **a partial
 result is more useful than a refusal**. A PDF where half the pages are scans
@@ -265,7 +253,7 @@ character differently.
 ## Errors
 
 A refusal is also a result, and it must be understandable: "failed to read
-the file" is not a message. Three cases are distinguished, and they have
+the file" is not a message. Four cases are distinguished, and they have
 different texts and different UI actions:
 
 | case | example | what we show |
@@ -273,13 +261,13 @@ different texts and different UI actions:
 | format not supported | `.sketch` | what format it is and what is supported |
 | format supported, file corrupt | a truncated zip | that the file is corrupted, and where |
 | limit exceeded | a zip bomb, 10,000 files in an archive | which limit exactly, and what its value is |
+| download failed | HTTP error or connection timeout | what prevented the link from opening |
 
 The raw exception text is never shown to the user — in Amicus that was fixed
 with a separate bugfix after release; here it's built in from the start.
 
-The sidecar fits into the same three cases, and its stderr is never shown at
-all — it only lives in `ConversionDeclinedException.diagnostics` for the
-developer:
+The sidecar uses the three file-based error cases. Its stderr stays in
+`ConversionDeclinedException.diagnostics` for debugging:
 
 | sidecar | case |
 |---|---|

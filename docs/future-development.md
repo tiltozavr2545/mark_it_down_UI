@@ -45,10 +45,6 @@ times as much" — the answer is "yes," the APK and the zip grew by
 
 **What's still open:**
 
-- ~~**Play.**~~ Resolved: we're not publishing to Google Play (the
-  author's decision, 2026-10-14), and an APK from GitHub Releases has no
-  200 MB limit — the model stays a Flutter asset, Play Asset Delivery
-  isn't needed.
 - **Double storage on Android.** The model lives both in the APK and in a
   copy on disk (≈530 MB). The copy can only be removed by reading straight
   from the APK via `AAssetManager` — meaning Java/JNI code.
@@ -76,13 +72,9 @@ of them, the decision is worth revisiting.
 
 ### Sidecar performance on large files
 
-**Decided by the author in [Stage 5, item 5](implementation-plan.md#stage-5--windows-05):**
-in the app, the sidecar only goes first for `pdf`/`xls`/`msg`, and for PDF
-only up to 50 pages; `docx`/`xlsx`/`pptx` go straight to Dart. Since
-0.10.1 PDF goes straight to Dart too: the Dart core finds tables the
-same way (author's decision). How this
-works is in
-[conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter).
+The desktop app prefers the sidecar for `xls` and `msg`. Dart handles
+PDF and the newer Office formats directly. See the
+[conversion pipeline](conversion-pipeline.md#the-sidecar--just-another-converter).
 
 The reason was this (a Stage 4 measurement, Intel, macOS 12, cold
 process; details in
@@ -96,17 +88,16 @@ back to Dart and return a result in a second.
 **What's still open:**
 
 - **Large `xls`/`msg`** — the sidecar goes first for these with no page
-  or size threshold; a slow file runs into the 120 s timeout and
-  gets rejected. Options are a timeout based on file size, or a "this may
-  take minutes" indicator in the UI.
+  or size threshold. After a 120-second timeout the app tries Dart.
+  Options include a timeout based on file size or a long-running
+  conversion indicator.
 
 ### Size of the Windows sidecar
 
-308 MB versus 242 on macOS. `python/DLLs/` is ≈70 MB — more than you'd
-expect from standard `.pyd` files. It hasn't been looked into what's in
-there (debug symbols? extra libraries?) or what can be trimmed without
-breaking `build.sh`'s self-check. This doesn't block distribution; it's
-worth digging into by Stage 7 (packaging, size in the README).
+Stage 5 measured 308 MB on Windows and 242 MB on macOS. The Windows
+`python/DLLs/` directory was about 70 MB. Measure the current bundle
+before deciding which files can be trimmed while preserving the
+sidecar's self-check.
 
 ### Unfinished after Stage 4 (macOS sidecar) — secondary platform, not a priority
 
@@ -122,11 +113,9 @@ request; the list is kept so it isn't lost, not as a queue.
   hasn't been written. Also worth checking whether
   `disable-library-validation` is still needed with a real certificate —
   the docs don't say, and the key weakens Hardened Runtime.
-- **Lock files for other hosts.** Only `macos-x86_64` exists; for
-  `macos-arm64` and `linux-*` the numpy/onnxruntime wheels are different,
-  and the lock gets recreated on each host (`make sidecar-lock`). Windows
-  isn't here, it's in [Stage 5](implementation-plan.md#stage-5--windows-05),
-  item 4.
+- **Lock files for other hosts.** macOS x86_64 and Windows x86_64 have
+  committed locks. macOS arm64 and Linux still need host-specific wheel
+  locks and build verification.
 - **How the sidecar behaves under the sandbox of a live `.app`.** Tested
   with an ad-hoc signature outside the sandbox; how it behaves as a
   subprocess under App Sandbox (access to the container's temp folder,
@@ -170,7 +159,7 @@ in `sidecar/common.sh`, but it hasn't been run). Not a priority: not a
 single request for it, and there's nowhere to build it yet besides the CI
 image. Windows used to sit here too as "nowhere to build it" — now that's
 [Stage 5](implementation-plan.md#stage-5--windows-05): the build runs on
-`windows-latest`, and verification happens on the author's Windows
+`windows-2022`, and verification happens on the author's Windows
 machine.
 
 ### iOS
@@ -193,7 +182,7 @@ isn't needed then.
 Separately attached to iOS is the Share Extension (the main way to hand a
 file to it) — a separate target with its own memory limit, inside which
 conversion can't happen, see
-[client-architecture.md](client-architecture.md#file-intake-four-inputs-one-entry-point).
+[client-architecture.md](client-architecture.md#file-intake).
 
 ### Mac App Store
 

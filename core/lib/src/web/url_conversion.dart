@@ -109,8 +109,26 @@ Uri? parseUserUrl(String input) {
     }
     candidate = 'https://$text';
   }
-  // Punctuation the link ends with in the text isn't part of it.
-  candidate = candidate.replaceFirst(RegExp(r'[.,;:!?)»"\]]+$'), '');
+  // Shared text can wrap a URL in brackets. Keep brackets that belong to
+  // the URL itself, such as a Wikipedia title suffix or an IPv6 host.
+  final trailing = RegExp(r'[.,;:!?)»"\]]+$').firstMatch(candidate);
+  if (trailing != null) {
+    final unmatchedClosings = {
+      ')': ')'.allMatches(candidate).length - '('.allMatches(candidate).length,
+      ']': ']'.allMatches(candidate).length - '['.allMatches(candidate).length,
+    };
+    var end = candidate.length;
+    while (end > trailing.start) {
+      final character = candidate[end - 1];
+      final unmatched = unmatchedClosings[character];
+      if (unmatched != null) {
+        if (unmatched <= 0) break;
+        unmatchedClosings[character] = unmatched - 1;
+      }
+      end--;
+    }
+    candidate = candidate.substring(0, end);
+  }
   final uri = Uri.tryParse(candidate);
   if (uri == null || uri.host.isEmpty) return null;
   if (uri.scheme != 'http' && uri.scheme != 'https') return null;

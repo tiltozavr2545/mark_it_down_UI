@@ -56,11 +56,10 @@ The target platforms are Windows and Android; macOS is secondary.
 Being honest about what's been lost compared to 0.8: on Android, the
 absence of `INTERNET` used to mean that **not a single dependency** could
 physically open a connection. Now it means a check of the code and the
-dependency list, not the OS: a dependency with native networking code (not
-a Dart package) won't be caught by grepping Dart. The project's own native
-libraries — PDFium, Tesseract, whisper.cpp — are checked separately (the
-build fails on a reference to `libcurl`/`ws2_32`/`winhttp`/`wininet`, see
-below).
+dependency list. Dart source checks cannot detect behavior inside native
+dependencies. The Tesseract and whisper.cpp build scripts check their
+libraries for networking references. PDFium uses pinned,
+SHA-256-checked upstream binaries.
 
 About `DebugProfile.entitlements`: it has
 `com.apple.security.network.server` — Flutter tooling needs it (hot
@@ -68,10 +67,10 @@ reload, VM service), and it doesn't make it into the release build. That's
 why the check is against `Release.entitlements`, not against every
 `*.entitlements` file indiscriminately.
 
-The Python sidecar on desktop holds the same line: `requests` stays among
-markitdown's dependencies (it's in the core group and can't be dropped),
-but the Azure, YouTube, and LLM converters are never installed at all —
-see [python-sidecar.md](python-sidecar.md).
+The desktop Python bundle includes `requests` as a MarkItDown dependency.
+The wrapper calls `MarkItDown.convert_local` with a filesystem path and
+ships the document-conversion extras listed in
+[Python sidecar](python-sidecar.md#what-exactly-gets-packaged).
 
 OCR (Stage 6) — Tesseract with the models in the bundle, recognizing on
 the device. The desktop build is built from source specifically for this
@@ -94,17 +93,12 @@ without `WHISPER_CURL` (downloading the model by URL) and without
 Foundation, MediaCodec) — locally, from the file; the temporary file used
 for this is deleted in a `finally`.
 
-On Windows the sidecar is an ordinary child process, `python.exe`, with
-the same privileges as the app itself: it has no sandbox isolation, and
-"no network" rests on the fact that markitdown's networking converters
-aren't installed (see above), not on the OS. This is one more reason the
-MSIX and AppContainer question, when packaging is chosen (Stage 7), isn't
-a formality.
+On Windows, the sidecar is a child process with the app's privileges.
+The wrapper keeps conversion on the local-file code path.
 
 On macOS (a secondary platform) the sidecar is a subprocess of the app and
 **inherits the parent's App Sandbox** — together with `network.client` as
-of 0.9. As on Windows, what keeps it off the network is that markitdown's
-networking converters aren't installed, not the sandbox. The
+of 0.9. Its wrapper uses the same local-file entry point as Windows. The
 interpreter's own entitlements (`sidecar/sidecar.entitlements`) contain
 only `cs.disable-library-validation` — about loading libraries, not about
 networking — and have no network keys. CI checks this: the step fails if
@@ -153,12 +147,13 @@ sends document content outward:
 
 ## What's stored on the device
 
-- **Conversion content — nowhere.** The result lives in memory while the
-  preview screen is open, and in the clipboard — because that's where it
-  was asked to be placed.
-- **Temporary files** (for the sidecar, for clipboard pasting) — in the
-  system's temp folder, deleted in a `finally` after conversion.
-- **Settings** (theme, language) — `shared_preferences`.
+- **Conversion content** is kept in memory while in use. Copy places it
+  on the clipboard and Save writes it to the chosen file.
+- **Temporary input created by the sidecar and audio decoder** is deleted
+  after use. Android's share plugin can hand over files from its cache.
+- **Model assets** copied out of the APK for OCR and transcription stay
+  in application support for reuse. The theme and language follow the
+  system.
 - **"Recent files" history**, if it's ever added — only paths and names,
   with the option to turn it off and clear it. Content — never.
 
@@ -175,9 +170,6 @@ Half of markitdown's capabilities — scans, audio, images — are built on
 the cloud, and without it they either don't exist or need their own
 offline subsystem with models in the bundle (see "Open items" in
 [format-coverage.md](format-coverage.md)). This is the project's main
-trade-off, and it's a deliberate one: an app that can do less but doesn't
-send documents outward answers the actual request, while one that can do
-everything through someone else's server doesn't — because the internet
-is already full of those. "Link" mode (0.9) doesn't cancel this
-trade-off: what goes out over the network is an address that's already
-public, not the document.
+trade-off. Link mode sends the address supplied by the user to fetch the
+requested content. URLs can include query parameters that are passed to
+the destination.

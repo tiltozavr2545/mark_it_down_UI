@@ -10,7 +10,7 @@ what changes on Windows is in the [«Windows»](#windows-stage-5) section.
 There is no sidecar on Android or iOS, and there won't be — the reason is at
 the very bottom. How it plugs into the pipeline (priority −1.0, `localPath`)
 is covered in
-[conversion-pipeline.md](conversion-pipeline.md#sidecar--just-another-converter).
+[conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter).
 
 ---
 
@@ -53,12 +53,9 @@ The interpreter comes from
 (the same builds `uv` uses): a ready-made, relocatable Python that doesn't
 depend on the system one. The system Python can't be used — on macOS it
 might not even be present, and on Windows it almost never is. Pinned:
-release `20260929`, CPython **3.12.14** (the `install_only` variant),
-markitdown **0.1.8**. Python 3.12, not a newer 3.13/3.14, is a deliberate
-choice: macOS x86_64 wheels (`onnxruntime`, `pandas`, `lxml`) exist for every
-dependency on 3.12 without exception, and there's no payoff here from a
-newer interpreter. The release taken is not "today's" but ten days old — so
-as not to be the first one to hit a bug in it.
+release `20261110`, CPython **3.12.16** (the `install_only` variant),
+markitdown **0.1.9**. The Python 3.12 line has compatible macOS x86_64 wheels
+for all dependencies, including `onnxruntime`, `pandas` and `lxml`.
 
 What's installed is **not** `markitdown[all]`: the `az-doc-intel`,
 `az-content-understanding`, and `youtube-transcription` groups aren't
@@ -77,21 +74,19 @@ make sidecar                # = ./sidecar/build.sh
 FORCE=1 make sidecar        # rebuild even if already built
 ```
 
-The build is **not part of** `make verify` or CI: it downloads hundreds of
-MB (the interpreter ~25 MB plus wheels like numpy/pandas/onnxruntime, etc.)
-and is only needed by whoever is cross-checking implementations or packaging
-the desktop app. On a slow connection the first run can take a quarter of an
-hour; a repeat run comes from the pip cache and archive in about a minute.
+`make verify` can run against an existing sidecar. Windows CI builds and
+tests the sidecar in a dedicated job. A fresh build downloads the interpreter
+(~25 MB) and wheels for dependencies such as numpy, pandas, and onnxruntime.
+Subsequent builds can reuse the downloaded archive and pip cache.
 
 What `sidecar/build.sh` does, step by step, with reasons:
 
-1. **Pick the asset for the host**: macOS x86_64 / arm64, Linux x86_64 /
-   aarch64. Only macOS x86_64 has actually been verified — the other three
-   rows of the table in the script are written from the same template but
-   haven't been run.
+1. **Pick the asset for the host.** macOS x86_64 and Windows x86_64 have
+   builds and committed locks. The macOS arm64 and Linux entries specify
+   interpreter assets for future host builds.
 2. **Download and sha256.** The release version and Python version are
-   pinned in `sidecar/common.sh`, the checksums are baked in (checked
-   against the release's `SHA256SUMS`). The archive lives in
+   pinned in `sidecar/common.sh` with checksums from the release assets.
+   The archive lives in
    `sidecar/cache/` (in `.gitignore`); a corrupted cache triggers a
    re-download, and a mismatched hash on a freshly downloaded file causes a
    refusal. "Latest" is never used: a reference that changes silently isn't
@@ -99,9 +94,8 @@ What `sidecar/build.sh` does, step by step, with reasons:
 3. **`pip install --require-hashes --no-deps --target lib -r locks/<host>.txt`**
    using the interpreter *from the archive*, with `-I` and
    `--only-binary=:all:` — no building from source on the machine and no
-   influence from the user's environment. All 42 packages, including
-   transitive ones, are pinned by version and wheel sha256 (see "Lock file"
-   below).
+   influence from the user's environment. The lock pins each dependency
+   by version and wheel SHA-256.
 4. **Cleanup** (what's needed at runtime stays; markitdown's code and its
    dependencies' code are not touched):
    - `lib/bin/` (pip scripts with absolute paths), all `tests/`, other
@@ -135,26 +129,20 @@ What `sidecar/build.sh` does, step by step, with reasons:
    fails rather than shipping a manifest that lies.
 7. The result is assembled into a temporary directory and atomically swaps
    in for `sidecar/dist/<host>/`; a skip on a repeat run is determined by a
-   stamp in `sidecar/cache/` (versions plus hashes of `run.py` and
-   `build.sh`).
+   stamp in `sidecar/cache/` covering the lock, pins and build scripts.
 
-Relocatability has been verified: a tree copied into a directory with a
+Stage 4 verified relocatability: a tree copied into a directory with a
 space in the path, with `touch` run on every `.py` file, and under `env -i`,
 works and creates not a single new file (file count before and after —
 5167).
 
 ### Lock file: reproducibility
 
-`sidecar/locks/<host>.txt` (currently `macos-x86_64.txt`, committed) — all 42
-packages in the form `name==version --hash=sha256:…`. The build installs
-strictly from it (`--require-hashes --no-deps`): anything not in the file, or
-whose hash doesn't match, pip simply will not install, and "a slightly
-newer lxml a month from now" is impossible. The file is per-host, not
-shared: wheels for numpy/onnxruntime on macOS x86_64, arm64, and Linux are
-different files with different hashes. For a host without a lock file,
-`build.sh` refuses to build (`ALLOW_UNLOCKED=1` is a one-time bypass, used
-exactly to create the first lock on a new host: first `ALLOW_UNLOCKED=1 make
-sidecar`, then `make sidecar-lock`).
+The committed locks are `macos-x86_64.txt` and `windows-x86_64.txt` in
+`sidecar/locks/`. Each line pins a package version and SHA-256 of the
+host-specific wheel. The build uses `--require-hashes --no-deps`.
+On a new host, run `./sidecar/lock.sh` before building.
+`ALLOW_UNLOCKED=1` permits an exploratory build.
 
 How to update it — only deliberately, when `MARKITDOWN_VERSION`,
 `PY_VERSION`, or `PBS_TAG` changes in `sidecar/common.sh`, or when transitive
@@ -167,19 +155,17 @@ FORCE=1 make sidecar       # rebuild from the new lock
 make compare-sidecar       # re-cross-check against the Dart core
 ```
 
-`lock.sh` doesn't use pip-tools/uv: dependency resolution is done by pip
-itself from the downloaded interpreter, and sha256 values come from its own
-report on the chosen wheels. Verified: rebuilding from the lock file
-produced the same set of 40 `*.dist-info` entries (42 minus the cleaned-out
-sympy/mpmath) and byte-for-byte the same `run.py` output on 10 samples
-(pdf×3, docx×2, xlsx×2, xls, msg, pptx). `--self-check` passes.
+`lock.sh` uses pip from the bundled interpreter and takes wheel hashes
+from its JSON report. Run the lock and build scripts in Git Bash for a
+native Windows update. For 0.10.2 the Windows lock was resolved for x64
+and checked with pip's `--platform win_amd64` and `--require-hashes`.
+Windows CI runs the interpreter and integration tests.
 
-### Sizes (macOS x86_64, verified)
+### Sizes (macOS x86_64)
 
-Total for `sidecar/dist/macos-x86_64/` — **242 MB**: `python/` 40 MB,
-`lib/` 203 MB (of which bytecode is ~35 MB). The path to get there: naive
-355 MB → without sympy/mpmath and onnxruntime tooling 299 → `lipo -thin` 261
-→ without `libpython` 242.
+The MarkItDown 0.1.9 build occupied about **241 MiB** on disk, with 40 MiB
+in `python/` and 201 MiB in `lib/`. The breakdown below is from the
+Stage 4 optimization measurements. Re-measure after changing the wheel set.
 
 Largest items in `lib/` (including hidden `.dylibs/`):
 
@@ -276,8 +262,8 @@ One call, one subprocess. No daemon, no socket, no warm-up:
   taken.
 - **`warnings`** in the JSON — only what `run.py` itself knows about the
   result (currently: `"result is empty"`); library warnings go to stderr.
-- **`manifest.json`**: `{"schema": 1, "markitdown": "0.1.8", "python":
-  "3.12.14", "formats": ["pdf","docx","xlsx","xls","pptx","msg"]}` — only
+- **`manifest.json`**: `{"schema": 1, "markitdown": "0.1.9", "python":
+  "3.12.16", "formats": ["pdf","docx","xlsx","xls","pptx","msg"]}` — only
   what actually works in this particular tree (checked by the build's
   self-check).
 
@@ -356,16 +342,12 @@ application's timeout, build in a large margin, not 1 s.
 
 ## Windows (Stage 5)
 
-The author's priority has shifted to Windows and Android, so the desktop
-sidecar is now primarily about Windows. The design is the same — one
-subprocess per call, the same `run.py`, the same protocol; what changes is
-below. **It builds and is checked in CI** (the `windows-sidecar` job on
-`windows-2022`: build, integration tests, cross-check against Dart — all
-outputs matched macOS byte-for-byte, see
-[format-coverage.md](format-coverage.md#reconciliation-on-windows-stage-5)); it has
-not yet been checked on a live Windows machine (item 8), see
-[implementation-plan.md](implementation-plan.md#stage-5--windows-05), item 4;
-below is what changes and why.
+The `windows-sidecar` job on `windows-2022` builds the bundle, runs
+integration tests and compares its output with Dart. The Stage 5
+comparison matched the macOS sidecar output byte-for-byte. The author
+also tested the 0.5 Windows release manually. See
+[format coverage](format-coverage.md#reconciliation-on-windows-stage-5)
+and [the implementation plan](implementation-plan.md#stage-5--windows-05).
 
 - **Layout.** `sidecar/dist/windows-x86_64/{python,lib,run.py,manifest.json}`
   next to the `.exe`; the interpreter is `python/python.exe` instead of
@@ -374,7 +356,7 @@ below is what changes and why.
   `app/windows/CMakeLists.txt` puts `sidecar/dist/windows-x86_64/` there if
   it's been built. The protocol, `-I -B`, and exit codes are unchanged.
 - **Interpreter.** python-build-standalone for `x86_64-pc-windows-msvc`,
-  `install_only` variant, same release and CPython 3.12.14. The system
+  `install_only` variant, same release and CPython 3.12.16. The system
   Python isn't used here either: on Windows it almost never exists, and
   "Python from the Microsoft Store" is a stub.
 - **Dependencies.** Wheels for `numpy`, `onnxruntime`, `pandas`, `lxml`,
@@ -390,11 +372,8 @@ below is what changes and why.
   `win_amd64` wheel hashes are its own), generated on the runner rather than
   by hand: if the file doesn't exist, the `windows-sidecar` job calls
   `lock.sh` itself, uploads the result as the `sidecar-lock-windows-x86_64`
-  artifact, and stays red until it's read and committed. 44 packages versus
-  42 on macOS: plus `pyreadline3` and `tzdata` (Windows-only dependencies of
-  `humanfriendly` and `pandas`); `cryptography`, `onnxruntime`, and
-  `pypdfium2` are newer than on the Intel Mac — there are no fresh enough
-  wheels there. This had no effect on the fixture output.
+  artifact, and fails the final lock check so the file can be reviewed
+  and committed. Each lock records its resolved platform wheels and hashes.
 - **Cleanup in `build.sh`.** `lipo -thin` is macOS-specific and is skipped by
   host on Windows; `sympy`/`mpmath`, onnxruntime tooling, and `compileall`
   are shared. Cleaning the interpreter itself is a **separate branch**: NTFS
@@ -411,7 +390,8 @@ below is what changes and why.
   build path out of the `.pyc` files. `run.py` itself writes the response as
   UTF-8 bytes straight to the fd, so the console encoding doesn't interfere
   with the protocol.
-- **Size — 308 MB** (macOS — 242): `lib/` 182 MB, `python/` 126 MB, of which
+- **Stage 5 size — 308 MB** (macOS — 242): `lib/` 182 MB and
+  `python/` 126 MB, of which
   `DLLs/` is ≈70 MB — noticeably more than you'd expect from standard
   `.pyd` files; what's actually in there and whether it can be trimmed
   hasn't been looked into (an open question, see
@@ -421,21 +401,18 @@ below is what changes and why.
   signing-related reason for `-B` (the flag stays anyway: it still prevents
   writing into the install directory). Instead there's **Authenticode** for
   the `.exe` and possibly `python.exe`; there's no certificate yet, and the
-  decision on signing and SmartScreen is an open question for Stage 5
-  (item 6). The first call to the interpreter is checked noticeably longer
-  than usual by Defender — keep the first call's timeout generous, just as
-  on macOS.
+  signing remains open in Stage 7. Defender can take longer to scan the
+  interpreter on the first call.
 - **Long paths.** The longest path inside the sidecar is 95 characters
   (`lib/lxml/isoschematron/…`; printed in the job log), i.e. with the 260
   limit there's about 165 left for the directory the zip is extracted into.
-  If MSIX is chosen at Stage 7 (`C:\Program Files\WindowsApps\…` with a
-  long prefix), re-check this.
+  Recheck the longest path when updating wheels.
 - **Speed.** The measurements in this document and in
   [format-coverage.md](format-coverage.md#reconciliation-with-the-reference-stage-4) are
   from macOS; revisit on Windows. The order of "sidecar or Dart" has been
   decided (Stage 5, item 5; PDF taken out in 0.10.1): in the app, the
   sidecar goes first only for `xls`/`msg` — see
-  [conversion-pipeline.md](conversion-pipeline.md#sidecar--just-another-converter).
+  [conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter).
 
 ## Signing and notarization on macOS
 

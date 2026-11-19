@@ -6,15 +6,9 @@ at release time. Kept separate from
 how the app is built: that file answers "how it works," this one answers
 "what to click."
 
-Target platforms are Windows and Android; macOS is secondary (the sections
-about it are maintained, but it's not a priority). Windows only builds in
-CI on `windows-latest` — on the development machine (a Mac), Flutter can't
-build it.
-
-While the project is still at zero, most sections are **placeholders**: they
-are laid out so that working commands can be filled in as the stages
-progress, rather than having to be hunted for from scratch. Wherever commands
-haven't been verified yet, that is stated outright.
+Windows and Android are the release targets. CI builds Windows on
+`windows-2022` and Android on `ubuntu-24.04`. macOS is a secondary target,
+with the unverified signing and packaging steps marked below.
 
 ---
 
@@ -39,11 +33,11 @@ packages, CI on Windows builds it via `build.sh` with caching.
 Speech recognition (0.8) works the same way, but is heavier: `make whisper`
 builds whisper.cpp with its wrapper layer (`whisper/build.sh` →
 `whisper/native/host/`, ≈10 minutes on an Intel Mac — a dozen CPU-backend
-variants) and downloads models (`whisper/fetch.sh`, 265 MB → into
-`whisper/models/` and `app/assets/whisper/`). `make test` doesn't download
-the models: beyond that, `make test` itself finds the libraries and runs
-`core/test/speech_test.dart`, skipping it if they're absent. Both Linux and
-Windows CI build and download with caching keyed on the recipe hash.
+variants) and downloads the models into `whisper/models/` and
+`app/assets/whisper/`. `make test` picks up the installed host libraries
+and models. Speech tests skip when those are absent. Linux and Windows CI
+cache the builds and models. The two AAC tests require a supported system
+decoder and skip on the macOS host.
 
 ## CI
 
@@ -53,8 +47,8 @@ workflows:
 
 | workflow | when | what it does |
 |---|---|---|
-| `ci.yml` | push to a branch, PR; also invoked from `release.yml` | `verify` job (ubuntu): `make verify` + "network only via a link" check + version-bump check on the PR; `windows` job (`windows-latest`): the same checks, `flutter build windows --release`, artifact `markitdown_ui-windows-x64` (a zip of the `Release/` directory) |
-| `release.yml` | tag `v*` | the whole of `ci.yml` (via `workflow_call`) + an arm64 APK with a network-permissions check on the built file → a GitHub Release with `markitdown_ui-X.Y.Z-windows-x64.zip` (with the sidecar) and `markitdown_ui-X.Y.Z-android-arm64.apk`; macOS — only on separate request |
+| `ci.yml` | Branch push, pull request, or call from `release.yml` | `verify` on `ubuntu-24.04` runs `make verify`, privacy checks and the PR version check. `windows-sidecar` builds and tests the Python bundle on `windows-2022`. `windows` runs the Dart and Flutter checks, bundles the sidecar and uploads `markitdown_ui-windows-x64`. |
+| `release.yml` | Tag `v*`, or a PR changing this workflow | Calls `ci.yml`, builds the Android arm64 APK and checks its permissions and assets. A tag publishes the Windows ZIP and Android APK to GitHub Releases. A PR runs the build checks. |
 
 **Windows job** (plan — [implementation-plan.md](implementation-plan.md#stage-5--windows-05),
 item 2): steps run under `shell: bash` (Git Bash), because `run:` on
@@ -79,25 +73,28 @@ guarantee is held up by the code. Steps, each of which fails the build:
 
 ```bash
 # 1. A networking package in the dependency tree — network access bypassing core/lib/src/web/
-dart pub deps --style=list | grep -E '^- (http|dio|grpc|sentry|firebase)[^a-zA-Z0-9_]' && exit 1
+for package in app core; do
+  if (cd "$package" && dart pub deps --no-dev --style=list) \
+    | grep -E '^- (http|dio|grpc|sentry|firebase)[^a-zA-Z0-9_]'; then
+    exit 1
+  fi
+done
 
 # 2. Sockets and an HTTP client — only allowed in core/lib/src/web/
-grep -rnE '\b(HttpClient|HttpServer|Socket|RawSocket|SecureSocket|ServerSocket|WebSocket|InternetAddress)\b' \
+grep -rnE '\b(HttpClient|HttpServer|HttpOverrides|Socket|RawSocket|SecureSocket|ServerSocket|RawDatagramSocket|WebSocket|InternetAddress|NetworkInterface)\b' \
   app/lib core/lib --include='*.dart' | grep -v '^core/lib/src/web/' && exit 1
 
 # 3. Among the network permissions in the built APK — only INTERNET
-aapt dump permissions build/app/outputs/flutter-apk/app-release.apk \
+aapt dump permissions app/build/app/outputs/flutter-apk/app-release.apk \
   | grep -qE 'ACCESS_NETWORK_STATE|ACCESS_WIFI_STATE|CHANGE_NETWORK_STATE|CHANGE_WIFI_STATE' && exit 1
 ```
 
 The third step runs at build time, i.e. in `release.yml` (using `aapt` from
 the runner's Android SDK); the first two run on every PR, because that's
-exactly where a transitive network dependency would sneak in. For Windows
-there are no permissions at all: packaging is still a zip, and a zip knows
-nothing about them. The step "no networking libraries in `app/windows/`"
-only catches what we added ourselves (`ws2_32`, `winhttp`, `wininet`,
-`internetClient`); if MSIX is chosen at Stage 7, a grep over its manifest
-will be added. See Stage 5, item 7, and
+exactly where a transitive network dependency would sneak in. The Windows
+source check scans the runner for added networking libraries and
+capabilities. Windows ZIP distribution relies on source checks and the
+behavior of the bundled libraries. See
 [offline-and-privacy.md](offline-and-privacy.md).
 
 ## Version
@@ -120,9 +117,31 @@ there's no point comparing against `origin/main` locally. In CI it runs as
 a separate step only on `pull_request` (the base branch is fetched via
 `git fetch`).
 
-`build` must grow monotonically: Google Play and App Store Connect won't
-accept a repeated number, and that's discovered at the most inconvenient
-moment.
+`build` is the project's monotonic build number and becomes Android's
+`versionCode`.
+
+## Conversion dependencies
+
+| Component | Pins for 0.10.2 | Build settings |
+|---|---|---|
+| PDFium | `160.0.8165.0` (`chromium/8165`) | [`pdfium/fetch.sh`](../pdfium/fetch.sh) |
+| Desktop OCR | Tesseract 5.5.4, Leptonica 1.87.0, libpng 1.6.59, libjpeg-turbo 3.2.1, zlib 1.4 on Windows | [`tesseract/versions.sh`](../tesseract/versions.sh) |
+| Android OCR | Tesseract4Android 4.9.0 (Tesseract 5.5.1) | [`tesseract/versions.sh`](../tesseract/versions.sh) |
+| Speech | whisper.cpp 1.9.5, Whisper small q8_0, Silero VAD 6.2.0, miniaudio 0.11.26, Opus 1.6.1 | [`whisper/versions.sh`](../whisper/versions.sh) |
+| Desktop sidecar | MarkItDown 0.1.9, CPython 3.12.16 | [`sidecar/common.sh`](../sidecar/common.sh), [wheel locks](../sidecar/locks/) |
+| Dart archives and images | `archive` ^4.7.1, `image` ^4.13.1 | [`core/pubspec.yaml`](../core/pubspec.yaml) |
+
+After changing a native pin, rebuild the affected host libraries before
+`make verify`. The PDFium fetch script verifies archives by SHA-256 and
+refreshes installed files when the pinned archive changes. For a sidecar
+update, regenerate the wheel locks, run its integration tests, and review
+the [fixture comparison](python-sidecar.md#lock-file-reproducibility).
+
+The dependency update was checked on macOS x86_64 with Dart and Flutter
+tests, native OCR and speech tests, and the real Python sidecar. The
+Android arm64 APK built with the updated native libraries. Windows wheels
+were checked against the lock. The Windows build and device checks belong
+to CI and the manual platform checklists.
 
 ## Keys and secrets
 
@@ -136,19 +155,26 @@ nowhere to call. Everything listed below is only needed for signing builds.
 | Authenticode certificate (Windows) | **none yet** — open question (Stage 5, item 6 → Stage 7) | signing the `.exe`/MSIX; without it, SmartScreen warns on first run |
 | Apple Developer ID cert | the build machine's Keychain | signing the macOS bundle |
 | App-specific password / notarytool profile | Keychain (`xcrun notarytool store-credentials`) | notarization |
-| the same, in CI | GitHub Secrets | `release.yml` |
 
 ## Build
 
 ### Windows
 
-Only builds **in CI**, on `windows-latest` (Flutter can't build Windows on a
-Mac):
+Use Git Bash on Windows x64 with Flutter 3.32.8, Visual Studio 2022
+with the C++ desktop workload, and CMake. Run from the repository root.
+CI uses the same native build scripts on `windows-2022`.
 
 ```bash
-cd app && flutter build windows --release
-# → app/build/windows/x64/runner/Release/  (markitdown_ui.exe + DLLs + data/)
+./pdfium/fetch.sh
+./tesseract/build.sh
+./tesseract/fetch.sh
+./whisper/build.sh
+./whisper/fetch.sh
+./sidecar/build.sh
+(cd app && flutter build windows --release)
 ```
+
+The app is in `app/build/windows/x64/runner/Release/`.
 
 Next to the `.exe` go `pdfium.dll`, the Tesseract DLLs (`leptonica-*.dll`,
 `tesseract*.dll`) and `sidecar/` — via `install(...)` rules in
@@ -168,13 +194,9 @@ PDF support. The sidecar is optional: without
 `sidecar/dist/windows-x86_64/manifest.json`, you get a Dart-only build
 (item 4 of the plan — the sidecar for Windows is built as a separate job).
 
-**Packaging is a zip** (the author's decision, Stage 5, item 6: "zip for
-now, decide later"; Inno Setup or MSIX is a Stage 7 question). Right now the
-zip is simply the CI artifact itself:
-`actions/upload-artifact` hands back the `Release/` directory as an
-archive. There's no Authenticode signature (no certificate yet): on first
-run, SmartScreen will show "Windows protected your PC" → "More info" → "Run
-anyway."
+CI uploads the `Release/` directory as an artifact. GitHub Releases
+packages it in a ZIP with a versioned top-level folder. The executable
+is unsigned, so SmartScreen may display a warning on first run.
 
 ### macOS (secondary platform)
 
@@ -294,7 +316,7 @@ live `.app` (see "Verification status" above).
 The app looks for the sidecar at
 `<App>.app/Contents/Resources/sidecar`
 (`SidecarConverter.discover`, see
-[conversion-pipeline.md](conversion-pipeline.md#sidecar--just-another-converter)),
+[conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter)),
 and the build step needed for that **doesn't exist** in `app/macos/`: Xcode
 isn't installed on the author's machine (see [../AGENTS.md](../AGENTS.md)),
 and editing `Runner.xcodeproj/project.pbxproj` blind, without being able to
@@ -327,7 +349,7 @@ code, see
 ### Android
 
 ```bash
-make fetch-pdfium     # libpdfium.so into jniLibs/arm64-v8a — once
+make fetch-pdfium     # verifies the pinned PDFium archive and refreshes older copies
 make fetch-tesseract  # libtesseract/libleptonica/libjpeg/libpngx.so into the same place
                       # + rus/eng models in app/assets/tessdata/
 ./whisper/build.sh --android  # libmarkitdown_whisper/libwhisper/libggml*.so
@@ -345,20 +367,13 @@ weighs ≈300 MB. Play's limit (200 MB for the base module) doesn't affect
 us: we don't publish on Google Play, the APK is distributed via GitHub
 Releases.
 
-Without this step the app still builds, but PDF fails at runtime with
-"could not read the file": `DynamicLibrary.open('libpdfium.so')` simply
-can't find the library. `make verify`/`make test` fetch it themselves for
-`core/`'s tests, but the test `.so` for the host (macOS/Linux; for Windows —
-`pdfium.dll`) isn't the same file needed in the APK (the Android library is
-`arm64`, fetched into the same place by the script) — see
-`pdfium/fetch.sh`.
+PDF conversion requires the Android arm64 `libpdfium.so` in
+`app/android/app/src/main/jniLibs/arm64-v8a/`. The fetch script also
+installs a separate library for host tests.
 
-`compileSdk`/`targetSdk` are pinned as plain numbers in
-`android/app/build.gradle.kts`, rather than via variables — so they don't
-drift silently on a Flutter upgrade. Play's `targetSdk` requirements don't
-apply to us (we don't publish on Play), but a very old `targetSdk` makes
-Android itself install with a Play Protect warning, or refuse to install at
-all (Android 14+ refuses below `targetSdk` 23).
+`app/android/app/build.gradle.kts` sets `compileSdk` to 36, `minSdk` to
+23, and NDK to `27.0.12077973`. `targetSdk` follows the pinned Flutter
+SDK. The release job uses JDK 17.
 
 ### iOS
 
@@ -393,9 +408,8 @@ needed, is Xcode Cloud; details and what that would entail are in
 
    **Signing is still temporary.** The APK is signed with the runner's debug
    key (there's no own key yet) — enough for installing from a file, but
-   the key is different for every release, so a new version can't be
-   installed over an old one — the old one has to be removed first. This is
-   fixed by a permanent key in GitHub Secrets (Play isn't needed for that).
+   in-place updates require matching signatures. The permanent release
+   key is tracked in Stage 7.
    The Windows build isn't signed at all — SmartScreen warns. Both issues
    are Stage 7.
 4. **Record the bundle size per platform in the README.** It's the honest

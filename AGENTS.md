@@ -23,146 +23,16 @@ read:
 
 ## The project
 
-The author's second Flutter project. The first was Amicus (Android/iOS +
-Supabase), so Dart, Riverpod, ARB localization, and mobile builds are
-already familiar. Two things are new here: **desktop as a platform** and
-**parsing binary formats**.
+MarkItDown UI converts local files to Markdown on Windows and Android.
+The Dart core handles file conversion, including PDF tables and the
+fallback for legacy Excel and Outlook files. Windows builds bundle a
+Python sidecar for `xls` and `msg`. OCR and speech recognition run on
+device with Tesseract and whisper.cpp.
 
-Working step by step through
-[docs/implementation-plan.md](docs/implementation-plan.md), without getting
-ahead of ourselves, is a deliberate decision, not a lack of planning. The
-stages are ordered by increasing risk: the things that are sure to work
-come first.
-
-**Target platforms are Windows and Android** (the author's priority: "not
-a Mac, but Windows and Android"). macOS is secondary and isn't developed
-further without a specific request. **Distribution is GitHub Releases
-only** (author's decision, 2026-10-14): nothing is published to Google
-Play, and Play's restrictions (200 MB base module, `targetSdk`, `.aab`)
-don't apply to this project.
-Stages 0–5 are closed, Stage 6 (images and audio) has shipped, Stage 7 —
-polish — is in progress; outside the plan, at the author's request, are
-speech recognition (0.8) and everything markitdown itself can do (0.9,
-including "link" mode).
-
-**Stages 0–4 are closed** (see [docs/implementation-plan.md](docs/implementation-plan.md)):
-Stage 0 — scaffolding for `app/`+`core/`, CI, type detection. Stage 1 — the
-conversion pipeline (`DocumentConverter`/registry/`ConversionLimits`),
-`markdown_writer`, five text converters. Stage 2 — a shared OOXML layer
-(`archive`+`xml`) and six formats built on it: `docx` (paragraphs/styles/
-nested lists via `numbering.xml`/tables/footnotes/links/image placeholders),
-`xlsx` (`sharedStrings`+sheets, formulas as their cached value, merged
-cells → an HTML block with a warning), `pptx` (slides+speaker notes),
-`epub` (chapters via Stage 1's `HtmlConverter` through `request.recurse`),
-`zip` (recursion with a shared limits budget across the whole tree in
-`ConverterRegistry`), `ipynb`. Stage 3 — `pdf` via custom FFI bindings to
-PDFium (not `syncfusion_flutter_pdf`: that's a Flutter package, and
-`core/` can't import it — see "Working conventions" below), headings by
-font size, lines wrapped across the page width stitched back into
-paragraphs, a warning for scanned pages. The native `libpdfium` is
-downloaded by `pdfium/fetch.sh` and not committed — the same approach as
-`python-build-standalone` in
-[docs/python-sidecar.md](docs/python-sidecar.md); on Android it adds
-≈6.3 MB to the APK, with a detailed measurement in
-[docs/format-coverage.md](docs/format-coverage.md#stage-3-decisions). All
-formats have fixtures, including evil ones (nested lists, a table inside a
-table, merged cells, a zip inside a zip, exceeded limits, a scanned PDF, a
-PDF with no text). Stage 4 — the Python sidecar on desktop:
-`sidecar/build.sh` builds a relocatable CPython + real markitdown (macOS
-x86_64, 242 MB, dependencies pinned by a lock file), `SidecarConverter`
-(priority −1.0, timeout, falls back to the Dart converter on any sidecar
-failure) covers `xls`/`msg` and goes first for `pdf`/`docx`/`xlsx`/`pptx`.
-It's only registered on desktop; it's absent from the APK (measurement —
-[format-coverage.md](docs/format-coverage.md#android-didnt-get-heavier-stage-4)).
-Cross-checking Dart against the sidecar found and fixed four bugs in the
-Dart core; the remaining discrepancies are recorded. **Not verified** (no
-certificate or Xcode; the platform is now secondary): Developer ID
-signing, notarization, embedding the sidecar into an Xcode build, behavior
-under the sandbox of a real `.app`. All of this is in
-[docs/future-development.md](docs/future-development.md).
-
-**Stage 5 is closed** (manually verified by the author on `v0.5.0`:
-"everything works on Windows"; there are no numbers for a large PDF on
-Windows). Author's decisions: item 5 — in the app, the sidecar only goes
-first for `pdf` (up to 50 pages) and `xls`/`msg`, with `docx`/`xlsx`/`pptx`
-going straight to Dart (`SidecarConverter.appFormats`/`appMaxPdfPages`,
-applied in `discover()`; `fromDirectory()` for comparison sees the whole
-manifest; since 0.10.1 PDF goes straight to Dart too, the threshold is
-gone); item 6 — zip packaging is "ship now, decide later" (finalized
-in Stage 7). Done in code: `app/windows/`, `.gitattributes` (LF), the
-`windows` job in `ci.yml`, `pdfium.dll` (`fetch.sh` + `install` in
-`windows/CMakeLists.txt`), locating the sidecar next to the `.exe`,
-grepping `app/windows/` for networking libraries, the sidecar for Windows
-(the `windows-sidecar` job, lock file
-`sidecar/locks/windows-x86_64.txt`, byte-for-byte match with macOS in the
-comparison).
-Runners are pinned: Linux — `ubuntu-24.04` (`ubuntu-latest` became
-Ubuntu 26 on 2026-10-19 — a different Tesseract version from its
-packages); Windows — `windows-2022`: `windows-latest`/`windows-2025` now
-ship with VS 2026, which Flutter 3.32.8 doesn't know about. Implemented
-and verified (`make verify`), but not on macOS or Windows — see below.
-
-**Stage 6 shipped in `v0.6.0`, manual verification (item 4) not checked
-off.** EXIF: `ImageConverter` for PNG, JPEG, GIF, BMP, WebP, TIFF, and
-HEIC, with a homegrown parser (`core/lib/src/conversion/image/`), not the
-`exif` package. Audio: `AudioConverter` — MP3/FLAC/Ogg/WAV/MP4, also a
-homegrown parser (`core/lib/src/conversion/audio/`). OCR: **Tesseract on
-both platforms** (author's decision; ML Kit doesn't know Cyrillic) via
-custom FFI bindings in `core/lib/src/conversion/ocr/` — JPEG/PNG/BMP images
-and scanned PDF pages. Libraries: Android — from the Tesseract4Android AAR
-(`tesseract/fetch.sh`), desktop — `tesseract/build.sh` from source without
-libcurl; the `rus+eng` models are app assets. Audio transcription is
-deferred. All the "why" is in
-[format-coverage.md](docs/format-coverage.md#stage-6-decisions).
-
-**Stage 7 — in progress.** 0.7: there is no longer a file-size limit
-(author's decision) — only archive limits remain in `ConversionLimits`,
-and the total uncompressed size is counted without the top-level file
-itself.
-
-**0.8 — speech recognition** (outside the plan, at the author's request;
-manual verification not checked off): whisper.cpp 1.9.5 on Windows and
-Android via a custom C shim layer `whisper/shim/` (`mdw.h`) and FFI from
-`core/` (`core/lib/src/conversion/speech/`); the Whisper small q8_0 model
-(264 MB, multilingual) and Silero VAD ship as assets (`whisper/fetch.sh`);
-since 0.8.1 — processed in 10-minute chunks as decoding proceeds, with no
-duration limit; built by `whisper/build.sh` (host, `--android` via NDK).
-Not faster-whisper: that needs Python, which doesn't exist on Android. All
-the "why" is in
-[format-coverage.md](docs/format-coverage.md#transcription-decisions-08).
-
-**0.9 — everything markitdown can do** (outside the plan, at the author's
-request to "do everything regular markitdown can do, … internet access is
-fine"). Offline: Dart parsing of `xls` (BIFF8 and BIFF5) and `msg` with a
-homegrown OLE2 reader (`core/lib/src/conversion/ole2/`) — on Android these
-are no longer "unsupported," and on desktop the sidecar still goes first;
-RSS/Atom feeds (ported from `_rss_converter`); OCR for GIF/WebP/TIFF via
-`package:image`. Networking — "link" mode (`core/lib/src/web/`): a page, a
-file via link, Wikipedia, YouTube with subtitles; "Paste link" and
-"Share" a link on Android. Bing and LLM-generated captions are not
-implemented (author's decision). All the "why" is in
-[format-coverage.md](docs/format-coverage.md#09-decisions-xls-msg-rss)
-and [offline-and-privacy.md](docs/offline-and-privacy.md).
-
-**0.10 — merging files into one `.md`** (outside the plan, at the
-author's request): several files or links → a list converted one at a
-time as they're added, reorderable, and joined under `# name` headings
-with `---` between files. A failed file blocks the merge until removed.
-All the "why" is in
-[client-architecture.md](docs/client-architecture.md#merging-files-010).
-
-**0.10.1 — tables in PDF from the Dart core** (outside the plan, at the
-author's request: a PDF over 50 pages or with scans went to Dart and
-lost its tables): a port of markitdown's word-alignment heuristic
-(`core/lib/src/conversion/pdf/pdf_tables.dart`), with PDFium's
-characters brought in line with pdfplumber's words. With that, PDF no
-longer goes to the sidecar in the app (author's decision). All the "why" is in
-[format-coverage.md](docs/format-coverage.md#0101-decisions-pdf-tables).
-
-Many sections in `docs/` are still stubs, and they say so directly. Working
-commands (signing, notarization, building the sidecar) get written down as
-each stage goes, while they're fresh, rather than being reconstructed at
-release time.
+The project ships through GitHub Releases as a Windows ZIP and an
+Android APK. macOS is secondary. See [the README](README.md) for
+current features and [the implementation plan](docs/implementation-plan.md)
+for stage history.
 
 ## Environment constraints
 
@@ -180,7 +50,7 @@ release time.
   around it.
 - **Target platforms are Windows and Android.** Development happens on an
   Intel MacBook Pro (macOS 12.7.6), and Flutter only builds a Windows app
-  on Windows, so Windows is built and tested in CI on `windows-latest`
+  on Windows, so Windows is built and tested in CI on `windows-2022`
   ([Stage 5](docs/implementation-plan.md#stage-5--windows-05)). Manual
   verification ("dropped a file — saw the result") happens on the
   **author's own Windows machine**, using the CI artifact; it's fine and
@@ -258,7 +128,7 @@ release time.
   "source + expected Markdown" pair in `core/test/fixtures/` is mandatory:
   the project has **two implementations** (the Dart core and the
   sidecar), and the only way to notice them diverging is to run both
-  against the same set. A discrepancy is either fixed or deliberately
+  against the same set. Discrepancies in shared formats are fixed or
   recorded in
   [docs/format-coverage.md](docs/format-coverage.md).
 - **Fixtures need to be evil, not pretty.** A zip inside a zip, a `.docx`
@@ -362,7 +232,7 @@ properties of the formats. The list grows as work continues.
   in `core/build/sidecar-compare/`. Any new fixture for
   `pdf`/`docx`/`xlsx`/`pptx` must pass this comparison — a discrepancy
   gets fixed or recorded in
-  [docs/format-coverage.md](docs/format-coverage.md#reference-comparison-stage-4).
+  [docs/format-coverage.md](docs/format-coverage.md#reconciliation-with-the-reference-stage-4).
   Integration tests with the real sidecar
   (`core/test/sidecar_integration_test.dart`) are skipped without
   `MARKITDOWN_SIDECAR_DIR`; run manually with that plus

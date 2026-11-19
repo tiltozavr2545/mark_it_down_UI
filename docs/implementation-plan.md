@@ -19,25 +19,26 @@ as work proceeds. What landed in which version — see
 - [x] Stage 4 — Python sidecar on desktop (0.4)
 - [x] Stage 5 — Windows (0.5)
 - [ ] Stage 6 — Images and audio (0.6) — released in `v0.6.0`: EXIF, OCR, and audio are done; manual verification (item 4) isn't checked off
-- [ ] Stage 7 — Polish and release (1.0) — in progress: 0.7 removed the file-size limit
+- [ ] Stage 7 — Polish and release (1.0) — local file-size limit removed,
+  merge mode shipped, GitHub Releases packaging in place
 - [ ] Speech recognition (0.8) — outside the original plan, requested by the author: done, manual verification (item 6) isn't checked off
 
 The plan's target platforms are **Windows and Android**. After Stage 4 was
 closed, the author said: "what I actually need isn't really the Mac version,
 it's Windows and Android." Before that, the plan was written with macOS
-first — hence the macOS signing and notarization work in Stages 0–4; it's
-done, but it's no longer a priority.
+first. Stage 4 verified ad-hoc signing of the standalone macOS sidecar.
+Developer ID signing, notarization and embedding remain open.
 
 **macOS is a target platform, but a secondary one.** Code for it isn't
 removed, and gets built later on a friend's Mac, where Xcode can be
 installed; Xcode.app won't install on the author's machine (Intel Mac, macOS
-12.7.6, see "Environment limitations" in [../AGENTS.md](../AGENTS.md)).
+12.7.6, see "Environment constraints" in [../AGENTS.md](../AGENTS.md)).
 Investing in macOS specifics — notarization, embedding the sidecar into the
 Xcode build — isn't needed without a separate request.
 
 **Windows isn't built here.** Development happens on a Mac, and Flutter only
 builds Windows on Windows. So Windows builds and tests run in CI on the
-GitHub runner `windows-latest`, while manual verification ("dropped a
+GitHub runner `windows-2022`, while manual verification ("dropped a
 file — saw the result") happens on the author's own Windows machine, using
 the CI artifact. Android is verified as before: APK and the author's phone,
 no emulator is run.
@@ -69,7 +70,7 @@ detected type. Stage zero is about infrastructure, not conversion.
 5. File intake: `file_picker` + `desktop_drop` on macOS, `intent-filter` +
    `receive_sharing_intent` on Android. All inputs funnel into a single
    `accept(source)` — see
-   [client-architecture.md](client-architecture.md#file-intake-four-inputs-one-entry-point).
+     [client-architecture.md](client-architecture.md#file-intake).
 6. Type detection: magic bytes + refinement within the zip family + the
    extension as a hint. With tests for "evil" files from the start — a file
    with no extension, a `.docx` named `.pdf`, zero length.
@@ -216,7 +217,7 @@ large files it's two orders of magnitude slower than Dart (a 300-page PDF —
 **Goal:** the same app on the second target desktop — Windows, with the
 same pipeline and sidecar, built and verified without a single Windows
 machine on the developer's side. You can't build the Windows version of
-Flutter on a Mac, so "built" here means "built in CI on `windows-latest`",
+Flutter on a Mac, so "built" here means "built in CI on `windows-2022`",
 and "verified" means "run through tests on the runner and poked by hand on
 the author's Windows machine, using the artifact from CI". The repository
 is [tiltozavr2545/mark_it_down_UI](https://github.com/tiltozavr2545/mark_it_down_UI),
@@ -258,7 +259,7 @@ artifact, not just at the end.
    `.gitattributes`: `* text=auto eol=lf`, fixtures marked `-text`
    (byte-for-byte, no conversion).
 
-2. **A CI job on `windows-latest`.** The equivalent of `make verify`:
+2. **A CI job on `windows-2022`.** The equivalent of `make verify`:
    `pub get`, `dart format --set-exit-if-changed`, `flutter analyze`,
    `flutter test` in `app/`, `dart test` in `core/`; then
    `flutter build windows --release` and `actions/upload-artifact` with
@@ -465,14 +466,12 @@ artifact, not just at the end.
 **Done when:** the CI artifact is downloaded onto the author's Windows
 machine, and `docx`, `pdf`, and `.xls` from it turn into Markdown that gets
 pasted into a chat with one button; the decisions for items 5 and 6 are
-made and recorded; the `windows-latest` job is green on every PR.
+made and recorded. The `windows` job verifies subsequent PRs.
 
 **Status: closed.** Manual verification (item 8) — the author, 2026-10-11,
 on release `v0.5.0`: "everything works on Windows." Results for individual
-list items weren't recorded; in particular, there are no numbers for a
-large PDF and a large `xlsx` on Windows — the 50-page threshold (item 5)
-still rests on measurements taken on a Mac (see
-[future-development.md](future-development.md#sidecar-performance-on-large-files)).
+list items were not recorded. The 50-page rule introduced in item 5
+was retired in 0.10.1 when the Dart converter gained PDF tables.
 
 ## Stage 6 — Images and Audio (0.6)
 
@@ -552,20 +551,15 @@ build for Windows and Android.
 
 1. Keyboard shortcuts throughout, Tab-based focus, fully usable without a
    mouse.
-2. Batch conversion: multiple files → either a single Markdown file with
-   separators, or a folder of `.md` files.
+2. Batch conversion: merging several inputs into one Markdown file shipped
+   in 0.10. Export to a folder of individual Markdown files is open.
 3. Settings: language, theme, disabling history. ~~Limits~~ — **the
    author's decision (0.7):** there's no file-size limit at all, so
    there's nothing to configure; archive limits (zip-bomb protection)
    aren't a setting.
 4. Linux — if there's ever something to build it on (Windows will already
    be past Stage 5 by this point).
-5. Release — GitHub Releases only (**the author's decision, 14.10.2026:**
-   not publishing to Google Play): a Windows build in the format chosen
-   in Stage 5 (item 6), and an APK. A permanent APK signing key (right now
-   it's the runner's debug key, and a new version won't install over an
-   old one). The release notes and README state plainly what's going on
-   with the clipboard (see [offline-and-privacy.md](offline-and-privacy.md)).
-   A DMG and macOS notarization — only if a Mac with Xcode shows up by
-   then, along with a separate request.
+5. GitHub Releases distributes a Windows ZIP and Android arm64 APK.
+   Permanent signing remains open. See the
+   [release checklist](operations.md#release) for the current workflow.
 6. A README with screenshots and an honest bundle size per platform.

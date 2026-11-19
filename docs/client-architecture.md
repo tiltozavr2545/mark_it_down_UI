@@ -15,19 +15,14 @@ get recorded here, otherwise the document starts lying silently.
 ## Default technical decisions
 
 - **State management:** Riverpod
-- **Navigation:** no router for now. In Stage 1 the entire flow (empty →
-  file accepted → conversion → preview/error) fits into a single
-  `HomeScreen` window that switches widgets based on the `FileIntakePhase`
-  state — exactly the caveat "if this gets excessive, switch to Navigator,
-  and note it here" that has stood here from the start. `go_router` will be
-  needed once real deep links show up ("open with" on Windows and macOS, a
-  settings screen) — it'll be wired in then.
+- **Navigation:** `HomeScreen` displays the current `FileIntakePhase` or
+  the merge list. File intake and confirmation dialogs use the same screen.
 - **Zip parsing:** `archive` · **XML:** `xml` · **CSV:** `csv` ·
   **HTML → Markdown:** `html` + `html2md`
 - **Clipboard:** `super_clipboard` (several representations are needed at
   once; `Clipboard.setData` only supports `text/plain`)
 - **File intake:** `file_picker` (dialog), `desktop_drop` (drag & drop),
-  `receive_sharing_intent` (the system "Share" on Android/iOS)
+  `receive_sharing_intent` (the Android "Share" flow)
 - **Linting/formatting:** `flutter_lints` + `dart format`, in CI from the
   first commit
 - **Localization:** `flutter_localizations` + ARB (`en`/`ru`), generated via
@@ -62,8 +57,8 @@ indicator that's supposed to be showing that something's happening.
 
 Three consequences follow from this, and they're easy to forget:
 
-- **Only bytes and `StreamInfo` travel into the isolate.** No Riverpod
-  providers, no `BuildContext`, no objects holding platform handles inside.
+- **The isolate receives the bytes, `StreamInfo` and optional model
+  settings.** The UI and its Riverpod providers stay on the main isolate.
 - **Platform plugins don't work from an isolate.** So everything native in
   the pipeline goes through FFI rather than plugins: PDFium (Stage 3) and
   Tesseract for OCR (Stage 6) are opened directly in the isolate
@@ -89,32 +84,29 @@ Three consequences follow from this, and they're easy to forget:
   for minutes inside native `whisper_full` and doesn't read messages anyway.
   The cancellation flag and progress live in native memory
   (`TranscriptionControl`, two `int32`s): the main isolate writes the flag
-  and reads the percentage every half second, and whisper.cpp checks the
-  flag itself — before every 30-second window. The memory is only freed
+  and polls the percentage, and native code checks the flag while
+  processing. The memory is only freed
   after the isolate ends. A new file accepted during conversion (drop,
   "Share") stops recognition of the old one, and the old result is
   discarded — tracked by intake number in `FileIntakeController`. For
   archives this approach only works if the flag check happens in Dart code
   between files.
 
-## File intake: four inputs, one entry point
+## File intake
 
-The four ways of handing over a file (dialog, drag & drop, "Share",
-clipboard) all collapse into a **single** call to
-`ConversionController.accept(source)`. The sources only differ in how the
-bytes and name are obtained; branching beyond that point is forbidden —
-otherwise the four paths start handling errors differently, and the
-divergence gets discovered on the fourth one.
+The file picker, desktop drop target and Android sharing provide
+`PickedFile` values. `FileIntakeController.accept` handles a single file.
+Multiple files go to `MergeController`. The clipboard is read when the
+user opens "Paste link" to prefill the dialog.
 
-A link (0.9, "Paste link" and sharing a link on Android) is not a fifth
-path but a preliminary step: `FileIntakeController.acceptUrl` downloads
+A link from "Paste link" or Android sharing goes through
+`FileIntakeController.acceptUrl`, which downloads
 whatever it points to (`downloadUrl` from the core), and hands the bytes to
 that same `accept` — with the address in `PickedFile.url`. A download
 failure is a `NetworkFailure`, a fourth kind of failure alongside the three
 file-based ones.
 
-Neither is a merge (0.10) a fifth path. The conversion itself —
-type detection, speech-recognition setup and polling, the isolate — lives
+Type detection, speech-recognition setup and polling, and the isolate live
 in `convertPicked` (`app/lib/src/conversion/convert_picked.dart`), and both
 `FileIntakeController.accept` and the merge list call it, so a file in the
 list is handled exactly like a file alone.
@@ -150,23 +142,14 @@ as-is. Decisions, all the author's:
 Platform-specific details that have to be set up by hand in the native
 projects:
 
-- **Android:** an `intent-filter` with `ACTION_SEND` and `ACTION_VIEW` for
-  the relevant MIME types — this is what adds the app to the system
-  "Share" sheet. Without `android:mimeType="*/*"` in the list, a file
-  without an extension won't get through.
-- **iOS:** `CFBundleDocumentTypes` + Share Extension. The Share Extension
-  is **a separate process**, with its own memory limit (much lower than
-  the app's); conversion can't happen inside it, it only hands the file off
-  to the main app.
-- **Windows:** the dialog, drag & drop, and clipboard paste all work
-  without native setup (there's no system "Share" on Windows); "Open with"
-  and file-extension association are a job for the installer or MSIX; with
-  the current zip packaging (Stage 5, item 6) they don't exist — the
-  packaging decision is Stage 7. The same path would arrive into
-  `accept()`. Paths with Cyrillic characters and spaces are a mandatory
-  item for manual testing.
-- **macOS:** `CFBundleDocumentTypes` for "Open with," plus
-  `NSPasteboardTypeFileURL` for pasting a file from Finder.
+- **Android** declares `ACTION_SEND`, `ACTION_SEND_MULTIPLE` and
+  `ACTION_VIEW` for content URIs. The `*/*` filters let files reach the
+  app when their extension or MIME type is unknown.
+- **Windows** accepts the file picker and drag-and-drop. The ZIP ships
+  without file associations. Paths with Cyrillic characters and spaces
+  are covered by the manual test checklist.
+- **iOS and macOS** document associations and a possible iOS Share
+  Extension are deferred. See [Future development](future-development.md).
 
 ## Clipboard
 
@@ -178,8 +161,8 @@ A behavior worth deciding up front rather than when it shows up in
 reviews: **the app never copies anything on its own**. Auto-copying when
 conversion finishes looks convenient right up until the first time it wipes
 out something the person was carrying in the clipboard. Copying happens
-only on an explicit action (button, `Cmd/Ctrl+C`, `Enter` on the preview
-screen).
+only on an explicit action (the Copy button or `Cmd/Ctrl+C` while the
+preview has focus).
 
 ## Large files
 
@@ -198,10 +181,8 @@ especially close to home on mobile.
   the total). The latter is the only defense against a zip bomb, and the
   **unpacked** size has to be checked as it goes, not the size claimed in
   the header: the header can't be trusted.
-- A result that doesn't fit on the preview screen isn't rendered in full:
-  the text field gets a slice, while the full text goes into the clipboard.
-  Otherwise `SelectableText` on a ten-megabyte Markdown document locks up
-  the frame solid.
+- The preview shows at most 20,000 characters so large results remain
+  responsive. Copy and Save use the full Markdown.
 
 ## State and privacy
 
@@ -211,15 +192,15 @@ and a local database holding copies of every file ever processed is the
 same leak, just slower. A "recent files" history, if it ever gets added,
 stores paths and names, not content, and it will be possible to turn off.
 
-Temporary files (for the sidecar, for clipboard pasting) live in the
-system's temp folder and are deleted right after conversion, including on
-the error path — `try/finally`, not "we'll delete it at the end."
+The sidecar removes temporary input it creates, including on failure.
+Android's share plugin can provide paths from its temporary cache. OCR
+and speech models copied out of the APK are kept in application support
+so later conversions can reuse them.
 
 ## Theme and localization
 
-Light/dark follows the system, with the option to pin it explicitly — the
-same way it's done in Amicus, and for the same reason: it's free and it's
-the first thing people notice. Locales are `en` (default) and `ru`; ARB
+The theme and language follow the system. The supported locales are
+`en` (default) and `ru`. ARB
 files are edited **as text**: rewriting them through `json.dump`/an
 autoformatter eats the blank lines that divide the file into semantic
 groups.

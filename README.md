@@ -17,8 +17,8 @@ on the user's own machine:
    **link** — with the "Paste link" button (it will fill in the link from
    the clipboard) or by sharing a link from YouTube or a browser (Android).
 2. **View the result** — raw Markdown on screen, with warnings alongside if
-   something in the file couldn't be carried over (a scan with no text,
-   merged table cells, a long PDF, and so on).
+   something in the file couldn't be carried over (for example, unreadable
+   text on a scan or merged spreadsheet cells represented as HTML).
 3. **Take it away** — "Copy" puts the text on the clipboard, "Save as .md"
    writes a file (UTF-8 without BOM). Nothing is put on the clipboard
    automatically — only on button press, so as not to overwrite whatever was
@@ -55,8 +55,8 @@ everywhere) and real markitdown, bundled together with Python in a
 The project proceeds in stages ([plan](docs/implementation-plan.md));
 Stages 0–5 are closed, Stage 6 (images, audio, OCR) has shipped, and
 **Stage 7 — polish** is in progress. 0.8 added offline speech recognition.
-0.9 added "link" mode, 0.10 — merging several files into one `.md`.
-Version — `0.10.0`.
+0.9 added link conversion, 0.10 added merging, and 0.10.1 added PDF
+tables to the Dart converter. The current source version is `0.10.2+15`.
 
 | platform | status |
 |---|---|
@@ -78,7 +78,7 @@ Why that is and what to do about it — [docs/future-development.md](docs/future
 | `epub`, `ipynb`, `zip` (recursive, with zip-bomb protection) | ✅ | ✅ | Dart core |
 | `pdf` with text | ✅ with tables | ✅ with tables | Dart core via PDFium; tables found the same way as in markitdown |
 | scanned `pdf` | ✅ | ✅ | OCR (Tesseract, Russian and English), up to 20 scanned pages |
-| `xls` (Excel 95–2003), `msg` (Outlook) | ✅ | ✅ | on Windows — sidecar, falling back to the Dart core on failure and on Android |
+| `xls` (Excel 95–2003), `msg` (Outlook) | ✅ | ✅ | Windows tries the sidecar first and falls back to Dart. Android uses Dart directly. |
 | images: JPEG, PNG, BMP, GIF, WebP, TIFF | ✅ | ✅ | EXIF metadata + recognized text (OCR) |
 | images: HEIC | ✅ | ✅ | metadata only, no OCR |
 | audio: MP3, FLAC, Ogg/Opus, WAV, M4A; video MP4/MOV | ✅ | ✅ | duration, tags, lyrics + **speech transcription** (whisper.cpp, small model: Russian, English, Italian and ~95 other languages; no duration limit) |
@@ -88,8 +88,9 @@ Why that is and what to do about it — [docs/future-development.md](docs/future
 | **via link:** YouTube video | ✅ | ✅ | title, views, keywords, description, and subtitles (manual ones in the video's language are preferred over automatic ones) |
 | Bing search, LLM-generated image captions, Azure | ❌ | ❌ | not implemented by design: fragile parsing of someone else's search results; paid clouds the document would have to be sent to |
 
-There is no file-size limit. Archives have zip-bomb protection: up to 1 GB
-of total uncompressed size, up to 2000 files, and up to 8 levels of nesting.
+Local files have no configured size limit. Link downloads are capped at
+1 GiB. Archives have limits of 1 GiB total uncompressed size, 2000 files
+and 8 levels of nesting.
 What's decided for each format and where the two implementations are known
 to diverge is in [docs/format-coverage.md](docs/format-coverage.md).
 
@@ -113,8 +114,8 @@ page: a zip for Windows and an APK for Android.
    **"More info" → "Run anyway"**. That's because the build isn't signed
    (there's no certificate yet), not because anything is wrong with it.
 
-The first `xls`/`msg`/`pdf` conversion may take a few seconds — Defender
-scans Python on first run. Speech recognition takes minutes on a long
+The first `xls` or `msg` conversion may take a few seconds while Defender
+scans Python. Speech recognition takes minutes on a long
 recording: a percentage is shown, and it can be stopped at any time. Works
 on any 64-bit processor — AVX2/AVX-512 code paths only turn on if the
 processor supports them.
@@ -132,10 +133,9 @@ A build from any commit (not just a release) is available as the
    recent years). The APK weighs ≈300 MB — almost all of that is the
    speech-recognition model; on the first audio file it's copied to disk
    once (another ≈265 MB of space needed).
-3. If the app was already installed from a build that isn't this release,
-   uninstall it first — builds are currently signed with different debug
-   keys and can't be installed over one another (there's no proper signing
-   key yet — that's Stage 7).
+3. An in-place update requires the same signing key. The current workflow
+   uses debug keys, so a signature mismatch requires uninstalling the
+   previous build before installing the new one.
 
 To build the APK yourself, see "Development" below.
 
@@ -167,10 +167,9 @@ cd mark_it_down_UI
 make verify
 ```
 
-`make verify` runs the same thing CI does: `pub get`, a formatting check,
-`flutter analyze`, and the tests for both the app and the core. Along the
-way it downloads the PDFium library (`pdfium/fetch.sh`, ≈4 MB) and the OCR
-models (`tesseract/fetch.sh`) — these aren't committed to the repository.
+`make verify` runs dependency resolution, formatting, static analysis
+and tests for the app and core. It fetches the pinned PDFium libraries,
+OCR models and Android OCR libraries into local build directories.
 OCR and speech-recognition tests are skipped without `make tesseract` /
 `make whisper` (see below). A green `make verify` means the environment is
 set up correctly.
@@ -178,31 +177,20 @@ set up correctly.
 ### Running and building
 
 ```bash
-# Android: phone connected over USB
-cd app && flutter run                      # debug run
-cd app && flutter build apk --release      # APK (first run make fetch-pdfium
-                                           # fetch-tesseract; speech
-                                           # recognition — see below)
-
-# macOS (secondary, needs full Xcode)
-cd app && flutter run -d macos
+# From the repository root
+make fetch-pdfium fetch-tesseract
+./whisper/build.sh --android
+./whisper/fetch.sh
+(cd app && flutter build apk --release --target-platform android-arm64)
 ```
 
-**Windows can't be built locally** — Flutter only builds a Windows app on
-Windows, while development happens on a Mac. So the Windows build and tests
-run in CI on every push: the `windows` job runs the checks plus
-`flutter build windows`, and the `windows-sidecar` job builds the Python
-sidecar and cross-checks it against the Dart core. The result is the
-`markitdown_ui-windows-x64` artifact (see "How to run it"). On a Windows
-machine it can also be built by hand, in Git Bash: `./pdfium/fetch.sh`,
-`./tesseract/build.sh && ./tesseract/fetch.sh`, `./whisper/build.sh &&
-./whisper/fetch.sh` (without the OCR and speech-recognition DLLs, CMake
-will stop with a clear error), then `cd app && flutter build windows
---release`; it needs Visual Studio 2022 — Flutter 3.32.8 doesn't know about
-2026.
+For Android development, connect a physical phone over USB and run
+`flutter run` from `app/`. The macOS app requires full Xcode.
 
-The Android emulator doesn't run on the author's machine (too weak) —
-everything is verified on a real phone.
+Windows builds run on the `windows-2022` CI runner. The `windows-sidecar`
+job builds the Python bundle and compares its output with Dart. See
+[Operations](docs/operations.md#windows) for the full Git Bash recipe,
+including Visual Studio 2022 and native libraries.
 
 ### OCR and speech recognition
 
@@ -212,9 +200,9 @@ make whisper                   # whisper.cpp + models (265 MB), ≈10 minutes
 ./whisper/build.sh --android   # speech-recognition .so into jniLibs (NDK)
 ```
 
-Without these, the app still builds, but OCR and speech recognition in it
-are honestly reported as "unavailable," and the tests for them are
-skipped. How this is built and why —
+The host builds enable OCR and speech tests. Android also needs the
+native libraries and model assets for those features. Windows requires
+the native libraries at build time. See
 [docs/format-coverage.md](docs/format-coverage.md#transcription-decisions-08).
 
 ### Sidecar (real markitdown, desktop only)
@@ -224,12 +212,11 @@ make sidecar            # → sidecar/dist/<host>/, downloads ~hundreds of MB
 make compare-sidecar    # cross-checks the Dart core against markitdown on all fixtures
 ```
 
-Without the sidecar built, the app runs on the Dart core alone — everything
-except `xls` and `msg`. It's not part of `make verify` precisely because
-it's heavy. The versions of all Python dependencies are pinned by lock
-files `sidecar/locks/<host>.txt` (sha256 of each package); updating them is
-a deliberate act, via `make sidecar-lock`. How it's built, the protocol, and
-the sizes — [docs/python-sidecar.md](docs/python-sidecar.md).
+Dart handles `xls` and `msg` when the sidecar is absent. The sidecar
+build is separate from `make verify`. Its Python dependencies are pinned
+with SHA-256 hashes in `sidecar/locks/<host>.txt`. See
+[Python sidecar](docs/python-sidecar.md#lock-file-reproducibility) for the
+platform-specific lock and verification commands.
 
 ### Rules for working in this repository
 
@@ -252,9 +239,8 @@ Briefly (in full — in [AGENTS.md](AGENTS.md)):
 
 ```
 file ─► type detection ─► converter registry ─► Markdown + warnings
-        (by magic bytes,   (by priority: sidecar
-         not extension)     first, then Dart core,
-                             then generic text ones)
+        (signature first) (specific converter first, generic text last;
+                           desktop sidecar preferred for xls/msg)
 ```
 
 - **`core/`** — the conversion core: a plain Dart package without Flutter.
@@ -276,10 +262,9 @@ file ─► type detection ─► converter registry ─► Markdown + warnings
   visible in the warnings. The sidecar can also handle
   `pdf`/`docx`/`xlsx`/`pptx`, but the app never routes to it there: the Dart core
   is no worse, and dozens of times faster.
-- **Errors** — the user sees one of three clear cases ("format not
-  supported," "file is corrupted," "limit exceeded"), never raw exception
-  text. A partial result is better than a failure: a PDF where half the
-  pages are scans still returns the text from the rest.
+- **Errors** — unsupported format, damaged file, exceeded limit and
+  download failure each have their own message. A PDF can return text
+  from readable pages together with warnings about the other pages.
 
 Details — [docs/conversion-pipeline.md](docs/conversion-pipeline.md) and
 [docs/client-architecture.md](docs/client-architecture.md).

@@ -124,9 +124,9 @@ if [[ "${HOST}" == windows ]]; then
   # On macOS and Linux zlib is a system library; on Windows there isn't
   # one, so we link it in statically.
   unpack zlib "${ZLIB_URL}" "${ZLIB_SHA256}"
-  build zlib -DZLIB_BUILD_EXAMPLES=OFF
+  build zlib -DZLIB_BUILD_TESTING=OFF -DZLIB_BUILD_SHARED=OFF
   ZLIB_ARGS=(
-    "-DZLIB_LIBRARY=$(static_lib zs.lib zlibstatic.lib)"
+    "-DZLIB_LIBRARY=$(static_lib libzs.lib)"
     "-DZLIB_INCLUDE_DIR=${INCLUDE}"
   )
 fi

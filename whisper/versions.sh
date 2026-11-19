@@ -34,9 +34,9 @@ WHISPER_SHA256="ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
 
 # Audio decoders (shim/mdw_decode.c): WAV, MP3, FLAC and Ogg Vorbis go via
 # miniaudio (dr_wav/dr_mp3/dr_flac + stb_vorbis), Ogg Opus via libopus.
-MINIAUDIO_VERSION="0.11.25"
+MINIAUDIO_VERSION="0.11.26"
 MINIAUDIO_URL="https://github.com/mackron/miniaudio/archive/refs/tags/${MINIAUDIO_VERSION}.tar.gz"
-MINIAUDIO_SHA256="b900edcffe979816e2560a0580b9b1216d674b4f17fbadeca8f777a7f8ab0274"
+MINIAUDIO_SHA256="838ba55a21c9142adf7b76bdc4351e5cd8b7ae128f46b25ec25f94ae9969c600"
 
 OPUS_VERSION="1.6.1"
 OPUS_URL="https://downloads.xiph.org/releases/opus/opus-${OPUS_VERSION}.tar.gz"

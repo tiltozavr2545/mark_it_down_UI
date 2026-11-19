@@ -22,6 +22,13 @@ monotonically. Bumped in every PR, see "Working conventions" in
 
 ---
 
+## 0.10.2 — links and conversion maintenance
+
+- **Links with parentheses open correctly.** Paste or share a Wikipedia
+  address with a title such as `Dart_(programming_language)`.
+- **Updated offline conversion components.** The update covers PDFs,
+  images, archives, speech decoding and Windows Excel and Outlook files.
+
 ## 0.10.1 — tables in large PDFs
 
 - **Tables in PDFs are kept on every device.** A table in a PDF now

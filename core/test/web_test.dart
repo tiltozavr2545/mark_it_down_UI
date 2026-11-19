@@ -37,6 +37,14 @@ void main() {
       );
     });
 
+    test('keeps balanced brackets in a standalone or shared URL', () {
+      const wikipedia =
+          'https://en.wikipedia.org/wiki/Dart_(programming_language)';
+      expect(parseUserUrl(wikipedia).toString(), wikipedia);
+      expect(parseUserUrl('See ($wikipedia).').toString(), wikipedia);
+      expect(parseUserUrl('See [http://[::1]].').toString(), 'http://[::1]');
+    });
+
     test('not a link — null', () {
       expect(parseUserUrl('просто текст'), isNull);
       expect(parseUserUrl(''), isNull);

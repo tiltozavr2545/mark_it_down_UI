@@ -36,7 +36,7 @@ still the target state.
 | `msg` (Outlook) | `olefile` | our own CFB parsing, output character-for-character matching markitdown | goes first on desktop | all | ✅ Stage 4 (sidecar), 0.9 (Dart); fixtures are synthetic |
 | `zip` | `_zip_converter` | `archive` + recursion through the registry | — | all | ✅ Stage 2 |
 | images: EXIF | `_exiftool` (external binary) | our own TIFF/EXIF parsing, size from the header; PNG, JPEG, GIF, BMP, WebP, TIFF, HEIC | — (exiftool is not bundled in the sidecar) | all | ✅ Stage 6 |
-| images and scanned PDFs: OCR | via external OCR / LLM | Tesseract 5.5.1 via FFI, `rus+eng` (JPEG, PNG, BMP; GIF, WebP, TIFF — first frame via `package:image`; scanned PDF pages — rendered by PDFium) | — | all | ✅ Stage 6, 0.9 |
+| images and scanned PDFs: OCR | via external OCR / LLM | Tesseract via FFI, `rus+eng` (JPEG, PNG, BMP; GIF, WebP, TIFF — first frame via `package:image`; scanned PDF pages — rendered by PDFium) | — | all | ✅ Stage 6, 0.9 |
 | images: LLM caption | `_llm_caption` → OpenAI | — | — | — | ❌ network |
 | audio and video: metadata | `_audio_converter` (exiftool) | our own parsing: ID3v1/v2 + MPEG frames, FLAC, Ogg Vorbis/Opus, WAV, MP4/M4A/MOV/3GP | — | all | ✅ Stage 6 |
 | audio: transcription | `SpeechRecognition` → **Google web API** | whisper.cpp 1.9.5 via FFI, small model (q8_0), multilingual; Silero VAD | — | all | ✅ 0.8 ([decisions](#transcription-decisions-08)) |
@@ -207,7 +207,8 @@ done, see [0.9 decisions](#09-decisions-links) and
   encodings, or the RTF body of real-world messages. The
   `core/test/sidecar_integration_test.dart` test runs the real sidecar
   through the registry and is **skipped** if `MARKITDOWN_SIDECAR_DIR` isn't
-  set (it isn't in CI). Core detection recognizes both file types by
+  set. The Windows sidecar job sets it for its integration run. Core
+  detection recognizes both file types by
   content, without relying on the extension: `.msg` is recognized by
   `__properties_version1.0`/`__substg1.0_*`. An empty
   `__recip_version1.0_#00000000` in the sample (which `olefile` doesn't
@@ -263,8 +264,9 @@ scripts and `dist/` that Flutter doesn't see unless they're named in
 ### Reconciliation with the reference (Stage 4)
 
 Running every fixture that the sidecar handles through both the Dart core
-and the real markitdown 0.1.8: **`make compare-sidecar`** (needs `make
-sidecar`; not part of `make verify` — there's no sidecar in CI). The tool is
+and the pinned markitdown version is done with **`make compare-sidecar`**.
+First build the sidecar with `make sidecar`. The Windows sidecar job in CI
+runs the comparison as well. The tool is
 `core/tool/compare_sidecar.dart`; the report (a summary, `*.dart.md`,
 `*.sidecar.md`, a line-by-line `*.diff`) lands in
 `core/build/sidecar-compare/`, outside git. Only the shape is normalized:
@@ -485,7 +487,7 @@ magnitude as on Mac.
 - **Where the libraries come from.** Android — the `.so` from the
   Tesseract4Android 4.9.0 AAR (Tesseract 5.5.1, exports the C API; ≈7.5 MB
   on arm64; LOAD segments aligned to 16 KB, as required by Android 15).
-  Desktop — `tesseract/build.sh` built from source, same version: the
+  Desktop builds Tesseract 5.5.4 from source with `tesseract/build.sh`. The
   vcpkg port and the UB Mannheim installer both pull in **libcurl**
   (Tesseract can fetch an image by URL), and we don't put a networking
   library into a no-network product. The build uses `DISABLE_CURL`,
@@ -844,13 +846,19 @@ internet connection"; the answer to "how do we let networking in" was
   the description is still returned.
 - **Wikipedia — `#mw-content-text` under the article title**, same as
   markitdown, plus removal of the "[edit | edit source]" buttons.
+- **Pasted and shared links preserve paired parentheses and brackets.**
+  Trailing punctuation and unmatched closing brackets from surrounding
+  text are removed. A Wikipedia title suffix such as `_(programming_language)`
+  stays in the URL.
 - **Download limit — 1 GB** (same as for an unpacked archive), timeout —
   30 s for the connection and for each subsequent chunk of the response:
   otherwise an infinite stream would eat up memory.
 - **Verified live** (2026-10-15, from the developer's machine): YouTube
   with English and with Russian automatic captions, `ru.wikipedia.org`, a
-  PDF via a direct link, a Habr RSS feed, `example.com`, an arXiv page. In
-  tests, the network is a local server plus a stubbed `WebFetcher`
+  PDF via a direct link, a Habr RSS feed, `example.com`, an arXiv page.
+  The 0.10.2 check covered a Wikipedia title with parentheses, YouTube
+  with English captions, and `example.com`. Automated tests use a local
+  server and a stubbed `WebFetcher`
   (`web_test.dart`).
 
 ## Open items
@@ -894,7 +902,7 @@ Resolved in 0.8 (see "Transcription decisions" above). Still open:
 ## Reference files
 
 Every format declared supported must have a "source + expected Markdown"
-pair under `test/fixtures/`. This isn't a ritual: we have **two
+pair under `core/test/fixtures/`. This isn't a ritual: we have **two
 implementations** (the Dart core and the sidecar), and the only way to
 notice them diverging is to run both against the same set. The rule and the
 process are in "Working conventions" in [../AGENTS.md](../AGENTS.md).
