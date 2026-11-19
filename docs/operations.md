@@ -224,7 +224,7 @@ is unsigned, so SmartScreen may display a warning on first run.
 
 The Release workflow is configured to build two packages targeting
 macOS 12 Monterey and later. It uses `macos-15-intel` for `x64` and
-`macos-15` for `arm64`. A manual **Actions → Release → Run workflow**
+`macos-26` for `arm64`. A manual **Actions → Release → Run workflow**
 build uploads `markitdown_ui-macos-x64` and `markitdown_ui-macos-arm64` as
 artifacts. A successful tag build attaches the matching
 `markitdown_ui-X.Y.Z-macos-x64.dmg` and
