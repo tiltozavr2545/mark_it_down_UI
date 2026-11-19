@@ -99,9 +99,9 @@ sidecar's self-check.
 ### macOS release verification
 
 The [Release workflow](operations.md#macos) is configured for Intel and
-Apple Silicon DMGs. Local packaging passed with a test bundle on Monterey.
-The first full Xcode builds, Gatekeeper launch, native conversion and
-Markdown export are still pending on the automated artifacts. See the
+Apple Silicon DMGs. Both packages built successfully in GitHub Actions.
+Manual checks of Gatekeeper launch, native conversion and Markdown export
+are still pending on the automated artifacts. See the
 [macOS smoke checks](operations.md#macos-smoke-checks).
 
 AAC transcription for M4A and MP4 needs a macOS platform decoder. The

@@ -287,9 +287,9 @@ directory because access granted by a file picker belongs to the app.
 
 The Intel host passed the conversion tests with the bundled PDFium
 and Python components. A test app with the native libraries and models
-also passed signing and DMG checksum checks on macOS 12.7.6. The full
-Flutter builds and the following checks on the automated artifacts are
-pending.
+also passed signing and DMG checksum checks on macOS 12.7.6. The 0.11.0
+Release workflow built and verified both DMGs. The following manual
+checks on the automated artifacts are pending.
 
 1. Install the matching DMG on an Intel Mac running Monterey and on an
    Apple Silicon Mac running a current version of macOS. Confirm the

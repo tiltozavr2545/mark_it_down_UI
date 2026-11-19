@@ -74,7 +74,7 @@ The redesigned workspace and batch export are documented in the
 |---|---|
 | **Windows** | works — verified on the author's machine (since 0.5); built in CI (GitHub Actions) with the sidecar. Speech recognition in 0.8 — verified in CI, pending manual check |
 | **Android** | works, verified on the author's phone (APK). Speech recognition in 0.8 — APK builds in CI, pending manual check on the phone |
-| macOS | Intel and Apple Silicon DMGs were published for 0.10.1. The 0.11.0 workflow targets macOS 12 Monterey and later on both architectures. The first automated builds and launch checks are pending. |
+| macOS | Intel and Apple Silicon DMGs target macOS 12 Monterey and later. Both 0.11.0 packages passed the automated build and packaging checks. Manual launch checks are pending. |
 | iOS | deferred: the author's machine cannot produce a build the App Store will accept |
 | Linux | deferred: no requests for it so far |
 

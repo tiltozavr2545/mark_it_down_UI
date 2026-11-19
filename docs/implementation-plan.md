@@ -31,8 +31,8 @@ author's Windows machine. Android is checked on the author's phone.
 The 0.10.1 release included macOS DMGs for Intel and Apple Silicon.
 Starting with the 0.11.0 recipe, those builds are configured in GitHub
 Actions. Both target macOS 12 Monterey and later. Packaging embeds the
-sidecar and uses ad-hoc signing. The first automated builds and manual
-launch checks are tracked in
+sidecar and uses ad-hoc signing. Both automated builds passed for 0.11.0.
+Manual launch checks are tracked in
 [Future development](future-development.md#macos-release-verification).
 
 iOS is blocked by the same machine (`ITMS-90111`, see
