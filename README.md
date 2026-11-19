@@ -12,9 +12,9 @@ times a day, usually through converter websites — that is, by uploading a
 work document to someone else's server. MarkItDown UI does the same thing
 on the user's own machine:
 
-1. **Open a file** — with the "Choose file" button, by dragging it onto the
+1. **Open files** — with the "Choose files" button, by dragging them onto the
    window (Windows), or via "Share" from another app (Android). Or a
-   **link** — with the "Paste link" button (it will fill in the link from
+   **link** — with the "Paste a link" button (it will fill in the link from
    the clipboard) or by sharing a link from YouTube or a browser (Android).
 2. **View the result** — raw Markdown on screen, with warnings alongside if
    something in the file couldn't be carried over (for example, unreadable
@@ -24,10 +24,20 @@ on the user's own machine:
    automatically — only on button press, so as not to overwrite whatever was
    already there.
 
-**Several files into one** — choose or drop several at once (or "Add
-files" on a result): they're converted into a list, reordered by
-dragging, and merged into one Markdown document, each file under its own
-heading. Links and audio can go into the list too.
+**Convert several files at once.** Select multiple files, or use **Add
+files** from a preview. The queue shows each conversion's status and
+lets you open each ready result. It also accepts pasted links.
+
+- **Separate files** is the default. After the queue finishes, use
+  **Save to folder** to write one `.md` per successful conversion.
+  Duplicate filenames get a numeric suffix, so existing files are kept.
+- **One document** combines the same results in the order you set by
+  dragging. Each source gets its own heading. Switch modes using the
+  results already in the queue.
+
+The workspace follows the system's light or dark theme. A wide window
+shows the queue and output controls side by side. On a phone, the
+controls sit below the queue.
 
 The file type is detected from its content, not its extension: a file from
 a messaging app with no extension, or a `.docx` renamed to `.pdf`, still
@@ -57,6 +67,8 @@ Stages 0–5 are closed, Stage 6 (images, audio, OCR) has shipped, and
 **Stage 7 — polish** is in progress. 0.8 added offline speech recognition.
 0.9 added link conversion, 0.10 added merging, and 0.10.1 added PDF
 tables to the Dart converter. The current source version is `0.10.2+15`.
+The redesigned workspace and batch export are documented in the
+[unreleased 0.10.2 notes](CHANGELOG.md#0102--new-workspace-and-batch-export).
 
 | platform | status |
 |---|---|
@@ -273,9 +285,11 @@ Details — [docs/conversion-pipeline.md](docs/conversion-pipeline.md) and
 
 ```
 app/                      Flutter app
-  lib/src/home_screen.dart      screen: file selection, preview, copy
+  lib/src/home_screen.dart      intake, queue, Markdown preview
+  lib/src/workspace.dart        layout, intake panel, output controls
+  lib/src/markdown_export.dart  filenames and batch saving
   lib/src/file_intake/          dialog, drag & drop, "Share" (Android)
-  lib/src/merge/                the merge list: several files into one .md
+  lib/src/merge/                sequential conversion queue and merging
   lib/src/conversion/           runs conversion in an isolate, OCR and
                                 speech-recognition models
   lib/l10n/                     UI strings (ru, en)

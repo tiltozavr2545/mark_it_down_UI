@@ -97,6 +97,26 @@ capabilities. Windows ZIP distribution relies on source checks and the
 behavior of the bundled libraries. See
 [offline-and-privacy.md](offline-and-privacy.md).
 
+## Manual export checks
+
+Use the Windows CI artifact and an APK on a physical Android device.
+The Flutter tests cover the queue, previews and duplicate filenames.
+Exercise the native dialogs and the actual output directories on
+both platforms:
+
+1. Import two files with the same stem and different contents, such as
+   `notes.txt` and `notes.csv`. On Windows, try the picker and drag-and-drop.
+   On Android, try the picker and sharing several files together.
+2. Open one ready row to see its Markdown. With **Separate files**
+   selected, cancel **Save to folder** once, then choose a directory
+   containing `notes.md`. Check that both new `.md` files match their
+   previews and confirm the existing file was kept.
+3. Add a truncated ZIP. When it fails, check that **Separate files**
+   can still save the ready results. Switch to **One document**, remove
+   the failed item, reorder the other two and check the merged headings.
+4. Check the queue and export controls in the system's light and dark
+   themes. On Windows, resize the window to exercise the narrow layout.
+
 ## Version
 
 The `name+build` format in `pubspec.yaml`, bumped **on every PR** — the same

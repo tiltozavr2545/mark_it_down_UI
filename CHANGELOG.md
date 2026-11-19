@@ -22,8 +22,16 @@ monotonically. Bumped in every PR, see "Working conventions" in
 
 ---
 
-## 0.10.2 — links and conversion maintenance
+## 0.10.2 — new workspace and batch export
 
+- **Save a batch as separate Markdown files.** Choose several files,
+  keep **Separate files** selected, and use **Save to folder**. The app
+  saves one `.md` per successful conversion and gives duplicate names
+  a numeric suffix when needed.
+- **A new workspace on Windows and Android.** See conversion progress
+  in the file queue and open any ready result for preview, copying or
+  saving. Choose **One document** to arrange the same files and merge
+  them into a single `.md`.
 - **Links with parentheses open correctly.** Paste or share a Wikipedia
   address with a title such as `Dart_(programming_language)`.
 - **Updated offline conversion components.** The update covers PDFs,

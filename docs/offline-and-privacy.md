@@ -148,7 +148,10 @@ sends document content outward:
 ## What's stored on the device
 
 - **Conversion content** is kept in memory while in use. Copy places it
-  on the clipboard and Save writes it to the chosen file.
+  on the clipboard. **Save as .md** writes to the chosen file and
+  **Save to folder** writes separate results to the selected folder.
+  On Android, the batch picker requests local locations and grants
+  access to the selected directory tree.
 - **Temporary input created by the sidecar and audio decoder** is deleted
   after use. Android's share plugin can hand over files from its cache.
 - **Model assets** copied out of the APK for OCR and transcription stay

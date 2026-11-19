@@ -9,10 +9,79 @@ class AppLocalizationsRu extends AppLocalizations {
   AppLocalizationsRu([String locale = 'ru']) : super(locale);
 
   @override
-  String get dropHint => 'Перетащите файл сюда';
+  String get workspaceTitle => 'Файлы в Markdown';
 
   @override
-  String get pickFileButton => 'Выбрать файл';
+  String get workspaceIntro =>
+      'Преобразуйте документы, изображения, аудио и ссылки в .md.';
+
+  @override
+  String get localProcessing => 'Файлы остаются на устройстве';
+
+  @override
+  String get dropTitle => 'Перетащите файлы сюда';
+
+  @override
+  String get mobileIntakeTitle => 'Добавьте файлы';
+
+  @override
+  String get chooseFilesButton => 'Выбрать файлы';
+
+  @override
+  String get outputTitle => 'Результат';
+
+  @override
+  String get separateOutput => 'Отдельные файлы';
+
+  @override
+  String get separateOutputHint => 'По одному .md на исходник';
+
+  @override
+  String get mergedOutput => 'Один документ';
+
+  @override
+  String get mergedOutputHint => 'Объединить в один .md';
+
+  @override
+  String get batchTitle => 'Список файлов';
+
+  @override
+  String batchCount(int ready, int total) {
+    return 'Готово: $ready из $total';
+  }
+
+  @override
+  String get previewTooltip => 'Открыть предпросмотр';
+
+  @override
+  String get saveFolderButton => 'Сохранить в папку';
+
+  @override
+  String get savingLabel => 'Сохраняется…';
+
+  @override
+  String get saveFolderTitle => 'Выберите папку для Markdown-файлов';
+
+  @override
+  String batchSaved(int count) {
+    return 'Сохранено .md-файлов: $count';
+  }
+
+  @override
+  String batchSavePartial(int saved, int failed) {
+    return 'Сохранено: $saved. Не удалось сохранить: $failed. Каждый результат можно сохранить из предпросмотра.';
+  }
+
+  @override
+  String get saveFailed =>
+      'Не удалось сохранить. Проверьте доступ или выберите другую папку.';
+
+  @override
+  String get pickFailed => 'Не удалось открыть выбранные файлы.';
+
+  @override
+  String get separateFailedHint =>
+      'Можно сохранить файлы, которые удалось преобразовать.';
 
   @override
   String get pickAnotherButton => 'Выбрать другой файл';
@@ -83,45 +152,32 @@ class AppLocalizationsRu extends AppLocalizations {
   String get addFilesButton => 'Добавить файлы';
 
   @override
-  String get mergeButton => 'Склеить';
-
-  @override
-  String mergeListTitle(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count файла для склейки',
-      many: '$count файлов для склейки',
-      few: '$count файла для склейки',
-      one: '$count файл для склейки',
-    );
-    return '$_temp0';
-  }
+  String get mergeButton => 'Объединить';
 
   @override
   String mergedTitle(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'Склеено $count файла',
-      many: 'Склеено $count файлов',
-      few: 'Склеено $count файла',
-      one: 'Склеен $count файл',
+      other: 'Объединено $count файла',
+      many: 'Объединено $count файлов',
+      few: 'Объединены $count файла',
+      one: 'Объединён $count файл',
     );
     return '$_temp0';
   }
 
   @override
   String get mergeOrderHint =>
-      'Файлы пойдут в этом порядке — перетащите, чтобы поменять.';
+      'Перетащите файлы, чтобы изменить порядок в документе.';
 
   @override
   String get mergeWaitingHint =>
-      'Склеить можно, когда все файлы сконвертируются.';
+      'Объединение станет доступно после преобразования всех файлов.';
 
   @override
   String get mergeFailedHint =>
-      'Уберите файлы с ошибкой, чтобы склеить остальные.';
+      'Уберите файлы с ошибкой, чтобы объединить остальные.';
 
   @override
   String get waitingLabel => 'В очереди';
@@ -141,7 +197,7 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
-  String get incomingTitle => 'Добавить к склейке?';
+  String get incomingTitle => 'Добавить к списку файлов?';
 
   @override
   String get incomingBody =>

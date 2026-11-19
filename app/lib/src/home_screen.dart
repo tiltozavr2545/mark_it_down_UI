@@ -14,7 +14,9 @@ import 'file_intake/file_intake_controller.dart';
 import 'file_intake/format_size.dart';
 import 'file_intake/picked_file.dart';
 import 'file_intake/share_intake.dart';
+import 'markdown_export.dart';
 import 'merge/merge_controller.dart';
+import 'workspace.dart';
 import '../l10n/generated/app_localizations.dart';
 
 /// Markdown longer than this doesn't render in full — `SelectableText` on a
@@ -32,6 +34,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _dragging = false;
+  bool _savingBatch = false;
+  int? _previewId;
+  OutputMode _mode = OutputMode.separate;
   StreamSubscription<SharedInput>? _shareSubscription;
 
   @override
@@ -80,12 +85,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Files or a link from a drop or "Share" — sources that can arrive at
   /// any moment. With nothing on screen, one file opens as before and
-  /// several go straight into a merge; with a result or the merge list on
-  /// screen, the person is asked whether to add to it or start over
-  /// (author's decision) — silently replacing a merge of five files would
-  /// lose work.
+  /// several go into the queue. A drop or share over an existing result
+  /// or queue asks whether to add to it or start over.
   Future<void> _incoming(List<PickedFile> files, {String? link}) async {
-    if (files.isEmpty && link == null) return;
+    if (!mounted || (files.isEmpty && link == null)) return;
     final single = ref.read(fileIntakeControllerProvider);
     if (ref.read(mergeControllerProvider).active ||
         single.phase == FileIntakePhase.ready) {
@@ -95,10 +98,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
       if (add == null || !mounted) return;
       if (add) {
-        _addToMerge(files, link: link);
+        _addToQueue(files, link: link);
         return;
       }
-      ref.read(mergeControllerProvider.notifier).clear();
+      _clearQueue();
     }
 
     final intake = ref.read(fileIntakeControllerProvider.notifier);
@@ -112,9 +115,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  /// Adds to the merge list; a single file's result on screen becomes its
-  /// first row.
-  void _addToMerge(List<PickedFile> files, {String? link}) {
+  /// A single file's visible result becomes the first item in the queue.
+  void _addToQueue(List<PickedFile> files, {String? link}) {
+    setState(() => _previewId = null);
     final merge = ref.read(mergeControllerProvider.notifier);
     final single = ref.read(fileIntakeControllerProvider);
     if (!ref.read(mergeControllerProvider).active &&
@@ -126,138 +129,227 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (link != null) merge.addUrl(link);
   }
 
-  Future<List<PickedFile>> _pickFiles() async {
-    final result = await FilePicker.pickFiles(
-      withData: true,
-      allowMultiple: true,
-    );
-    return [
-      for (final file in result?.files ?? const <PlatformFile>[])
-        if (file.bytes case final bytes?)
-          PickedFile(bytes: bytes, filename: file.name, localPath: file.path),
-    ];
+  void _clearQueue() {
+    setState(() => _previewId = null);
+    ref.read(mergeControllerProvider.notifier).clear();
+  }
+
+  Future<void> _pickFiles({bool add = false}) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        withData: true,
+        allowMultiple: true,
+      );
+      if (!mounted) return;
+      final files = [
+        for (final file in result?.files ?? const <PlatformFile>[])
+          if (file.bytes case final bytes?)
+            PickedFile(bytes: bytes, filename: file.name, localPath: file.path),
+      ];
+      if (files.isEmpty) {
+        if (result != null) {
+          _showMessage(context, AppLocalizations.of(context)!.pickFailed);
+        }
+        return;
+      }
+      if (add) {
+        _addToQueue(files);
+      } else {
+        await _incoming(files);
+      }
+    } on PlatformException {
+      if (mounted) {
+        _showMessage(context, AppLocalizations.of(context)!.pickFailed);
+      }
+    } on FileSystemException {
+      if (mounted) {
+        _showMessage(context, AppLocalizations.of(context)!.pickFailed);
+      }
+    }
+  }
+
+  Future<void> _pasteLink({bool add = false}) async {
+    final link = await _askLink();
+    if (!mounted || link == null) return;
+    if (add) {
+      _addToQueue(const [], link: link);
+    } else {
+      await _incoming(const [], link: link);
+    }
+  }
+
+  Future<void> _saveBatch(List<MergeItem> items) async {
+    if (_savingBatch) return;
+    setState(() => _savingBatch = true);
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final outcome = await saveMarkdownBatch([
+        for (final item in items)
+          if (item.result case final result?)
+            (base: _itemBase(item), markdown: result.markdown),
+      ], dialogTitle: l10n.saveFolderTitle);
+      if (!mounted || outcome == null) return;
+      _showMessage(context, switch (outcome) {
+        (saved: 0, failed: _) => l10n.saveFailed,
+        (saved: final saved, failed: 0) => l10n.batchSaved(saved),
+        (saved: final saved, failed: final failed) => l10n.batchSavePartial(
+          saved,
+          failed,
+        ),
+      });
+    } on PlatformException {
+      if (mounted) _showMessage(context, l10n.saveFailed);
+    } on FileSystemException {
+      if (mounted) _showMessage(context, l10n.saveFailed);
+    } finally {
+      if (mounted) setState(() => _savingBatch = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final state = ref.watch(fileIntakeControllerProvider);
-    final merge = ref.watch(mergeControllerProvider);
-    final mergeController = ref.read(mergeControllerProvider.notifier);
-    final merged = merge.merged;
-
+    final queue = ref.watch(mergeControllerProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('MarkItDown UI')),
-      body: DropTarget(
-        onDragEntered: (_) => setState(() => _dragging = true),
-        onDragExited: (_) => setState(() => _dragging = false),
-        onDragDone: (details) async {
-          setState(() => _dragging = false);
-          _incoming([
-            for (final item in details.files)
-              PickedFile(
-                bytes: await item.readAsBytes(),
-                filename: item.name,
-                mimeType: item.mimeType,
-                localPath: item.path,
+      body: SafeArea(
+        child: DropTarget(
+          onDragEntered: (_) => setState(() => _dragging = true),
+          onDragExited: (_) => setState(() => _dragging = false),
+          onDragDone: (details) async {
+            setState(() => _dragging = false);
+            try {
+              await _incoming([
+                for (final item in details.files)
+                  PickedFile(
+                    bytes: await item.readAsBytes(),
+                    filename: item.name,
+                    mimeType: item.mimeType,
+                    localPath: item.path,
+                  ),
+              ]);
+            } on IOException {
+              if (context.mounted) {
+                _showMessage(context, AppLocalizations.of(context)!.pickFailed);
+              }
+            }
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const WorkspaceHeader(),
+              Expanded(
+                child: queue.active ? _queueView(queue) : _singleView(state),
               ),
-          ]);
-        },
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: merge.active
-                ? merged != null
-                      ? _PreviewResult(
-                          title: l10n.mergedTitle(merge.items.length),
-                          result: merged,
-                          saveName: _mergedFileName(l10n, merge.items),
-                          actions: [
-                            TextButton(
-                              onPressed: mergeController.backToList,
-                              child: Text(l10n.backToListButton),
-                            ),
-                            TextButton(
-                              onPressed: mergeController.clear,
-                              child: Text(l10n.clearButton),
-                            ),
-                          ],
-                        )
-                      : _MergeList(
-                          state: merge,
-                          onMove: mergeController.move,
-                          onRemove: mergeController.remove,
-                          onStop: mergeController.stopTranscription,
-                          onAddFiles: () async {
-                            final files = await _pickFiles();
-                            if (files.isNotEmpty) {
-                              mergeController.addFiles(files);
-                            }
-                          },
-                          onAddLink: () async {
-                            final link = await _askLink();
-                            if (link != null) mergeController.addUrl(link);
-                          },
-                          onMerge: () => mergeController.merge(l10n.noFilename),
-                          onClear: mergeController.clear,
-                        )
-                : switch (state.phase) {
-                    FileIntakePhase.idle => _EmptyState(
-                      dragging: _dragging,
-                      onPickFile: () async => _incoming(await _pickFiles()),
-                      onPasteLink: () async {
-                        final link = await _askLink();
-                        if (link != null) _incoming(const [], link: link);
-                      },
-                    ),
-                    FileIntakePhase.converting => _Converting(
-                      state: state,
-                      onStop: () => ref
-                          .read(fileIntakeControllerProvider.notifier)
-                          .stopTranscription(),
-                    ),
-                    FileIntakePhase.ready => _PreviewResult(
-                      title:
-                          state.info!.filename ??
-                          state.info!.url ??
-                          l10n.noFilename,
-                      subtitle:
-                          '${state.info!.detectedType.label}, '
-                          '${formatSize(state.info!.lengthBytes)}',
-                      result: state.result!,
-                      saveName: state.info!.filename != null
-                          ? '${_fileBase(state.info!.filename)}.md'
-                          : '${_titleBase(state.result!.title)}.md',
-                      actions: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final files = await _pickFiles();
-                            if (files.isNotEmpty) _addToMerge(files);
-                          },
-                          icon: const Icon(Icons.add),
-                          label: Text(l10n.addFilesButton),
-                        ),
-                        TextButton(
-                          onPressed: () => ref
-                              .read(fileIntakeControllerProvider.notifier)
-                              .clear(),
-                          child: Text(l10n.pickAnotherButton),
-                        ),
-                      ],
-                    ),
-                    FileIntakePhase.failed => _ConversionError(
-                      failure: state.failure!,
-                      onPickAnother: () => ref
-                          .read(fileIntakeControllerProvider.notifier)
-                          .clear(),
-                    ),
-                  },
+            ],
           ),
         ),
       ),
     );
   }
+
+  Widget _queueView(MergeState queue) {
+    final l10n = AppLocalizations.of(context)!;
+    final controller = ref.read(mergeControllerProvider.notifier);
+    final back = TextButton.icon(
+      onPressed: () {
+        setState(() => _previewId = null);
+        controller.backToList();
+      },
+      icon: const Icon(Icons.arrow_back),
+      label: Text(l10n.backToListButton),
+    );
+    if (queue.merged case final result?) {
+      return _PreviewResult(
+        title: l10n.mergedTitle(queue.items.length),
+        result: result,
+        saveName: _mergedFileName(l10n, queue.items),
+        leadingAction: back,
+        actions: [
+          TextButton(onPressed: _clearQueue, child: Text(l10n.clearButton)),
+        ],
+      );
+    }
+    final selected = queue.items
+        .where((item) => item.id == _previewId)
+        .firstOrNull;
+    if (selected?.result case final result?) {
+      return _PreviewResult(
+        title: selected!.name ?? l10n.noFilename,
+        subtitle: _typeAndSize(selected.info),
+        result: result,
+        saveName: '${_itemBase(selected)}.md',
+        leadingAction: back,
+        actions: const [],
+      );
+    }
+    return _FileQueue(
+      state: queue,
+      mode: _mode,
+      saving: _savingBatch,
+      onModeChanged: (mode) => setState(() => _mode = mode),
+      onMove: controller.move,
+      onRemove: controller.remove,
+      onStop: controller.stopTranscription,
+      onPreview: (id) => setState(() => _previewId = id),
+      onAddFiles: () => _pickFiles(add: true),
+      onAddLink: () => _pasteLink(add: true),
+      onMerge: () => controller.merge(l10n.noFilename),
+      onSave: () => _saveBatch(queue.items),
+      onClear: _clearQueue,
+    );
+  }
+
+  Widget _singleView(FileIntakeState state) {
+    final l10n = AppLocalizations.of(context)!;
+    final controller = ref.read(fileIntakeControllerProvider.notifier);
+    return switch (state.phase) {
+      FileIntakePhase.idle => StartWorkspace(
+        dragging: _dragging,
+        canDrop: !Platform.isAndroid && !Platform.isIOS,
+        mode: _mode,
+        onModeChanged: (mode) => setState(() => _mode = mode),
+        onPickFiles: _pickFiles,
+        onPasteLink: _pasteLink,
+      ),
+      FileIntakePhase.converting => _Converting(
+        state: state,
+        onStop: controller.stopTranscription,
+      ),
+      FileIntakePhase.ready => _PreviewResult(
+        title: state.info!.filename ?? state.info!.url ?? l10n.noFilename,
+        subtitle: _typeAndSize(state.info),
+        result: state.result!,
+        saveName:
+            '${markdownBase(filename: state.info!.filename, title: state.result!.title)}.md',
+        actions: [
+          OutlinedButton.icon(
+            onPressed: () => _pickFiles(add: true),
+            icon: const Icon(Icons.add),
+            label: Text(l10n.addFilesButton),
+          ),
+          TextButton(
+            onPressed: controller.clear,
+            child: Text(l10n.pickAnotherButton),
+          ),
+        ],
+      ),
+      FileIntakePhase.failed => _ConversionError(
+        failure: state.failure!,
+        onPickAnother: controller.clear,
+      ),
+    };
+  }
 }
+
+void _showMessage(BuildContext context, String message) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(SnackBar(content: Text(message)));
+}
+
+String? _typeAndSize(StreamInfo? info) => info == null
+    ? null
+    : '${info.detectedType.label}, ${formatSize(info.lengthBytes)}';
 
 class _IncomingDialog extends StatelessWidget {
   const _IncomingDialog();
@@ -282,57 +374,6 @@ class _IncomingDialog extends StatelessWidget {
           child: Text(l10n.addButton),
         ),
       ],
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  final bool dragging;
-  final VoidCallback onPickFile;
-  final VoidCallback onPasteLink;
-
-  const _EmptyState({
-    required this.dragging,
-    required this.onPickFile,
-    required this.onPasteLink,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 480, minHeight: 240),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: dragging
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.outlineVariant,
-          width: dragging ? 2 : 1,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.upload_file,
-            size: 48,
-            color: Theme.of(context).colorScheme.outline,
-          ),
-          const SizedBox(height: 16),
-          Text(l10n.dropHint),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: onPickFile, child: Text(l10n.pickFileButton)),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: onPasteLink,
-            icon: const Icon(Icons.link),
-            label: Text(l10n.pasteLinkButton),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -414,9 +455,8 @@ class _Converting extends StatelessWidget {
         : progress > 0
         ? l10n.transcribingProgressLabel(progress)
         : l10n.transcribingLabel;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
+    return WorkspacePage(
+      child: WorkspacePanel(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -425,7 +465,7 @@ class _Converting extends StatelessWidget {
               info == null
                   ? state.link ?? ''
                   : info.filename ?? info.url ?? l10n.noFilename,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
             if (info != null) ...[
               const SizedBox(height: 8),
@@ -483,6 +523,7 @@ class _PreviewResult extends StatelessWidget {
 
   /// Suggested name for "Save as .md".
   final String saveName;
+  final Widget? leadingAction;
 
   /// Buttons after "Copy" and "Save".
   final List<Widget> actions;
@@ -493,6 +534,7 @@ class _PreviewResult extends StatelessWidget {
     required this.saveName,
     required this.actions,
     this.subtitle,
+    this.leadingAction,
   });
 
   Future<void> _copy(BuildContext context) async {
@@ -511,16 +553,21 @@ class _PreviewResult extends StatelessWidget {
 
   Future<void> _save(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
-    final path = await FilePicker.saveFile(
-      fileName: saveName,
-      type: FileType.custom,
-      allowedExtensions: const ['md'],
-      bytes: Uint8List.fromList(utf8.encode(result.markdown)),
-    );
-    if (path == null || !context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(l10n.savedConfirmation)));
+    try {
+      final path = await FilePicker.saveFile(
+        fileName: saveName,
+        type: FileType.custom,
+        allowedExtensions: const ['md'],
+        bytes: utf8.encode(result.markdown),
+      );
+      if (path != null && context.mounted) {
+        _showMessage(context, l10n.savedConfirmation);
+      }
+    } on PlatformException {
+      if (context.mounted) _showMessage(context, l10n.saveFailed);
+    } on FileSystemException {
+      if (context.mounted) _showMessage(context, l10n.saveFailed);
+    }
   }
 
   @override
@@ -531,35 +578,62 @@ class _PreviewResult extends StatelessWidget {
         ? result.markdown.substring(0, _maxPreviewChars)
         : result.markdown;
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 720, maxHeight: 560),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return WorkspacePage(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (leadingAction case final back?) ...[
+            Align(alignment: Alignment.centerLeft, child: back),
+            const SizedBox(height: 12),
+          ],
+          Text(title, style: theme.textTheme.titleLarge),
+          if (subtitle case final subtitle?) ...[
+            const SizedBox(height: 4),
+            Text(subtitle, style: theme.textTheme.bodySmall),
+          ],
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              if (subtitle case final subtitle?) ...[
-                const SizedBox(height: 4),
-                Text(subtitle),
-              ],
-              if (result.warnings.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  l10n.warningsLabel,
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-                for (final warning in result.warnings)
-                  Text(
-                    '• $warning',
-                    style: Theme.of(context).textTheme.bodySmall,
+              FilledButton.icon(
+                onPressed: () => _save(context),
+                icon: const Icon(Icons.download_outlined),
+                label: Text(l10n.saveAsButton),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _copy(context),
+                icon: const Icon(Icons.copy_outlined),
+                label: Text(l10n.copyButton),
+              ),
+              ...actions,
+            ],
+          ),
+          const SizedBox(height: 18),
+          WorkspacePanel(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.tag, color: colors.primary, size: 20),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          saveName,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                      ),
+                    ],
                   ),
-              ],
-              const SizedBox(height: 12),
-              Flexible(
-                child: CallbackShortcuts(
+                ),
+                const Divider(height: 1),
+                CallbackShortcuts(
                   bindings: {
                     const SingleActivator(
                       LogicalKeyboardKey.keyC,
@@ -574,45 +648,50 @@ class _PreviewResult extends StatelessWidget {
                   },
                   child: Focus(
                     autofocus: true,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: SingleChildScrollView(
-                        child: SelectableText(
-                          truncated ? '$preview\n…' : preview,
-                          style: const TextStyle(fontFamily: 'monospace'),
+                    child: ColoredBox(
+                      color: colors.surfaceContainerLow,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: 160,
+                          maxHeight: 420,
+                        ),
+                        child: SingleChildScrollView(
+                          primary: false,
+                          padding: const EdgeInsets.all(16),
+                          child: SelectableText(
+                            truncated ? '$preview\n…' : preview,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 13,
+                              height: 1.55,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.icon(
-                    onPressed: () => _copy(context),
-                    icon: const Icon(Icons.copy),
-                    label: Text(l10n.copyButton),
+                if (result.warnings.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.warningsLabel,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        for (final warning in result.warnings)
+                          Text('• $warning', style: theme.textTheme.bodySmall),
+                      ],
+                    ),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: () => _save(context),
-                    icon: const Icon(Icons.save_alt),
-                    label: Text(l10n.saveAsButton),
-                  ),
-                  ...actions,
                 ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -627,30 +706,25 @@ class _ConversionError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
     final (title, body) = _failureText(l10n, failure);
-
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 480),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.error_outline,
-            size: 48,
-            color: Theme.of(context).colorScheme.error,
-          ),
-          const SizedBox(height: 16),
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(body, textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: onPickAnother,
-            child: Text(l10n.pickAnotherButton),
-          ),
-        ],
+    return WorkspacePage(
+      child: WorkspacePanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error_outline, size: 32, color: theme.colorScheme.error),
+            const SizedBox(height: 12),
+            Text(title, style: theme.textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(body),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onPickAnother,
+              child: Text(l10n.pickAnotherButton),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -680,24 +754,34 @@ class _ConversionError extends StatelessWidget {
   ),
 };
 
-class _MergeList extends StatelessWidget {
+class _FileQueue extends StatelessWidget {
   final MergeState state;
+  final OutputMode mode;
+  final bool saving;
+  final ValueChanged<OutputMode> onModeChanged;
   final void Function(int from, int to) onMove;
-  final void Function(int id) onRemove;
-  final void Function(int id) onStop;
+  final ValueChanged<int> onRemove;
+  final ValueChanged<int> onStop;
+  final ValueChanged<int> onPreview;
   final VoidCallback onAddFiles;
   final VoidCallback onAddLink;
   final VoidCallback onMerge;
+  final VoidCallback onSave;
   final VoidCallback onClear;
 
-  const _MergeList({
+  const _FileQueue({
     required this.state,
+    required this.mode,
+    required this.saving,
+    required this.onModeChanged,
     required this.onMove,
     required this.onRemove,
     required this.onStop,
+    required this.onPreview,
     required this.onAddFiles,
     required this.onAddLink,
     required this.onMerge,
+    required this.onSave,
     required this.onClear,
   });
 
@@ -705,106 +789,165 @@ class _MergeList extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final (hint, hintColor) = state.hasFailures
-        ? (l10n.mergeFailedHint, theme.colorScheme.error)
-        : !state.canMerge
-        ? (l10n.mergeWaitingHint, null)
-        : (l10n.mergeOrderHint, null);
+    final ready = state.items.where((item) => item.result != null).length;
+    final merging = mode == OutputMode.merged;
+    final settled = state.items.every(
+      (item) =>
+          item.status == MergeItemStatus.ready ||
+          item.status == MergeItemStatus.failed,
+    );
+    final hint = merging
+        ? state.hasFailures
+              ? l10n.mergeFailedHint
+              : state.canMerge
+              ? l10n.mergeOrderHint
+              : l10n.mergeWaitingHint
+        : state.hasFailures && ready > 0
+        ? l10n.separateFailedHint
+        : null;
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 720, maxHeight: 560),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // The secondary actions are icons up here: as four labelled
-              // buttons at the bottom they wrapped into four rows on a
-              // phone and left the list room for a row and a half.
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      l10n.mergeListTitle(state.items.length),
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onAddLink,
-                    icon: const Icon(Icons.link),
-                    tooltip: l10n.pasteLinkButton,
-                  ),
-                  IconButton(
-                    onPressed: onClear,
-                    icon: const Icon(Icons.delete_sweep_outlined),
-                    tooltip: l10n.clearButton,
-                  ),
-                ],
-              ),
-              Flexible(
-                child: ReorderableListView(
-                  shrinkWrap: true,
-                  // Handles are explicit on every platform: on Android the
-                  // default is a long press anywhere on the row, which
-                  // nobody discovers.
-                  buildDefaultDragHandles: false,
-                  onReorder: (from, to) =>
-                      // The list reports the index before removal.
-                      onMove(from, to > from ? to - 1 : to),
+    return WorkspacePage(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 765;
+          final queue = WorkspacePanel(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 5,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    for (final (index, item) in state.items.indexed)
-                      _MergeRow(
+                    OutlinedButton.icon(
+                      onPressed: onAddFiles,
+                      icon: const Icon(Icons.add),
+                      label: Text(l10n.addFilesButton),
+                    ),
+                    IconButton(
+                      onPressed: onAddLink,
+                      icon: const Icon(Icons.link),
+                      tooltip: l10n.pasteLinkButton,
+                    ),
+                    IconButton(
+                      onPressed: onClear,
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      tooltip: l10n.clearButton,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: wide ? 410 : 300),
+                  child: ReorderableListView.builder(
+                    shrinkWrap: true,
+                    primary: false,
+                    buildDefaultDragHandles: false,
+                    itemCount: state.items.length,
+                    onReorder: (from, to) =>
+                        onMove(from, to > from ? to - 1 : to),
+                    itemBuilder: (context, index) {
+                      final item = state.items[index];
+                      return _QueueRow(
                         key: ValueKey(item.id),
                         index: index,
                         item: item,
+                        reorderable: merging,
                         onRemove: () => onRemove(item.id),
                         onStop: () => onStop(item.id),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                hint,
-                style: theme.textTheme.bodySmall?.copyWith(color: hintColor),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.icon(
-                    onPressed: state.canMerge ? onMerge : null,
-                    icon: const Icon(Icons.merge),
-                    label: Text(l10n.mergeButton),
+                        onPreview: item.result == null
+                            ? null
+                            : () => onPreview(item.id),
+                      );
+                    },
                   ),
-                  OutlinedButton.icon(
-                    onPressed: onAddFiles,
-                    icon: const Icon(Icons.add),
-                    label: Text(l10n.addFilesButton),
+                ),
+              ],
+            ),
+          );
+          final output = WorkspacePanel(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                OutputSelector(mode: mode, onChanged: onModeChanged),
+                if (hint != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: merging && state.hasFailures
+                          ? theme.colorScheme.error
+                          : null,
+                    ),
                   ),
                 ],
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: merging
+                      ? (state.canMerge ? onMerge : null)
+                      : (settled && ready > 0 && !saving ? onSave : null),
+                  icon: Icon(
+                    merging ? Icons.merge : Icons.create_new_folder_outlined,
+                  ),
+                  label: Text(
+                    merging
+                        ? l10n.mergeButton
+                        : saving
+                        ? l10n.savingLabel
+                        : l10n.saveFolderButton,
+                  ),
+                ),
+              ],
+            ),
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(l10n.batchTitle, style: theme.textTheme.headlineLarge),
+              const SizedBox(height: 6),
+              Text(
+                l10n.batchCount(ready, state.items.length),
+                style: theme.textTheme.bodyLarge,
               ),
+              const SizedBox(height: 20),
+              if (wide)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 3, child: queue),
+                    const SizedBox(width: 18),
+                    Expanded(flex: 2, child: output),
+                  ],
+                )
+              else ...[
+                queue,
+                const SizedBox(height: 14),
+                output,
+              ],
             ],
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-class _MergeRow extends StatelessWidget {
+class _QueueRow extends StatelessWidget {
   final int index;
   final MergeItem item;
+  final bool reorderable;
+  final VoidCallback? onPreview;
   final VoidCallback onRemove;
   final VoidCallback onStop;
 
-  const _MergeRow({
+  const _QueueRow({
     super.key,
     required this.index,
     required this.item,
+    required this.reorderable,
+    required this.onPreview,
     required this.onRemove,
     required this.onStop,
   });
@@ -813,15 +956,12 @@ class _MergeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final colors = Theme.of(context).colorScheme;
-    final info = item.info;
-    final typeAndSize = info == null
-        ? null
-        : '${info.detectedType.label}, ${formatSize(info.lengthBytes)}';
+    final typeAndSize = _typeAndSize(item.info);
     final subtitle = switch (item.status) {
       MergeItemStatus.waiting => [
         typeAndSize,
         l10n.waitingLabel,
-      ].nonNulls.join(' · '),
+      ].nonNulls.join(' / '),
       MergeItemStatus.downloading => l10n.downloadingLabel,
       MergeItemStatus.converting =>
         !item.transcribing
@@ -831,92 +971,120 @@ class _MergeRow extends StatelessWidget {
             : item.speechProgress > 0
             ? l10n.transcribingProgressLabel(item.speechProgress)
             : l10n.transcribingLabel,
-      MergeItemStatus.ready => typeAndSize ?? '',
+      MergeItemStatus.ready => typeAndSize ?? '.md',
       MergeItemStatus.failed => switch (_failureText(l10n, item.failure!)) {
         (final title, final body) => '$title. $body',
       },
     };
 
-    return ListTile(
-      contentPadding: const EdgeInsets.only(left: 4),
-      visualDensity: VisualDensity.compact,
-      leading: switch (item.status) {
-        MergeItemStatus.waiting => Icon(Icons.schedule, color: colors.outline),
-        MergeItemStatus.downloading ||
-        MergeItemStatus.converting => const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        MergeItemStatus.ready => Icon(
-          Icons.check_circle_outline,
-          color: colors.primary,
-        ),
-        MergeItemStatus.failed => Icon(
-          Icons.error_outline,
-          color: colors.error,
-        ),
-      },
-      title: Text(item.name ?? l10n.noFilename),
-      subtitle: Text(
-        subtitle,
-        style: item.status == MergeItemStatus.failed
-            ? TextStyle(color: colors.error)
-            : null,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (item.transcribing)
-            IconButton(
-              onPressed: item.stopping ? null : onStop,
-              icon: const Icon(Icons.stop),
-              tooltip: l10n.stopButton,
-            ),
-          IconButton(
-            onPressed: onRemove,
-            icon: const Icon(Icons.close),
-            tooltip: l10n.removeTooltip,
-          ),
-          ReorderableDragStartListener(
-            index: index,
-            child: const Padding(
-              padding: EdgeInsets.all(8),
-              child: Icon(Icons.drag_handle),
+    return Column(
+      children: [
+        ListTile(
+          contentPadding: const EdgeInsets.only(left: 4),
+          minLeadingWidth: 28,
+          horizontalTitleGap: 9,
+          onTap: onPreview,
+          leading: SizedBox.square(
+            dimension: 32,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: colors.primaryContainer,
+              ),
+              child: Center(
+                child: switch (item.status) {
+                  MergeItemStatus.waiting => Icon(
+                    Icons.schedule,
+                    size: 18,
+                    color: colors.onPrimaryContainer,
+                  ),
+                  MergeItemStatus.downloading ||
+                  MergeItemStatus.converting => const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  MergeItemStatus.ready => Icon(
+                    Icons.task_outlined,
+                    size: 19,
+                    color: colors.onPrimaryContainer,
+                  ),
+                  MergeItemStatus.failed => Icon(
+                    Icons.error_outline,
+                    size: 19,
+                    color: colors.error,
+                  ),
+                },
+              ),
             ),
           ),
-        ],
-      ),
+          title: Text(
+            item.name ?? l10n.noFilename,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: item.status == MergeItemStatus.failed
+                  ? colors.error
+                  : null,
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (item.transcribing)
+                IconButton(
+                  onPressed: item.stopping ? null : onStop,
+                  icon: const Icon(Icons.stop),
+                  tooltip: l10n.stopButton,
+                ),
+              if (onPreview != null)
+                IconButton(
+                  onPressed: onPreview,
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  tooltip: l10n.previewTooltip,
+                ),
+              IconButton(
+                onPressed: onRemove,
+                icon: const Icon(Icons.close, size: 19),
+                tooltip: l10n.removeTooltip,
+              ),
+              if (reorderable)
+                ReorderableDragStartListener(
+                  index: index,
+                  child: const MouseRegion(
+                    cursor: SystemMouseCursors.grab,
+                    child: SizedBox(
+                      width: 32,
+                      height: 48,
+                      child: Icon(Icons.drag_handle, size: 20),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+      ],
     );
   }
 }
 
-/// [filename] without its extension.
-String _fileBase(String? filename) {
-  if (filename == null || filename.isEmpty) return 'converted';
-  final dot = filename.lastIndexOf('.');
-  return dot > 0 ? filename.substring(0, dot) : filename;
-}
+String _itemBase(MergeItem item) => markdownBase(
+  filename: item.info?.url == null ? item.name : item.info?.filename,
+  title: item.result?.title,
+);
 
-/// A page fetched by link has no filename — its title is used instead,
-/// stripped of characters forbidden in Windows filenames, and capped at a
-/// reasonable length.
-String _titleBase(String? title) {
-  final cleaned = (title ?? '')
-      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  if (cleaned.isEmpty) return 'converted';
-  return cleaned.length > 100 ? cleaned.substring(0, 100).trim() : cleaned;
-}
-
-/// Named after the first file and how many follow it (author's decision):
-/// `report_and_2_more.md`.
+/// Named after the first file and how many follow it.
 String _mergedFileName(AppLocalizations l10n, List<MergeItem> items) {
   final first = items.first;
   final base = first.info?.url != null
-      ? _titleBase(first.name)
-      : _fileBase(first.name);
+      ? markdownBase(title: first.name)
+      : _itemBase(first);
   if (items.length == 1) return '$base.md';
   return '${l10n.mergedFileName(base, items.length - 1)}.md';
 }

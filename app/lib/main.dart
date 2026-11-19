@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'l10n/generated/app_localizations.dart';
+import 'src/app_theme.dart';
 import 'src/home_screen.dart';
 
 void main() {
@@ -19,18 +20,12 @@ class MarkItDownApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'MarkItDown UI',
+      debugShowCheckedModeBanner: false,
       locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-          brightness: Brightness.dark,
-        ),
-      ),
+      theme: appTheme(Brightness.light),
+      darkTheme: appTheme(Brightness.dark),
       home: const HomeScreen(),
     );
   }

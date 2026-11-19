@@ -41,8 +41,7 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="*/*"/>
             </intent-filter>
-            <!-- "Share" with several files selected: they go into a merge
-                 (0.10). -->
+            <!-- "Share" with several files selected opens the conversion queue. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND_MULTIPLE"/>
                 <category android:name="android.intent.category.DEFAULT"/>

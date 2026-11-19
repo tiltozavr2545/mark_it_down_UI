@@ -15,8 +15,9 @@ get recorded here, otherwise the document starts lying silently.
 ## Default technical decisions
 
 - **State management:** Riverpod
-- **Navigation:** `HomeScreen` displays the current `FileIntakePhase` or
-  the merge list. File intake and confirmation dialogs use the same screen.
+- **Navigation:** `HomeScreen` displays the current `FileIntakePhase`,
+  the queue, or a Markdown preview. File intake and confirmation dialogs
+  use the same screen.
 - **Zip parsing:** `archive` · **XML:** `xml` · **CSV:** `csv` ·
   **HTML → Markdown:** `html` + `html2md`
 - **Clipboard:** `super_clipboard` (several representations are needed at
@@ -97,59 +98,69 @@ Three consequences follow from this, and they're easy to forget:
 The file picker, desktop drop target and Android sharing provide
 `PickedFile` values. `FileIntakeController.accept` handles a single file.
 Multiple files go to `MergeController`. The clipboard is read when the
-user opens "Paste link" to prefill the dialog.
+user opens **Paste a link** to prefill the dialog.
 
-A link from "Paste link" or Android sharing goes through
-`FileIntakeController.acceptUrl`, which downloads
-whatever it points to (`downloadUrl` from the core), and hands the bytes to
-that same `accept` — with the address in `PickedFile.url`. A download
-failure is a `NetworkFailure`, a fourth kind of failure alongside the three
-file-based ones.
+On an empty screen, **Paste a link** and Android link sharing use
+`FileIntakeController.acceptUrl`. Links added to a queue are downloaded
+when their turn comes. Both flows call the core's `downloadUrl`, record
+the source address in `PickedFile.url`, and report download errors as
+`NetworkFailure`.
 
 Type detection, speech-recognition setup and polling, and the isolate live
 in `convertPicked` (`app/lib/src/conversion/convert_picked.dart`), and both
-`FileIntakeController.accept` and the merge list call it, so a file in the
+`FileIntakeController.accept` and the queue call it, so a file in the
 list is handled exactly like a file alone.
 
-## Merging files (0.10)
+<a id="merging-files-010"></a>
 
-`MergeController` (`app/lib/src/merge/`) holds the list; the joining
-itself is `mergeResults` in the core (`core/lib/src/conversion/merge.dart`):
-a `# name` heading per file, `---` between files, the files' own Markdown
-as-is. Decisions, all the author's:
+## Batch conversion and merging
 
-- **Entry points.** Several files at once (dialog, drop, "Share" on
-  Android via `SEND_MULTIPLE`) go straight into a list; one file opens on
-  its own, as before, and "Add files" on its result moves it into a list
-  without converting it again.
-- **A drop or "Share" while something is on screen asks** — add to it or
-  start over. Before 0.10 a new file silently replaced the old one; with a
-  merge of five files that would lose work. A drop during a single file's
-  conversion still replaces it, as before: there's nothing to merge yet.
-- **Conversion happens on adding, one file at a time.** That's the only
-  real integrity check — the signature says "PDF," not "intact PDF." A
-  failed file blocks "Merge" until it's removed (an error stops the merge,
-  rather than leaving a gap), and since everything is already converted,
-  reordering and merging are instant. One at a time, not in parallel: a
-  phone holding several files' bytes and parse trees at once gets killed,
-  and only one speech recognition can run anyway. After conversion a
-  file's bytes are dropped — the list keeps only Markdown.
-- **Order is the list's order**, changed by dragging an explicit handle
-  (on Android the default long press anywhere is undiscoverable).
-- **Headings inside files aren't shifted** — a file's text in a merge is
-  exactly what converting it alone gives.
+`MergeController` (`app/lib/src/merge/`) owns the queue and its results.
+Selecting several files in the picker, dropping them on Windows, or
+sharing them on Android opens the queue. **Add files** on a single
+preview moves the existing result into the queue.
 
-Platform-specific details that have to be set up by hand in the native
-projects:
+A drop or Android share over a ready result or an active queue asks
+whether to add the sources or start over. A drop or share during a
+single-file conversion replaces the in-progress input.
 
-- **Android** declares `ACTION_SEND`, `ACTION_SEND_MULTIPLE` and
-  `ACTION_VIEW` for content URIs. The `*/*` filters let files reach the
-  app when their extension or MIME type is unknown.
-- **Windows** accepts the file picker and drag-and-drop. The ZIP ships
-  without file associations. Paths with Cyrillic characters and spaces
-  are covered by the manual test checklist.
+Sources are converted as soon as they are added, one at a time. This
+limits the memory used by parsing and speech recognition. The queue
+releases source bytes after conversion and retains file information,
+statuses, results and warnings. Each ready row opens its own Markdown
+preview with **Copy** and **Save as .md**.
+
+The output selector is available on the start screen and in the queue.
+Its selection is kept in `HomeScreen` for the session. Both modes use
+the same completed results.
+
+- **Separate files** is the default. **Save to folder** becomes
+  available when every source has finished and at least one succeeded.
+  The export writes each successful result as its own UTF-8 `.md` and
+  reports successful saves and write failures.
+- **One document** enables drag handles to set the document order.
+  **Merge** requires every remaining item to have converted successfully.
+  `mergeResults` in `core/lib/src/conversion/merge.dart` adds a heading
+  for each source and a horizontal rule between them. It keeps the
+  source heading levels and prefixes warnings with their source names.
+
+### Platform file access
+
+- **Android** accepts `ACTION_SEND`, `ACTION_SEND_MULTIPLE` and
+  `ACTION_VIEW` for content URIs. The `*/*` filters accept files with
+  unknown extensions or MIME types. For batch export, the
+  `markitdown_ui/markdown_export` channel opens the system's
+  `ACTION_OPEN_DOCUMENT_TREE` picker and creates documents in the
+  selected directory through `DocumentsContract`.
+- **Windows** accepts the file picker and drag-and-drop. Batch export
+  opens the directory picker through `file_picker`. The writer in
+  `app/lib/src/markdown_export.dart` reserves a new pathname before
+  writing and adds a suffix when a name is already taken.
 - **iOS and macOS** document associations and a possible iOS Share
   Extension are deferred. See [Future development](future-development.md).
+
+Native file dialogs are covered by the
+[manual export checks](operations.md#manual-export-checks).
 
 ## Clipboard
 
@@ -199,8 +210,12 @@ so later conversions can reuse them.
 
 ## Theme and localization
 
-The theme and language follow the system. The supported locales are
-`en` (default) and `ru`. ARB
-files are edited **as text**: rewriting them through `json.dump`/an
-autoformatter eats the blank lines that divide the file into semantic
-groups.
+The theme and language follow the system. `app_theme.dart` defines the
+light and dark palettes and uses Sofia Sans from the bundled font assets.
+`workspace.dart` holds the shared layout and output selector. Wide
+windows place the queue beside the export panel. Narrow layouts place
+the export panel below the list.
+
+Supported locales are `en` (default) and `ru`. Edit ARB files as text to
+preserve the blank lines between groups, then run `flutter gen-l10n`
+from `app/`.

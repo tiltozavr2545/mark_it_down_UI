@@ -98,17 +98,137 @@ abstract class AppLocalizations {
     Locale('ru'),
   ];
 
-  /// Shown in the empty drop zone before any file is accepted
+  /// No description provided for @workspaceTitle.
   ///
   /// In en, this message translates to:
-  /// **'Drop a file here'**
-  String get dropHint;
+  /// **'Files to Markdown'**
+  String get workspaceTitle;
 
-  /// No description provided for @pickFileButton.
+  /// No description provided for @workspaceIntro.
   ///
   /// In en, this message translates to:
-  /// **'Choose file'**
-  String get pickFileButton;
+  /// **'Convert documents, images, audio and links to .md.'**
+  String get workspaceIntro;
+
+  /// No description provided for @localProcessing.
+  ///
+  /// In en, this message translates to:
+  /// **'Files stay on this device'**
+  String get localProcessing;
+
+  /// No description provided for @dropTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Drop files here'**
+  String get dropTitle;
+
+  /// No description provided for @mobileIntakeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your files'**
+  String get mobileIntakeTitle;
+
+  /// No description provided for @chooseFilesButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose files'**
+  String get chooseFilesButton;
+
+  /// No description provided for @outputTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get outputTitle;
+
+  /// No description provided for @separateOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Separate files'**
+  String get separateOutput;
+
+  /// No description provided for @separateOutputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'One .md per source'**
+  String get separateOutputHint;
+
+  /// No description provided for @mergedOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'One document'**
+  String get mergedOutput;
+
+  /// No description provided for @mergedOutputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Combine into a single .md'**
+  String get mergedOutputHint;
+
+  /// No description provided for @batchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'File queue'**
+  String get batchTitle;
+
+  /// No description provided for @batchCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready: {ready} of {total}'**
+  String batchCount(int ready, int total);
+
+  /// No description provided for @previewTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Open preview'**
+  String get previewTooltip;
+
+  /// No description provided for @saveFolderButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to folder'**
+  String get saveFolderButton;
+
+  /// No description provided for @savingLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving…'**
+  String get savingLabel;
+
+  /// No description provided for @saveFolderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a folder for Markdown files'**
+  String get saveFolderTitle;
+
+  /// No description provided for @batchSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved .md files: {count}'**
+  String batchSaved(int count);
+
+  /// No description provided for @batchSavePartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved: {saved}. Failed: {failed}. You can save each result from its preview.'**
+  String batchSavePartial(int saved, int failed);
+
+  /// No description provided for @saveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save. Check access to the destination or choose another folder.'**
+  String get saveFailed;
+
+  /// No description provided for @pickFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the selected files.'**
+  String get pickFailed;
+
+  /// No description provided for @separateFailedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'You can save the files that converted successfully.'**
+  String get separateFailedHint;
 
   /// No description provided for @pickAnotherButton.
   ///
@@ -230,7 +350,7 @@ abstract class AppLocalizations {
   /// **'Warnings'**
   String get warningsLabel;
 
-  /// Adds files to the merge list; on a single file's result, starts a merge with it
+  /// Adds files to the queue, including from a single result
   ///
   /// In en, this message translates to:
   /// **'Add files'**
@@ -241,12 +361,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Merge'**
   String get mergeButton;
-
-  /// Title of the merge list
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, one{{count} file to merge} other{{count} files to merge}}'**
-  String mergeListTitle(int count);
 
   /// Title of the merged result preview
   ///
@@ -284,7 +398,7 @@ abstract class AppLocalizations {
   /// **'Remove'**
   String get removeTooltip;
 
-  /// Empties the merge list and goes back to the start screen
+  /// Empties the queue and goes back to the start screen
   ///
   /// In en, this message translates to:
   /// **'Clear'**
@@ -302,10 +416,10 @@ abstract class AppLocalizations {
   /// **'{name}_and_{count}_more'**
   String mergedFileName(String name, int count);
 
-  /// A file was dropped or shared while a result or the merge list is on screen
+  /// A file was dropped or shared while a result or the queue is on screen
   ///
   /// In en, this message translates to:
-  /// **'Add to the merge?'**
+  /// **'Add to the file queue?'**
   String get incomingTitle;
 
   /// No description provided for @incomingBody.

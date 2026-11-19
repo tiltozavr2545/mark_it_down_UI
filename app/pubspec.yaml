@@ -73,6 +73,16 @@ flutter:
     # (265 MB, not committed to the repository; the directory holds a
     # .gitkeep).
     - assets/whisper/
+    - assets/fonts/OFL.txt
+
+  fonts:
+    - family: Sofia Sans
+      fonts:
+        - asset: assets/fonts/SofiaSans-400.ttf
+        - asset: assets/fonts/SofiaSans-600.ttf
+          weight: 600
+        - asset: assets/fonts/SofiaSans-700.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

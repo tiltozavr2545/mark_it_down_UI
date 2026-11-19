@@ -9,10 +9,79 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get dropHint => 'Drop a file here';
+  String get workspaceTitle => 'Files to Markdown';
 
   @override
-  String get pickFileButton => 'Choose file';
+  String get workspaceIntro =>
+      'Convert documents, images, audio and links to .md.';
+
+  @override
+  String get localProcessing => 'Files stay on this device';
+
+  @override
+  String get dropTitle => 'Drop files here';
+
+  @override
+  String get mobileIntakeTitle => 'Add your files';
+
+  @override
+  String get chooseFilesButton => 'Choose files';
+
+  @override
+  String get outputTitle => 'Output';
+
+  @override
+  String get separateOutput => 'Separate files';
+
+  @override
+  String get separateOutputHint => 'One .md per source';
+
+  @override
+  String get mergedOutput => 'One document';
+
+  @override
+  String get mergedOutputHint => 'Combine into a single .md';
+
+  @override
+  String get batchTitle => 'File queue';
+
+  @override
+  String batchCount(int ready, int total) {
+    return 'Ready: $ready of $total';
+  }
+
+  @override
+  String get previewTooltip => 'Open preview';
+
+  @override
+  String get saveFolderButton => 'Save to folder';
+
+  @override
+  String get savingLabel => 'Saving…';
+
+  @override
+  String get saveFolderTitle => 'Choose a folder for Markdown files';
+
+  @override
+  String batchSaved(int count) {
+    return 'Saved .md files: $count';
+  }
+
+  @override
+  String batchSavePartial(int saved, int failed) {
+    return 'Saved: $saved. Failed: $failed. You can save each result from its preview.';
+  }
+
+  @override
+  String get saveFailed =>
+      'Could not save. Check access to the destination or choose another folder.';
+
+  @override
+  String get pickFailed => 'Could not open the selected files.';
+
+  @override
+  String get separateFailedHint =>
+      'You can save the files that converted successfully.';
 
   @override
   String get pickAnotherButton => 'Choose another file';
@@ -85,17 +154,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mergeButton => 'Merge';
 
   @override
-  String mergeListTitle(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count files to merge',
-      one: '$count file to merge',
-    );
-    return '$_temp0';
-  }
-
-  @override
   String mergedTitle(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -135,7 +193,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get incomingTitle => 'Add to the merge?';
+  String get incomingTitle => 'Add to the file queue?';
 
   @override
   String get incomingBody =>

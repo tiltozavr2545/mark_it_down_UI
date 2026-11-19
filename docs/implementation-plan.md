@@ -20,7 +20,8 @@ as work proceeds. What landed in which version — see
 - [x] Stage 5 — Windows (0.5)
 - [ ] Stage 6 — Images and audio (0.6) — released in `v0.6.0`: EXIF, OCR, and audio are done; manual verification (item 4) isn't checked off
 - [ ] Stage 7 — Polish and release (1.0) — local file-size limit removed,
-  merge mode shipped, GitHub Releases packaging in place
+  redesigned workspace and both batch output modes implemented,
+  GitHub Releases packaging in place
 - [ ] Speech recognition (0.8) — outside the original plan, requested by the author: done, manual verification (item 6) isn't checked off
 
 The plan's target platforms are **Windows and Android**. After Stage 4 was
@@ -551,8 +552,11 @@ build for Windows and Android.
 
 1. Keyboard shortcuts throughout, Tab-based focus, fully usable without a
    mouse.
-2. Batch conversion: merging several inputs into one Markdown file shipped
-   in 0.10. Export to a folder of individual Markdown files is open.
+2. **Batch conversion implemented.** Merging several inputs into one
+   Markdown file shipped in 0.10. The redesigned workspace also supports
+   individual previews and export to a folder of separate `.md` files.
+   Manual checks of the native folder pickers on Windows and Android
+   are pending. See the [export checklist](operations.md#manual-export-checks).
 3. Settings: language, theme, disabling history. ~~Limits~~ — **the
    author's decision (0.7):** there's no file-size limit at all, so
    there's nothing to configure; archive limits (zip-bomb protection)

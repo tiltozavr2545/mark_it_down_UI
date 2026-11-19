@@ -10,13 +10,13 @@ import 'package:markitdown_ui/src/merge/merge_controller.dart';
 const _ru = Locale('ru');
 
 void main() {
-  testWidgets('empty screen offers to pick a file', (tester) async {
+  testWidgets('empty screen offers to pick several files', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: MarkItDownApp(locale: _ru)),
     );
 
-    expect(find.text('Перетащите файл сюда'), findsOneWidget);
-    expect(find.text('Выбрать файл'), findsOneWidget);
+    expect(find.text('Перетащите файлы сюда'), findsOneWidget);
+    expect(find.text('Выбрать файлы'), findsOneWidget);
   });
 
   testWidgets('spinner and file are shown during conversion', (tester) async {
@@ -143,7 +143,13 @@ void main() {
   ) async {
     await tester.pumpWidget(_mergeListApp());
 
-    expect(find.text('4 файла для склейки'), findsOneWidget);
+    expect(find.text('Список файлов'), findsOneWidget);
+    expect(find.text('Готово: 1 из 4'), findsOneWidget);
+    expect(
+      find.text('Можно сохранить файлы, которые удалось преобразовать.'),
+      findsOneWidget,
+    );
+    expect(find.text('Сохранить в папку'), findsOneWidget);
     expect(find.text('a.txt'), findsOneWidget);
     expect(
       find.text(
@@ -155,13 +161,18 @@ void main() {
     expect(find.byTooltip('Остановить'), findsOneWidget);
     expect(find.text('https://example.com/a'), findsOneWidget);
     expect(find.text('В очереди'), findsOneWidget);
+
+    final mergedOutput = find.text('Один документ');
+    await tester.ensureVisible(mergedOutput);
+    await tester.tap(mergedOutput);
+    await tester.pump();
     expect(
-      find.text('Уберите файлы с ошибкой, чтобы склеить остальные.'),
+      find.text('Уберите файлы с ошибкой, чтобы объединить остальные.'),
       findsOneWidget,
     );
     final merge = tester.widget<ButtonStyleButton>(
       find.ancestor(
-        of: find.text('Склеить'),
+        of: find.text('Объединить'),
         matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
       ),
     );
@@ -177,8 +188,54 @@ void main() {
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(_mergeListApp());
-    expect(find.text('Склеить'), findsOneWidget);
+    expect(find.text('Сохранить в папку'), findsOneWidget);
     expect(find.byTooltip('Очистить'), findsOneWidget);
+
+    final mergedOutput = find.text('Один документ');
+    await tester.ensureVisible(mergedOutput);
+    await tester.tap(mergedOutput);
+    await tester.pump();
+    expect(find.text('Объединить'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('separate export is enabled with a ready and a failed file', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _queueApp([
+        MergeItem(
+          id: 0,
+          status: MergeItemStatus.ready,
+          info: _txtInfo('a.txt'),
+          result: _result('Individual Markdown'),
+        ),
+        MergeItem(
+          id: 1,
+          status: MergeItemStatus.failed,
+          info: _txtInfo('broken.zip'),
+          failure: const CorruptedFileFailure(
+            converterId: 'zip',
+            reason: 'invalid ZIP',
+          ),
+        ),
+      ]),
+    );
+
+    final save = tester.widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text('Сохранить в папку'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+    expect(save.onPressed, isNotNull);
+    await tester.tap(find.byTooltip('Открыть предпросмотр'));
+    await tester.pumpAndSettle();
+    expect(find.text('a.md'), findsOneWidget);
+    expect(find.text('Individual Markdown'), findsOneWidget);
+    await tester.tap(find.text('К списку'));
+    await tester.pumpAndSettle();
+    expect(find.text('Готово: 1 из 2'), findsOneWidget);
   });
 
   testWidgets('merged result — preview, warnings, back to the list', (
@@ -215,7 +272,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Склеено 2 файла'), findsOneWidget);
+    expect(find.text('Объединены 2 файла'), findsOneWidget);
     expect(find.textContaining('# b.txt'), findsOneWidget);
     expect(find.text('• b.txt: скан без текста'), findsOneWidget);
     expect(find.text('Скопировать'), findsOneWidget);
@@ -341,40 +398,40 @@ final _voiceInfo = StreamInfo(
 
 /// A merge list with one row of each kind: ready, failed, transcribing,
 /// and a link waiting its turn.
-Widget _mergeListApp() => ProviderScope(
+Widget _mergeListApp() => _queueApp([
+  MergeItem(
+    id: 0,
+    status: MergeItemStatus.ready,
+    info: _txtInfo('a.txt'),
+    result: _result('A'),
+  ),
+  MergeItem(
+    id: 1,
+    status: MergeItemStatus.failed,
+    info: _txtInfo('битый.zip'),
+    failure: const CorruptedFileFailure(
+      converterId: 'zip',
+      reason: 'архив обрезан',
+    ),
+  ),
+  MergeItem(
+    id: 2,
+    status: MergeItemStatus.converting,
+    info: _voiceInfo,
+    transcribing: true,
+    speechProgress: 40,
+  ),
+  const MergeItem(
+    id: 3,
+    status: MergeItemStatus.waiting,
+    label: 'https://example.com/a',
+  ),
+]);
+
+Widget _queueApp(List<MergeItem> items) => ProviderScope(
   overrides: [
     mergeControllerProvider.overrideWith(
-      () => _FakeMergeController(
-        MergeState([
-          MergeItem(
-            id: 0,
-            status: MergeItemStatus.ready,
-            info: _txtInfo('a.txt'),
-            result: _result('A'),
-          ),
-          MergeItem(
-            id: 1,
-            status: MergeItemStatus.failed,
-            info: _txtInfo('битый.zip'),
-            failure: const CorruptedFileFailure(
-              converterId: 'zip',
-              reason: 'архив обрезан',
-            ),
-          ),
-          MergeItem(
-            id: 2,
-            status: MergeItemStatus.converting,
-            info: _voiceInfo,
-            transcribing: true,
-            speechProgress: 40,
-          ),
-          const MergeItem(
-            id: 3,
-            status: MergeItemStatus.waiting,
-            label: 'https://example.com/a',
-          ),
-        ]),
-      ),
+      () => _FakeMergeController(MergeState(items)),
     ),
   ],
   child: const MarkItDownApp(locale: _ru),

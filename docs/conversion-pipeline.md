@@ -293,5 +293,7 @@ so `super_clipboard` is used instead. Editors that understand `text/markdown`
 get the markup; everything else gets exactly the same text as-is, so nothing
 gets worse for anyone.
 
-"Save as `.md`" writes UTF-8 **without a BOM** and with `\n` — including on
-Windows: a BOM and `\r\n` in a Markdown file break more tools than they fix.
+**Save as .md** and **Save to folder** write the full Markdown as
+UTF-8 without a BOM, using the converter's line endings. A separate
+file in a batch contains the same Markdown as its individual preview
+would save. See [Batch conversion and merging](client-architecture.md#batch-conversion-and-merging).
