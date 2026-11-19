@@ -43,12 +43,10 @@ level — and it's checked in CI just as automatically:
 
 ## How this is nailed down in the build
 
-The target platforms are Windows and Android; macOS is secondary.
-
 | platform | by what | how to verify |
 |---|---|---|
 | Android | `android.permission.INTERNET` is present as of 0.9 ("link" mode); no other network permissions (`ACCESS_NETWORK_STATE`, Wi-Fi) exist. `usesCleartextTraffic` is set so `http://` links also open | `aapt dump permissions app-release.apk` — the "APK permissions" step in `release.yml`; on the phone: "App info" → "Permissions" |
-| macOS | `Release.entitlements` has `network.client` (outbound, as of 0.9), **not** `network.server`; sandbox is enabled | `codesign -d --entitlements - MarkItDown.app`; in CI — a grep against `Release.entitlements` |
+| macOS | App Sandbox is enabled. `Release.entitlements` grants `network.client` for outgoing link requests. | `codesign -d --entitlements - 'MarkItDown UI.app'`; in CI — a grep against `Release.entitlements` |
 | iOS | platform deferred | — |
 | Windows | there's no OS-level guarantee and never was: the zip build doesn't have network permissions as a concept. It rests on the code: network only in `core/lib/src/web/`, no networking packages in `pub deps`, no networking libraries in `app/windows/` | in CI: grep against the code, `dart pub deps`, grep `app/windows/` for `ws2_32`/`winhttp`/`wininet`/`internetClient` |
 | Linux | platform deferred | — |
@@ -84,29 +82,26 @@ libjpeg/libpng). The models aren't downloaded — they're already in the
 app.
 
 Speech recognition (0.8) — whisper.cpp with the model in the bundle
-(Whisper small, 264 MB, plus Silero VAD), on-device, the same on Windows
-and Android. The model isn't downloaded — there's nothing to fetch it
-with, so it's bundled in full. `whisper/build.sh` builds whisper.cpp
+(Whisper small, 264 MB, plus Silero VAD), on-device on Windows, Android
+and macOS. `whisper/build.sh` builds whisper.cpp
 without `WHISPER_CURL` (downloading the model by URL) and without
 `GGML_RPC` (a networked backend), and fails if the build references
 `libcurl`/`ws2_32`/`winhttp`/`wininet`. AAC is decoded by the OS (Media
-Foundation, MediaCodec) — locally, from the file; the temporary file used
-for this is deleted in a `finally`.
+Foundation on Windows and MediaCodec on Android) from the local file.
+The audio decoder deletes any temporary file it creates. The macOS
+pipeline extracts metadata from AAC media.
 
 On Windows, the sidecar is a child process with the app's privileges.
 The wrapper keeps conversion on the local-file code path.
 
-On macOS (a secondary platform) the sidecar is a subprocess of the app and
-**inherits the parent's App Sandbox** — together with `network.client` as
-of 0.9. Its wrapper uses the same local-file entry point as Windows. The
-interpreter's own entitlements (`sidecar/sidecar.entitlements`) contain
-only `cs.disable-library-validation` — about loading libraries, not about
-networking — and have no network keys. CI checks this: the step fails if
-`network.*` shows up in `sidecar/*.entitlements`, if `network.server` shows
-up in `Release.entitlements`, or if the sandbox is disabled there. Caveat:
-how the sidecar behaves under the sandbox of a live `.app` hasn't been
-verified yet (no Xcode) — see
-[future-development.md](future-development.md).
+On macOS the sidecar inherits the app's sandbox and `network.client`.
+The app passes input bytes and the converter writes a private temporary
+copy inside the container, which the Python process opens through its
+local-file entry point. The interpreter explicitly declares only
+`cs.disable-library-validation`. CI checks that the release sandbox is
+enabled, that it omits `network.server`, and that the interpreter's
+entitlements contain no network keys. Live sandbox verification is
+tracked in [Operations](operations.md#macos-smoke-checks).
 
 ## What's not in the app
 
@@ -151,7 +146,8 @@ sends document content outward:
   on the clipboard. **Save as .md** writes to the chosen file and
   **Save to folder** writes separate results to the selected folder.
   On Android, the batch picker requests local locations and grants
-  access to the selected directory tree.
+  access to the selected directory tree. On macOS, App Sandbox grants
+  read and write access to locations opened in the native dialogs.
 - **Temporary input created by the sidecar and audio decoder** is deleted
   after use. Android's share plugin can hand over files from its cache.
 - **Model assets** copied out of the APK for OCR and transcription stay

@@ -21,28 +21,19 @@ as work proceeds. What landed in which version — see
 - [ ] Stage 6 — Images and audio (0.6) — released in `v0.6.0`: EXIF, OCR, and audio are done; manual verification (item 4) isn't checked off
 - [ ] Stage 7 — Polish and release (1.0) — local file-size limit removed,
   redesigned workspace and both batch output modes implemented,
-  GitHub Releases packaging in place
+  GitHub Releases packaging configured for Windows, Android and macOS
 - [ ] Speech recognition (0.8) — outside the original plan, requested by the author: done, manual verification (item 6) isn't checked off
 
-The plan's target platforms are **Windows and Android**. After Stage 4 was
-closed, the author said: "what I actually need isn't really the Mac version,
-it's Windows and Android." Before that, the plan was written with macOS
-first. Stage 4 verified ad-hoc signing of the standalone macOS sidecar.
-Developer ID signing, notarization and embedding remain open.
+Windows and Android became the primary targets after Stage 4. The
+Windows build runs on `windows-2022` and is checked manually on the
+author's Windows machine. Android is checked on the author's phone.
 
-**macOS is a target platform, but a secondary one.** Code for it isn't
-removed, and gets built later on a friend's Mac, where Xcode can be
-installed; Xcode.app won't install on the author's machine (Intel Mac, macOS
-12.7.6, see "Environment constraints" in [../AGENTS.md](../AGENTS.md)).
-Investing in macOS specifics — notarization, embedding the sidecar into the
-Xcode build — isn't needed without a separate request.
-
-**Windows isn't built here.** Development happens on a Mac, and Flutter only
-builds Windows on Windows. So Windows builds and tests run in CI on the
-GitHub runner `windows-2022`, while manual verification ("dropped a
-file — saw the result") happens on the author's own Windows machine, using
-the CI artifact. Android is verified as before: APK and the author's phone,
-no emulator is run.
+The 0.10.1 release included macOS DMGs for Intel and Apple Silicon.
+Starting with the 0.11.0 recipe, those builds are configured in GitHub
+Actions. Both target macOS 12 Monterey and later. Packaging embeds the
+sidecar and uses ad-hoc signing. The first automated builds and manual
+launch checks are tracked in
+[Future development](future-development.md#macos-release-verification).
 
 iOS is blocked by the same machine (`ITMS-90111`, see
 [future-development.md](future-development.md#ios)); Linux is deferred.
@@ -163,37 +154,26 @@ open question about which tool to use.
 implementation to cross-check against. The whole stage follows
 [python-sidecar.md](python-sidecar.md).
 
-**Status: closed, with two deliberately unverified spots** (item 3). What's
-done and how it's confirmed — item by item; the timeline is in
-[../CHANGELOG.md](../CHANGELOG.md).
-
-**Priorities shifted after the stage closed:** the macOS signing and
-notarization work is done, but is no longer a priority — the target
-platforms are now Windows and Android (see above and Stage 5). The
-remaining unverified macOS spots are kept in
-[future-development.md](future-development.md) under "secondary platform".
+**Status: closed.** Stage 4 verified the standalone sidecar and its
+ad-hoc signature on Intel macOS. The current release recipe is described
+in [Operations](operations.md#macos).
 
 1. **Sidecar build script** — done. `sidecar/build.sh`:
    python-build-standalone + `markitdown[pdf,docx,xlsx,xls,pptx,outlook]`,
    `run.py`, `manifest.json`; versions are pinned via a lock file with
    sha256 (`make sidecar-lock`). macOS x86_64: 242 MB, cold start ≈1 s.
-   Builds only for the host; there are no other lock files yet (see
-   [future-development.md](future-development.md)).
+   That measurement used the original Intel lock. See the current
+   [host locks](python-sidecar.md#lock-file-reproducibility).
 2. **`SidecarConverter`** — done. Priority −1.0, a 120 s timeout, exit
    codes, a temp file removed in `finally`; falls back to the Dart
    converter on any failure; only registered on desktop. `xls`/`msg`/
    `doc`/`ppt` detection goes by the Compound File directory.
-3. **macOS signing and notarization** — **partially verified.** Done and
-   verified: `sidecar/sign.sh`, `sidecar.entitlements` (only
-   `disable-library-validation`, no network), an ad-hoc signature with
-   Hardened Runtime, the signed sidecar working across all six formats, a
-   CI step for "no `network.*`". **Deliberately not verified:** Developer
-   ID signing and notarization (no certificate), embedding the sidecar
-   into the Xcode build (Xcode won't install — the Build Phase is
-   described in [operations.md](operations.md), but not implemented), how
-   the sidecar behaves under a real `.app`'s sandbox. The commands are
-   recorded in [operations.md](operations.md) and need a first run against
-   a real certificate.
+3. **macOS sidecar signing** — verified with `sidecar/sign.sh`, ad-hoc
+   signing under Hardened Runtime and samples of all six formats. The
+   interpreter's only explicit entitlement is `cs.disable-library-validation`.
+   The current DMG packaging step embeds this signed sidecar and uses
+   ad-hoc signing for the app. Launching the subprocess under the real
+   Flutter app's sandbox remains a manual check.
 4. **The code path without `pandas`** — checked, can't be avoided: it's
    needed for `xlsx`/`xls`, and isn't imported for the other formats.
    Stripping the extra weight brought it down to 242 MB from 355 (see
@@ -208,10 +188,9 @@ remaining unverified macOS spots are kept in
    sidecar, no `android.permission.INTERNET`; numbers are in
    [format-coverage.md](format-coverage.md#android-didnt-get-fatter-stage-4).
 
-**What surfaced and remains open:** the sidecar is tried first, but on
-large files it's two orders of magnitude slower than Dart (a 300-page PDF —
-112 s versus 1.2 s). The decision is the author's —
-[future-development.md](future-development.md#sidecar-performance-on-large-files).
+Stage 4 measured 112 s in the sidecar versus 1.2 s in Dart for a
+300-page PDF. The app now uses Dart for PDF and prefers the sidecar for
+`xls` and `msg`. See [the current pipeline](conversion-pipeline.md#the-sidecar--just-another-converter).
 
 ## Stage 5 — Windows (0.5)
 
@@ -555,7 +534,7 @@ build for Windows and Android.
 2. **Batch conversion implemented.** Merging several inputs into one
    Markdown file shipped in 0.10. The redesigned workspace also supports
    individual previews and export to a folder of separate `.md` files.
-   Manual checks of the native folder pickers on Windows and Android
+   Manual checks of the native folder pickers on Windows, Android and macOS
    are pending. See the [export checklist](operations.md#manual-export-checks).
 3. Settings: language, theme, disabling history. ~~Limits~~ — **the
    author's decision (0.7):** there's no file-size limit at all, so
@@ -563,7 +542,8 @@ build for Windows and Android.
    aren't a setting.
 4. Linux — if there's ever something to build it on (Windows will already
    be past Stage 5 by this point).
-5. GitHub Releases distributes a Windows ZIP and Android arm64 APK.
-   Permanent signing remains open. See the
+5. GitHub Releases distributes a Windows ZIP, Android arm64 APK and two
+   macOS DMGs. The next release recipe automates the macOS builds with
+   ad-hoc signing. See the
    [release checklist](operations.md#release) for the current workflow.
 6. A README with screenshots and an honest bundle size per platform.

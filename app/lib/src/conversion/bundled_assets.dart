@@ -10,13 +10,19 @@ import 'package:path/path.dart' as p;
 
 /// Windows (and Linux): Flutter assets sit as plain files next to the
 /// `.exe` — `data/flutter_assets/assets/<sub>/`, readable in place.
-String desktopAssetDir(String sub) => p.join(
-  File(Platform.resolvedExecutable).parent.path,
-  'data',
-  'flutter_assets',
-  'assets',
-  sub,
-);
+/// macOS: they live in App.framework inside the application bundle.
+String desktopAssetDir(String sub) {
+  final executableDir = File(Platform.resolvedExecutable).parent;
+  final assetRoot = Platform.isMacOS
+      ? p.join(
+          executableDir.parent.path,
+          'Frameworks',
+          'App.framework',
+          'Resources',
+        )
+      : p.join(executableDir.path, 'data');
+  return p.join(assetRoot, 'flutter_assets', 'assets', sub);
+}
 
 /// Android: assets are inside the APK — we copy [asset] to [target] once.
 /// The copy already on disk matches if its length equals [size] (known

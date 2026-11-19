@@ -19,6 +19,8 @@ library;
 import 'dart:ffi';
 import 'dart:io';
 
+import '../macos_bundle.dart';
+
 /// Finds and opens `libpdfium`. Order of sources:
 ///
 /// 1. `MARKITDOWN_PDFIUM_PATH` — an explicit path, needed for `dart test`
@@ -31,11 +33,7 @@ import 'dart:io';
 ///    rule in `app/windows/CMakeLists.txt`, and `LoadLibrary` checks the
 ///    executable's own directory first.
 ///
-/// A macOS app (the bundle from `flutter build macos`) isn't covered here
-/// yet — see "Environment limitations" in `../../../../../AGENTS.md`:
-/// there's no Xcode yet, so there's nowhere to run and test this branch.
-/// Once there is, a path like `Frameworks/libpdfium.dylib` relative to
-/// `Platform.resolvedExecutable` will be added here.
+/// On macOS the packaged library lives in `Contents/Frameworks`.
 DynamicLibrary loadPdfiumLibrary() {
   final override = Platform.environment['MARKITDOWN_PDFIUM_PATH'];
   if (override != null && override.isNotEmpty) {
@@ -45,7 +43,10 @@ DynamicLibrary loadPdfiumLibrary() {
     return DynamicLibrary.open('libpdfium.so');
   }
   if (Platform.isMacOS) {
-    return DynamicLibrary.open('libpdfium.dylib');
+    final bundled = File('$macosBundleFrameworks/libpdfium.dylib');
+    return DynamicLibrary.open(
+      bundled.existsSync() ? bundled.path : 'libpdfium.dylib',
+    );
   }
   if (Platform.isWindows) {
     return DynamicLibrary.open('pdfium.dll');

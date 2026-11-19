@@ -6,9 +6,8 @@ at release time. Kept separate from
 how the app is built: that file answers "how it works," this one answers
 "what to click."
 
-Windows and Android are the release targets. CI builds Windows on
-`windows-2022` and Android on `ubuntu-24.04`. macOS is a secondary target,
-with the unverified signing and packaging steps marked below.
+CI builds Windows on `windows-2022`, Android on `ubuntu-24.04`, and
+macOS on separate Intel and Apple Silicon runners.
 
 ---
 
@@ -24,6 +23,8 @@ runs exactly the same thing — the local command exists so you don't find out
 about a formatting break from the pipeline.
 
 `make test` downloads PDFium and the OCR models itself (`tesseract/fetch.sh`).
+On an Apple Silicon Mac, use the [macOS test commands](#local-macos-tests)
+because the standalone macOS PDFium download is x64.
 The OCR tests (`core/test/ocr_test.dart`) need a built Tesseract: run `make
 tesseract` once (≈10 minutes, cmake plus a C/C++ compiler), and after that
 `make test` finds it in `tesseract/native/host/` on its own. Without it,
@@ -48,7 +49,7 @@ workflows:
 | workflow | when | what it does |
 |---|---|---|
 | `ci.yml` | Branch push, pull request, or call from `release.yml` | `verify` on `ubuntu-24.04` runs `make verify`, privacy checks and the PR version check. `windows-sidecar` builds and tests the Python bundle on `windows-2022`. `windows` runs the Dart and Flutter checks, bundles the sidecar and uploads `markitdown_ui-windows-x64`. |
-| `release.yml` | Tag `v*`, or a PR changing this workflow | Calls `ci.yml`, builds the Android arm64 APK and checks its permissions and assets. A tag publishes the Windows ZIP and Android APK to GitHub Releases. A PR runs the build checks. |
+| `release.yml` | Tag `v*`, relevant pull request, or manual run | Tag and PR runs call `ci.yml` and build Android and both macOS packages. A tag publishes the Windows ZIP, Android APK and macOS DMGs. A manual run builds the macOS artifacts. |
 
 **Windows job** (plan — [implementation-plan.md](implementation-plan.md#stage-5--windows-05),
 item 2): steps run under `shell: bash` (Git Bash), because `run:` on
@@ -99,14 +100,15 @@ behavior of the bundled libraries. See
 
 ## Manual export checks
 
-Use the Windows CI artifact and an APK on a physical Android device.
-The Flutter tests cover the queue, previews and duplicate filenames.
-Exercise the native dialogs and the actual output directories on
-both platforms:
+Use the Windows CI artifact, an APK on a physical Android device and
+the DMG for the Mac's CPU. The Flutter tests cover the queue, previews
+and duplicate filenames. Check the native dialogs and output directories
+as follows.
 
 1. Import two files with the same stem and different contents, such as
-   `notes.txt` and `notes.csv`. On Windows, try the picker and drag-and-drop.
-   On Android, try the picker and sharing several files together.
+   `notes.txt` and `notes.csv`. On Windows and macOS, try the picker and
+   drag-and-drop. On Android, try the picker and sharing several files
+   together.
 2. Open one ready row to see its Markdown. With **Separate files**
    selected, cancel **Save to folder** once, then choose a directory
    containing `notes.md`. Check that both new `.md` files match their
@@ -115,7 +117,8 @@ both platforms:
    can still save the ready results. Switch to **One document**, remove
    the failed item, reorder the other two and check the merged headings.
 4. Check the queue and export controls in the system's light and dark
-   themes. On Windows, resize the window to exercise the narrow layout.
+   themes. On Windows and macOS, resize the window to exercise the narrow
+   layout.
 
 ## Version
 
@@ -142,9 +145,10 @@ a separate step only on `pull_request` (the base branch is fetched via
 
 ## Conversion dependencies
 
-| Component | Pins for 0.10.2 | Build settings |
+| Component | Pins for 0.11.0 | Build settings |
 |---|---|---|
-| PDFium | `160.0.8165.0` (`chromium/8165`) | [`pdfium/fetch.sh`](../pdfium/fetch.sh) |
+| PDFium for Windows, Android and standalone host tests | `160.0.8165.0` (`chromium/8165`) | [`pdfium/fetch.sh`](../pdfium/fetch.sh) |
+| PDFium in the macOS DMGs | Native library from `pypdfium2==5.11.0` | [macOS wheel locks](../sidecar/locks/) and [`tool/package_macos.sh`](../tool/package_macos.sh) |
 | Desktop OCR | Tesseract 5.5.4, Leptonica 1.87.0, libpng 1.6.59, libjpeg-turbo 3.2.1, zlib 1.4 on Windows | [`tesseract/versions.sh`](../tesseract/versions.sh) |
 | Android OCR | Tesseract4Android 4.9.0 (Tesseract 5.5.1) | [`tesseract/versions.sh`](../tesseract/versions.sh) |
 | Speech | whisper.cpp 1.9.5, Whisper small q8_0, Silero VAD 6.2.0, miniaudio 0.11.26, Opus 1.6.1 | [`whisper/versions.sh`](../whisper/versions.sh) |
@@ -173,8 +177,6 @@ nowhere to call. Everything listed below is only needed for signing builds.
 |---|---|---|
 | Android keystore | **none yet** — Stage 7; will live outside the repo (`android/key.properties` in `.gitignore`) and in GitHub Secrets | APK signing; without a stable key a new version can't install over an old one |
 | Authenticode certificate (Windows) | **none yet** — open question (Stage 5, item 6 → Stage 7) | signing the `.exe`/MSIX; without it, SmartScreen warns on first run |
-| Apple Developer ID cert | the build machine's Keychain | signing the macOS bundle |
-| App-specific password / notarytool profile | Keychain (`xcrun notarytool store-credentials`) | notarization |
 
 ## Build
 
@@ -218,153 +220,83 @@ CI uploads the `Release/` directory as an artifact. GitHub Releases
 packages it in a ZIP with a versioned top-level folder. The executable
 is unsigned, so SmartScreen may display a warning on first run.
 
-### macOS (secondary platform)
+### macOS
+
+The Release workflow is configured to build two packages targeting
+macOS 12 Monterey and later. It uses `macos-15-intel` for `x64` and
+`macos-15` for `arm64`. A manual **Actions → Release → Run workflow**
+build uploads `markitdown_ui-macos-x64` and `markitdown_ui-macos-arm64` as
+artifacts. A successful tag build attaches the matching
+`markitdown_ui-X.Y.Z-macos-x64.dmg` and
+`markitdown_ui-X.Y.Z-macos-arm64.dmg` to GitHub Releases.
+
+On a Mac with full Xcode, build for the host architecture:
 
 ```bash
-cd app && flutter build macos --release
+make tesseract fetch-tesseract whisper sidecar
+(cd app && FLUTTER_XCODE_ARCHS="$(uname -m)" \
+  FLUTTER_XCODE_MACOSX_DEPLOYMENT_TARGET=12.0 flutter build macos --release)
+app_name="$(cat app/macos/Flutter/ephemeral/.app_filename)"
+bash tool/package_macos.sh "app/build/macos/Build/Products/Release/$app_name" \
+  dist/markitdown_ui-macos.dmg
 ```
 
-Since Stage 4, the sidecar is built first (`make sidecar`, see
-[python-sidecar.md](python-sidecar.md#build)), and after that comes
-**signing from the inside out**: first every Mach-O inside the sidecar, then
-the Flutter frameworks, then the `.app`, then the DMG. A single unsigned
-`.so` among the dependencies means notarization is refused, and in the
-report it will be just one line among many.
+The macOS packages use the PDFium binary from the locked `pypdfium2`
+wheel for Monterey compatibility. The release workflow tests the
+bundled PDFium, OCR, speech and Python components. Packaging checks the
+declared minimum OS of the app and its Mach-O binaries for the packaged
+architecture. It creates an HFS+ disk image with a shortcut to
+**Applications** and verifies its checksum.
 
-#### Signing and notarization: commands
+#### Local macOS tests
 
-**Verification status.** Verified on this machine: everything related to
-**ad hoc signing with Hardened Runtime** (`--options runtime`, identity
-`-`): the signing script, `codesign --verify --strict --deep` verification,
-running `run.py` across all six formats from the signed tree, embedding the
-signed sidecar in a test `.app` and signing that `.app` with
-`Release.entitlements`. **Not verified** (there's no Developer ID on this
-machine — `security find-identity -v -p codesigning` is empty): signing
-with a real identity, `--timestamp` against Apple's server, notarization,
-`stapler`, `spctl`, behavior under a real `.app` sandbox, and building
-Runner itself (no Xcode). The commands below for that part are written from
-the documentation and need to be run through once by hand with a real
-certificate; whatever breaks should be fixed right here.
-
-The order is strict, because signing hashes the content: any edit to a file
-after signing breaks it.
+The standalone PDFium download used by `make test` is x64 and declares
+macOS 13 as its minimum. Use the locked wheel to test the same PDFium as
+the DMG on either Mac architecture. Run from the repository root.
 
 ```bash
-ID="Developer ID Application: First Last (TEAMID)"
-
-# 1. The sidecar — in full, before signing anything else. Sign only AFTER
-#    compileall and all the cleanup steps that build.sh performs.
-make sidecar
-make sign-sidecar IDENTITY="$ID"        # = sidecar/sign.sh sidecar/dist/<host> "$ID"
-#    What it does: every Mach-O, found by magic bytes (.so/.dylib first,
-#    python/bin/python3.12 last, with sidecar/sidecar.entitlements),
-#    --options runtime --timestamp, then codesign --verify --strict on each
-#    file and --deep --strict on the interpreter, then run.py --self-check.
-
-# 2. Build the app and place the sidecar into Contents/Resources/sidecar
-#    (the Xcode build step isn't written yet — see "Embedding" below). rsync -a
-#    preserves signatures: they live inside the files themselves.
-cd app && flutter build macos --release
-APP=build/macos/Build/Products/Release/MarkItDown.app
-rsync -a --delete ../sidecar/dist/macos-$(uname -m)/ "$APP/Contents/Resources/sidecar/"
-
-# 3. The Flutter app's own frameworks and dylibs — inside out.
-#    Do NOT use --deep: it would overwrite the nested sidecar's signatures
-#    without the interpreter's entitlements.
-find "$APP/Contents/Frameworks" -depth \( -name '*.framework' -o -name '*.dylib' \) -print0 |
-  xargs -0 -n1 codesign --force --sign "$ID" --options runtime --timestamp
-
-# 4. The application itself — with Release.entitlements (sandboxed, no network).
-codesign --force --sign "$ID" --options runtime --timestamp \
-  --entitlements macos/Runner/Release.entitlements "$APP"
-
-# 5. Checks before submission.
-codesign --verify --deep --strict --verbose=2 "$APP"
-codesign -d --entitlements - "$APP"      # app-sandbox present, network.server absent
-codesign -d --entitlements - "$APP/Contents/Resources/sidecar/python/bin/python3.12"
-spctl -a -vv -t exec "$APP"              # before notarization: "rejected (Unnotarized Developer ID)" is expected
-
-# 6. DMG and notarization. notarytool credentials — once:
-#    xcrun notarytool store-credentials markitdown-notary \
-#        --apple-id <id> --team-id <TEAMID> --password <app-specific-password>
-hdiutil create -volname MarkItDown -srcfolder "$APP" -ov -format UDZO MarkItDown.dmg
-codesign --sign "$ID" --timestamp MarkItDown.dmg
-xcrun notarytool submit MarkItDown.dmg --keychain-profile markitdown-notary --wait
-#    If Invalid — the reasons line by line (usually: an unsigned/no-runtime Mach-O):
-#    xcrun notarytool log <submission-id> --keychain-profile markitdown-notary
-
-# 7. Stapling and final check (a normal result is "accepted",
-#    "source=Notarized Developer ID").
-xcrun stapler staple MarkItDown.dmg
-xcrun stapler validate MarkItDown.dmg
-spctl -a -vv -t open --context context:primary-signature MarkItDown.dmg
+make pub-get format analyze
+make tesseract fetch-tesseract whisper sidecar
+(cd app && flutter test)
+export MARKITDOWN_TESSERACT_DIR="$PWD/tesseract/native/host"
+export MARKITDOWN_WHISPER_DIR="$PWD/whisper/native/host"
+export MARKITDOWN_SIDECAR_DIR="$PWD/sidecar/dist/macos-$(uname -m)"
+export MARKITDOWN_PDFIUM_PATH="$MARKITDOWN_SIDECAR_DIR/lib/pypdfium2_raw/libpdfium.dylib"
+(cd core && dart test)
 ```
 
-Why step 1 stands apart: the sidecar is also needed without the app (for
-cross-checking against the Dart core, and for development), and the signing
-script itself verifies the whole tree and refuses if it finds an unsigned
-Mach-O. Hooks in Xcode for the same purpose are a question for a future
-Build Phase (see below) and don't affect the commands.
+#### Signing and sandbox
 
-#### Entitlements: what and why
+The packaging script places the native libraries in
+`Contents/Frameworks` and the Python sidecar in `Contents/Resources/sidecar`.
+It signs the interpreter and its libraries with `sidecar/sign.sh`,
+runs the sidecar self-check, and seals the app with an ad-hoc signature.
+GitHub Actions uses no Apple credentials. The app is distributed
+without notarization; users can approve the first launch in macOS
+settings. [Apple's guide](https://support.apple.com/en-us/102445)
 
-| where | what | why |
-|---|---|---|
-| `Release.entitlements` (Runner) | `app-sandbox`, `files.user-selected.read-only`, `network.client` (since 0.9) | **the sandbox is enabled deliberately**; `network.client` is for the "link" mode's outbound connections ([offline-and-privacy.md](offline-and-privacy.md)) |
-| `DebugProfile.entitlements` | the same plus `allow-jit`, `network.server` | Flutter tooling (hot reload, VM service); debug/profile only, never shipped in release |
-| `sidecar/sidecar.entitlements` (interpreter) | `cs.disable-library-validation` | see [python-sidecar.md](python-sidecar.md#signing-verified-ad-hoc-with-hardened-runtime) |
-| nowhere | `network.server` in Release, any `network.*` for the sidecar | CI step "no network.server in Release.entitlements, no network for the sidecar" |
+The release app uses App Sandbox. `files.user-selected.read-write`
+allows saving Markdown to a location selected by the user.
+`network.client` is for outgoing connections in link mode. The sidecar
+inherits the app's sandbox and reads input from the app's temporary
+directory because access granted by a file picker belongs to the app.
 
-The decision on Runner (Stage 4, revisited at 0.9): **keep the sandbox**;
-the only network key in Release is `network.client`. Below are the original
-Stage 4 arguments; point (b) no longer holds as of 0.9: the sidecar inherits
-`network.client` too, and what keeps it offline is the absence of network
-converters, not the sandbox. The arguments: (a) distribution is a DMG, not
-the MAS, so a sandbox isn't formally required, but it's the only thing that
-makes the "no network" guarantee verifiable by the operating system itself;
-(b) the sidecar, as a subprocess, inherits the parent's sandbox and is
-therefore also without network access — the Python dependencies couldn't
-phone out even if they really wanted to; (c) the application only needs
-`files.user-selected.read-only`: the file arrives via a dialog or
-drag-and-drop (which grants access inside the sandbox), the user never asked
-for write access, and the sidecar reads a copy from the container's temp
-folder. The cost: a sandboxed subprocess can't be verified here — it needs a
-live `.app` (see "Verification status" above).
+#### macOS smoke checks
 
-#### Embedding the sidecar into the macOS bundle — open
+The Intel host passed the conversion tests with the bundled PDFium
+and Python components. A test app with the native libraries and models
+also passed signing and DMG checksum checks on macOS 12.7.6. The full
+Flutter builds and the following checks on the automated artifacts are
+pending.
 
-The app looks for the sidecar at
-`<App>.app/Contents/Resources/sidecar`
-(`SidecarConverter.discover`, see
-[conversion-pipeline.md](conversion-pipeline.md#the-sidecar--just-another-converter)),
-and the build step needed for that **doesn't exist** in `app/macos/`: Xcode
-isn't installed on the author's machine (see [../AGENTS.md](../AGENTS.md)),
-and editing `Runner.xcodeproj/project.pbxproj` blind, without being able to
-build and verify it, wasn't an option. What needs to be done once the macOS
-build works:
-
-1. A Run Script Build Phase on the `Runner` target, after "Copy Bundle
-   Resources": copy the output of `make sidecar` (the directory with
-   `python/`, `lib/`, `run.py`, `manifest.json`) into
-   `"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources/sidecar"` (`rsync -a
-   --delete`, keeping the symlinks inside `python/` — `-a` does that).
-2. Declare the phase's input/output files explicitly (otherwise Xcode will
-   either rebuild it every time or, conversely, never run it), and disable
-   `ENABLE_USER_SCRIPT_SANDBOXING` for this phase — the script reads a
-   directory outside the project.
-3. Sign the nested `.so`/executable files in a separate step after copying,
-   see above; `Contents/Resources/sidecar` itself must be covered by the
-   bundle's signature.
-4. The phase shouldn't fail without a built sidecar: the app can run without
-   it (no directory means the sidecar just doesn't register), and `flutter
-   build macos` for developing the Dart side shouldn't require it.
-5. Verify on a machine with Xcode: "dropped an `.xls`, got Markdown," and
-   `warnings` contains `converterId: sidecar`.
-
-None of this happens on Android: the sidecar doesn't end up in the APK —
-verified by measurement (APK 25.1 → 25.3 MB, the growth entirely from Dart
-code, see
-[format-coverage.md](format-coverage.md#android-didnt-get-fatter-stage-4)).
+1. Install the matching DMG on an Intel Mac running Monterey and on an
+   Apple Silicon Mac running a current version of macOS. Confirm the
+   first launch using the [release instructions](../.github/release-notes.md).
+2. Convert a PDF with a table, a scanned page, an `.xls` or `.msg` and a
+   short WAV or MP3 file. Check the OCR text, transcript and whether
+   the legacy file used the bundled sidecar.
+3. Open the native save dialog for one result and run the
+   [batch export checks](#manual-export-checks).
 
 ### Android
 
@@ -415,15 +347,14 @@ needed, is Xcode Cloud; details and what that would entail are in
 
    It fails if the version in `app/pubspec.yaml` doesn't match the tag, if
    the APK ended up with a network permission beyond `INTERNET`, or if the
-   Windows build is missing the sidecar — a crippled release doesn't get
-   published. The release text is built by `tool/release_notes.sh`:
-   "What's new" — the version's own section of `CHANGELOG.md` (no section
-   — the release fails), then `.github/release-notes.md` (install
-   instructions for each platform). Both are hard-wrapped like all repo
-   Markdown, but GitHub renders every line break in a release body as a
-   real one, so the script joins paragraphs into single lines; preview it
-   with `tool/release_notes.sh 0.10.0`. To fix the text of a published
-   release: `tool/release_notes.sh X.Y.Z > /tmp/notes.md && gh release
+   Windows build is missing the sidecar. Both macOS DMGs must pass
+   packaging checks and be present. The release text is built by
+   `tool/release_notes.sh`. It appends the install instructions from
+   `.github/release-notes.md` to the version's "What's new" section from
+   `CHANGELOG.md`. The changelog section is required for publishing.
+   The script joins hard-wrapped paragraphs for GitHub Releases. Preview
+   the result with `tool/release_notes.sh 0.10.0`. To edit a published
+   release, run `tool/release_notes.sh X.Y.Z > /tmp/notes.md && gh release
    edit vX.Y.Z --notes-file /tmp/notes.md`.
 
    **Signing is still temporary.** The APK is signed with the runner's debug
@@ -435,11 +366,8 @@ needed, is Xcode Cloud; details and what that would entail are in
 4. **Record the bundle size per platform in the README.** It's the honest
    price of being offline, and the user has the right to see it before
    downloading, not after.
-5. Both platforms are distributed only via GitHub Releases (Windows — a
-   zip, a Stage 5 decision; we don't publish on Google Play — the author's
-   decision, 2026-10-14); macOS (secondary) — a DMG on GitHub Releases, only
-   on separate request (the Mac App Store is a separate decision, see
-   [python-sidecar.md](python-sidecar.md#about-the-app-store)).
+5. Windows ZIPs, Android APKs and macOS DMGs are distributed through
+   GitHub Releases.
 
 ## What's not here
 

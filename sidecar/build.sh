@@ -60,9 +60,14 @@ PY="${WORK}/${PY_REL}"
 # ALLOW_UNLOCKED=1 is a deliberate bypass (used to create the first lock on
 # a new host).
 if [[ -f "${LOCK_FILE}" ]]; then
+  PLATFORM_ARGS=()
+  if [[ "${HOST}" == macos-* ]]; then
+    PLATFORM_ARGS=(--platform "macosx_12_0_${HOST#macos-}")
+  fi
   echo "sidecar: ставлю по ${LOCK_FILE}"
   "${PY}" -I -m pip install \
     --disable-pip-version-check --no-input --no-compile --only-binary=:all: \
+    ${PLATFORM_ARGS[@]+"${PLATFORM_ARGS[@]}"} \
     --require-hashes --no-deps --target "$(native_path "${WORK}/lib")" \
     -r "$(native_path "${LOCK_FILE}")"
 elif [[ -n "${ALLOW_UNLOCKED:-}" ]]; then

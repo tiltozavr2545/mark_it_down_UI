@@ -32,7 +32,7 @@ Future<OcrSettings?> _prepare() async {
   }
 }
 
-/// Windows (and Linux): models are read in place, next to the `.exe`.
+/// Desktop: models are read in place from the app's bundled assets.
 String? _desktopAssetsDir() {
   final dir = desktopAssetDir('tessdata');
   final complete = _models.every(

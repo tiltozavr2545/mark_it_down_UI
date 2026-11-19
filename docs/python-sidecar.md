@@ -2,10 +2,9 @@
 
 How the real [microsoft/markitdown](https://github.com/microsoft/markitdown)
 ends up inside a desktop application, why it's needed there given the Dart
-core, and what it costs. The target desktop is **Windows** (Stage 5 of the
-plan); macOS is secondary. The build verified so far is macOS x86_64
-(Stage 4), and the numbers below, unless stated otherwise, come from there;
-what changes on Windows is in the [«Windows»](#windows-stage-5) section.
+core, and what it costs. The sidecar ships on Windows and macOS. The
+Stage 4 measurements below come from an Intel Mac. See the
+[Windows](#windows-stage-5) section for that platform's build details.
 
 There is no sidecar on Android or iOS, and there won't be — the reason is at
 the very bottom. How it plugs into the pipeline (priority −1.0, `localPath`)
@@ -74,16 +73,18 @@ make sidecar                # = ./sidecar/build.sh
 FORCE=1 make sidecar        # rebuild even if already built
 ```
 
-`make verify` can run against an existing sidecar. Windows CI builds and
-tests the sidecar in a dedicated job. A fresh build downloads the interpreter
-(~25 MB) and wheels for dependencies such as numpy, pandas, and onnxruntime.
-Subsequent builds can reuse the downloaded archive and pip cache.
+`make verify` runs sidecar integration tests when `MARKITDOWN_SIDECAR_DIR`
+points to an existing build. Windows CI builds and tests the sidecar in a
+dedicated job. Each macOS release job builds and tests its own architecture.
+A fresh build downloads the interpreter (~25 MB) and wheels for packages
+such as NumPy, pandas and ONNX Runtime. Rebuilds can reuse the downloads.
 
 What `sidecar/build.sh` does, step by step, with reasons:
 
-1. **Pick the asset for the host.** macOS x86_64 and Windows x86_64 have
-   builds and committed locks. The macOS arm64 and Linux entries specify
-   interpreter assets for future host builds.
+1. **Pick the asset for the host.** macOS x86_64, macOS arm64 and Windows
+   x86_64 have committed locks. Both macOS locks target Monterey. To
+   regenerate the Apple Silicon lock from Intel, run
+   `./sidecar/lock.sh --macos-arm64`.
 2. **Download and sha256.** The release version and Python version are
    pinned in `sidecar/common.sh` with checksums from the release assets.
    The archive lives in
@@ -93,9 +94,9 @@ What `sidecar/build.sh` does, step by step, with reasons:
    a reference at all.
 3. **`pip install --require-hashes --no-deps --target lib -r locks/<host>.txt`**
    using the interpreter *from the archive*, with `-I` and
-   `--only-binary=:all:` — no building from source on the machine and no
-   influence from the user's environment. The lock pins each dependency
-   by version and wheel SHA-256.
+   `--only-binary=:all:`. The lock pins each dependency by version and
+   wheel SHA-256. macOS installs against the `macosx_12_0` wheel tags
+   for the host architecture, even on a newer build machine.
 4. **Cleanup** (what's needed at runtime stays; markitdown's code and its
    dependencies' code are not touched):
    - `lib/bin/` (pip scripts with absolute paths), all `tests/`, other
@@ -138,9 +139,10 @@ works and creates not a single new file (file count before and after —
 
 ### Lock file: reproducibility
 
-The committed locks are `macos-x86_64.txt` and `windows-x86_64.txt` in
-`sidecar/locks/`. Each line pins a package version and SHA-256 of the
-host-specific wheel. The build uses `--require-hashes --no-deps`.
+The committed locks are `macos-x86_64.txt`, `macos-arm64.txt` and
+`windows-x86_64.txt` in `sidecar/locks/`. Each line pins a package version
+and SHA-256 of the host-specific wheel. The build uses
+`--require-hashes --no-deps`.
 On a new host, run `./sidecar/lock.sh` before building.
 `ALLOW_UNLOCKED=1` permits an exploratory build.
 
@@ -157,9 +159,14 @@ make compare-sidecar       # re-cross-check against the Dart core
 
 `lock.sh` uses pip from the bundled interpreter and takes wheel hashes
 from its JSON report. Run the lock and build scripts in Git Bash for a
-native Windows update. For 0.10.2 the Windows lock was resolved for x64
+native Windows update. For 0.11.0 the Windows lock was resolved for x64
 and checked with pip's `--platform win_amd64` and `--require-hashes`.
 Windows CI runs the interpreter and integration tests.
+On macOS, the resolver also targets the `macosx_12_0` wheel tags. Run
+`./sidecar/lock.sh --macos-arm64` to regenerate the Apple Silicon lock
+from either Mac architecture. Both macOS locks include `pypdfium2==5.11.0`.
+The DMG recipe copies its native PDFium library into `Contents/Frameworks`
+for the Dart PDF converter. See [macOS packaging](operations.md#macos).
 
 ### Sizes (macOS x86_64)
 
@@ -416,58 +423,38 @@ and [the implementation plan](implementation-plan.md#stage-5--windows-05).
 
 ## Signing and notarization on macOS
 
-*Secondary platform: this section is maintained and stays as is, but is no
-longer a priority.*
+The [DMG packaging script](operations.md#macos) copies the built sidecar
+to `Contents/Resources/sidecar` and signs it ad hoc. The DMGs are
+distributed through GitHub Releases without Apple notarization.
 
-The most likely point where everything breaks down — hence a dedicated
-section. The full working commands (marked with what's verified and what
-isn't) are in
-[operations.md](operations.md#signing-and-notarization-commands); here is
-why it's done this way.
+`sidecar/sign.sh` finds Mach-O files by their magic bytes and signs each
+library and executable with `--options runtime`. It verifies every
+signature and runs `run.py --self-check` before the outer app is signed.
+Finish cleanup, `lipo -thin` and bytecode compilation before signing.
+Modifying a file afterward invalidates its signature.
 
-The embedded interpreter is **an executable file inside the bundle**, and
-Hardened Runtime treats it with full seriousness:
-
-- Every nested Mach-O binary is signed **separately**, with `--options
-  runtime` (without it, notarization refuses), and only then is the bundle
-  itself signed (inside out). There are 111 of them: 110 `.so`/`.dylib`
-  files and `python3.12`. `sidecar/sign.sh` finds them by magic bytes, not
-  by extension, so as not to miss a `.so` with a nonstandard name.
-- **Signing happens strictly after `build.sh` has fully run** — after
-  compileall, all the cleanup steps, and `lipo -thin`: signing hashes the
-  file, and any edit afterward breaks the signature. `sign.sh` itself writes
-  nothing into the tree except the signatures. And it runs strictly before
-  signing the outer `.app`, whose resource seal covers this directory.
-- `com.apple.security.network.client` in the interpreter's entitlements is
-  **not needed and is not added**. Since 0.9 the application (Runner) has
-  it — for the "link" mode — and the sidecar, as a subprocess, inherits it
-  along with the sandbox; without network access, the sidecar relies on the
-  fact that markitdown's network converters simply aren't installed in it
-  (see [offline-and-privacy.md](offline-and-privacy.md)). `sign.sh` refuses
-  to run if the entitlements file contains a network key, and it checks the
-  final entitlements of the signed interpreter.
-- Notarization checks the entire tree: a single unsigned `.so` among the
-  dependencies is a refusal, and in the report it's just one line among
-  many. That's why signing is done by a script that walks the tree, not by
-  hand, and at the end every file is verified individually.
+The interpreter has only `cs.disable-library-validation` as an explicit
+entitlement. `sign.sh` checks the input and signed entitlements for
+network keys. The subprocess inherits the app's sandbox, including the
+outbound entitlement used for link conversion. The wrapper converts
+local files and the bundle excludes network converters. See
+[Offline and privacy](offline-and-privacy.md).
 
 ### Signing: verified ad hoc with Hardened Runtime
 
-There's no Developer ID identity on this machine (`security find-identity -v
--p codesigning` — 0), so the honest verification here is **ad hoc (`-`)
-with `--options runtime`**: Hardened Runtime applies to ad hoc signing too,
-including library validation, so the set of entitlements is genuinely
-exercised. Not verified: a real Developer ID, `--timestamp`, notarization.
+Stage 4 verified the Intel sidecar using an ad-hoc signature (`-`) with
+`--options runtime`. This exercises Hardened Runtime and library
+validation on the same type of signature used by the current recipe.
 
 What was found, by entitlement:
 
 | entitlement | needed? | how it was verified |
 |---|---|---|
-| `cs.disable-library-validation` | **yes, for ad hoc; probably not with a Developer ID** | without it, `import numpy` fails: `code signature … not valid for use in process: mapped file has no Team ID and is not a platform binary`. With it, `--self-check` and all six formats pass, and the output matches the unsigned build byte-for-byte. With a real Developer ID, all 111 files would get one Team ID, and library validation, per the documentation, should let them through anyway; there's no way to verify this here, so the key is left in (it weakens Hardened Runtime and is a candidate for removal as soon as there's a build with a real certificate) |
+| `cs.disable-library-validation` | required for ad hoc | Without it, NumPy cannot load libraries because their ad-hoc signatures have no Team ID. With it, the self-check and fixtures for all six formats matched the unsigned build. |
 | `cs.allow-unsigned-executable-memory` | **no** | a ctypes callback (`qsort` with `CFUNCTYPE`) under Hardened Runtime **hangs** without it (the process spins in the kernel, 12 s of system time out of 20), and completes in 0.8 s with it. `allow-jit` doesn't help — libffi doesn't use `MAP_JIT`. But callbacks only occur in `cffi.backend_ctypes`, `pypdfium2` (not on markitdown's code path), and the Windows branch of `click`; all six formats and onnxruntime/numpy/lxml work fine without it. If a dependency with callbacks ever shows up, the symptom is exactly this hang, and the fix is a single line in `sidecar.entitlements` |
 | `cs.allow-jit` | no | see above; Python 3.12 doesn't use a JIT |
-| `com.apple.security.network.*` | **forbidden** | the sidecar is offline |
-| `app-sandbox` + `inherit` | no, for the DMG | a sandboxed app's subprocess inherits the sandbox on its own; for the Mac App Store both would be needed (a separate decision). **Not verified** — needs a live `.app`, and Xcode isn't installed |
+| `com.apple.security.network.*` | omitted | `sign.sh` checks the interpreter. The release app's outbound entitlement is inherited by subprocesses. |
+| `app-sandbox` + `inherit` | omitted from the interpreter | The enclosing app enables App Sandbox. The live subprocess check is tracked in [Operations](operations.md#macos-smoke-checks). |
 
 Additionally verified: a signed tree copied into a directory with a space in
 the path (`rsync -a`) works; a signed tree embedded in a test `.app` and
@@ -481,12 +468,9 @@ so the application's timeout for the first call should be generous.
 
 ### About the App Store
 
-A bundle containing an interpreter is not a violation (the app is
-self-contained, no code is downloaded from anywhere), but it is a
-**significantly more cumbersome path**: sandboxing, signing of nested
-binaries, heightened review scrutiny. That's why distribution at Stage 4 is
-a notarized DMG via GitHub Releases, and the Mac App Store is a separate
-decision, if and when there's a reason for it.
+The release channel is an ad-hoc-signed app in a DMG on GitHub Releases.
+Mac App Store submission remains deferred. See
+[Future development](future-development.md#mac-app-store).
 
 ## Why it's absent on mobile
 

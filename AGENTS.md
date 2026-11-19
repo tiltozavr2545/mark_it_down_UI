@@ -23,14 +23,14 @@ read:
 
 ## The project
 
-MarkItDown UI converts local files to Markdown on Windows and Android.
+MarkItDown UI converts local files to Markdown on Windows, Android and macOS.
 The Dart core handles file conversion, including PDF tables and the
-fallback for legacy Excel and Outlook files. Windows builds bundle a
+fallback for legacy Excel and Outlook files. Windows and macOS builds bundle a
 Python sidecar for `xls` and `msg`. OCR and speech recognition run on
 device with Tesseract and whisper.cpp.
 
-The project ships through GitHub Releases as a Windows ZIP and an
-Android APK. macOS is secondary. See [the README](README.md) for
+The project ships through GitHub Releases as a Windows ZIP, an Android APK
+and macOS DMGs for Intel and Apple Silicon. See [the README](README.md) for
 current features and [the implementation plan](docs/implementation-plan.md)
 for stage history.
 
@@ -48,7 +48,7 @@ for stage history.
   [docs/offline-and-privacy.md](docs/offline-and-privacy.md). Don't propose
   it; if it seems unavoidable, that's a reason to discuss it, not to work
   around it.
-- **Target platforms are Windows and Android.** Development happens on an
+- **Windows and Android are the primary targets.** Development happens on an
   Intel MacBook Pro (macOS 12.7.6), and Flutter only builds a Windows app
   on Windows, so Windows is built and tested in CI on `windows-2022`
   ([Stage 5](docs/implementation-plan.md#stage-5--windows-05)). Manual
@@ -64,13 +64,11 @@ for stage history.
   the Intel machine physically cannot run a newer macOS — this is a dead
   end, don't suggest upgrading. The number was verified at Stage 0
   (`flutter --version`) and still matches.
-- **macOS is secondary and isn't built here: Xcode.app itself won't
-  install on the author's machine** (only Command Line Tools 14.2 is
-  available), and `flutter build macos` requires the full Xcode. The
-  macOS code isn't removed; it'll be built later on a friend's Mac. Don't
-  suggest reinstalling Xcode — it won't install; don't invest in
-  notarization or Xcode-build embedding without a request. More —
-  [docs/future-development.md](docs/future-development.md#macos-build).
+- **macOS release builds are configured in GitHub Actions** on Intel and
+  Apple Silicon runners. Both DMGs target macOS 12 Monterey and use
+  ad-hoc signing. The author's Mac can test the Intel artifact and has
+  Command Line Tools 14.2. `flutter build macos` needs full Xcode. See
+  [docs/operations.md](docs/operations.md#macos).
 - **iOS is blocked by the machine, not by priorities.** macOS 12 can only
   install up to Xcode 14.2, and App Store Connect rejects a binary built
   with that SDK (`ITMS-90111`) — it bakes in the build machine's host OS

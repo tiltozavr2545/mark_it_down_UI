@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markitdown_core/markitdown_core.dart';
@@ -13,7 +14,9 @@ StreamInfo infoFor(PickedFile file) => StreamInfo.fromHead(
   file.bytes,
   filename: file.filename,
   mimeType: file.mimeType,
-  localPath: file.localPath,
+  // A macOS file pick grants access to the app. Pass bytes so the Python
+  // subprocess reads a temporary file inside the app's sandbox.
+  localPath: Platform.isMacOS ? null : file.localPath,
   url: file.url,
 );
 

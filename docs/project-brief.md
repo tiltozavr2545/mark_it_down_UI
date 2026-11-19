@@ -1,10 +1,10 @@
 # Project brief: MarkItDown UI
 
-> **Historical document.** The target platforms here are macOS and Android;
-> after Stage 4 the author's priority shifted to **Windows and Android**,
-> macOS became secondary. The stage numbering below is also outdated (Stage
-> 5 — Windows — was added). The current version is in
-> [implementation-plan.md](implementation-plan.md).
+> **Historical document.** This brief predates the Windows port, opt-in
+> link conversion and export to separate Markdown files. For current
+> platforms and features see the [README](../README.md). The updated stage
+> numbering is in the [implementation plan](implementation-plan.md), and
+> current packaging is in [Operations](operations.md#build).
 
 > An app that turns any file into Markdown entirely on the device, with no
 > internet, and hands the result straight to the clipboard.

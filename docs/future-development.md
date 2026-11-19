@@ -35,13 +35,10 @@ before 1.0.
 
 ### Speech recognition: what's next
 
-**Decided by the author in 0.8:** transcription exists — whisper.cpp, the
-small model in the main bundle, on Windows and Android; all the "whys" are
-in
-[format-coverage.md](format-coverage.md#transcription-decisions-08). There
-used to be a product question here, "is audio worth the app weighing ten
-times as much" — the answer is "yes," the APK and the zip grew by
-≈270 MB.
+The packages include Whisper small and Silero VAD for offline
+transcription. The model accounts for most of the download size. The
+engine and decoder choices are documented in
+[Format coverage](format-coverage.md#transcription-decisions-08).
 
 **What's still open:**
 
@@ -99,28 +96,16 @@ Stage 5 measured 308 MB on Windows and 242 MB on macOS. The Windows
 before deciding which files can be trimmed while preserving the
 sidecar's self-check.
 
-### Unfinished after Stage 4 (macOS sidecar) — secondary platform, not a priority
+### macOS release verification
 
-Not decisions, just unverified items: given the shift in priorities
-(Windows and Android), these aren't being worked on without a separate
-request; the list is kept so it isn't lost, not as a queue.
+The [Release workflow](operations.md#macos) is configured for Intel and
+Apple Silicon DMGs. Local packaging passed with a test bundle on Monterey.
+The first full Xcode builds, Gatekeeper launch, native conversion and
+Markdown export are still pending on the automated artifacts. See the
+[macOS smoke checks](operations.md#macos-smoke-checks).
 
-- **Developer ID, notarization, embedding into the Xcode build.** The
-  commands are recorded in
-  [operations.md](operations.md#signing-and-notarization-commands), only the
-  ad-hoc signature has been verified. The Build Phase that places the
-  sidecar into `Contents/Resources/sidecar` is described there too, but
-  hasn't been written. Also worth checking whether
-  `disable-library-validation` is still needed with a real certificate —
-  the docs don't say, and the key weakens Hardened Runtime.
-- **Lock files for other hosts.** macOS x86_64 and Windows x86_64 have
-  committed locks. macOS arm64 and Linux still need host-specific wheel
-  locks and build verification.
-- **How the sidecar behaves under the sandbox of a live `.app`.** Tested
-  with an ad-hoc signature outside the sandbox; how it behaves as a
-  subprocess under App Sandbox (access to the container's temp folder,
-  launching the interpreter from `Resources`) needs checking on the first
-  `.app` build.
+AAC transcription for M4A and MP4 needs a macOS platform decoder. The
+current macOS pipeline extracts metadata for those files.
 
 ### Conversion history
 
@@ -133,24 +118,6 @@ point it will come up.
 ---
 
 ## Deferred
-
-### macOS (build)
-
-**Secondary platform, not a priority.** The plan's target platforms are
-Windows (Stage 5) and Android; macOS stays a target, but second in line.
-
-Since Stage 0: Xcode.app won't install on the author's machine, only
-Command Line Tools 14.2 is available, and `flutter build
-macos`/`flutter run -d macos` require the full Xcode. The code and
-`flutter create --platforms=macos,android` for macOS haven't gone
-anywhere, and the pipeline is written platform-independently.
-Reinstalling Xcode on this machine has already been tried — it won't go
-on. macOS (and iOS, see below) will be built later on a friend's Mac,
-where Xcode does install — the build moves there, the product doesn't
-lose the platform. What remains unresolved as a result — Developer ID,
-notarization, embedding the sidecar into the Xcode build — is listed
-above, under "Unfinished after Stage 4"; it's not being worked on without
-a separate request.
 
 ### Linux
 
@@ -175,9 +142,8 @@ A workaround is known and already proven on Amicus — **Xcode Cloud**: it
 builds on a stable Apple-provided image, independent of the local macOS.
 This is the path to take if iOS is ever needed, and it doesn't require a
 new machine — just a developer account and a configured workflow. A
-second option is simpler: build the macOS and iOS targets on a friend's
-computer with a working Xcode — the build moves there, and Xcode Cloud
-isn't needed then.
+second option is to build the iOS target on a Mac with a supported
+version of Xcode.
 
 Separately attached to iOS is the Share Extension (the main way to hand a
 file to it) — a separate target with its own memory limit, inside which

@@ -41,6 +41,22 @@ The APK weighs ≈300 MB — almost all of that is the speech-recognition
 model. On the first audio file, it's copied from the APK to disk once
 (needs another ≈265 MB of free space), which takes a few seconds.
 
+### macOS — `markitdown_ui-…-macos-x64.dmg` or `markitdown_ui-…-macos-arm64.dmg`
+
+1. Download `x64` for an Intel Mac or `arm64` for a Mac with an Apple M
+   chip. Check the chip under **Apple menu → About This Mac**. Both builds
+   target macOS 12 Monterey and later.
+2. Open the DMG and drag **MarkItDown UI** into **Applications**.
+3. Try to open it from **Applications**. If macOS blocks the first launch,
+   go to **System Settings → Privacy & Security → Open Anyway** and
+   confirm. On Monterey, look under **System Preferences → Security &
+   Privacy → General**. [Apple's guide](https://support.apple.com/en-us/102445)
+
+The DMGs use an ad-hoc signature and are distributed without Apple
+notarization. PDF conversion, OCR, speech models and Python are included.
+Speech transcription supports MP3, FLAC, Ogg and WAV on macOS. The app
+extracts metadata from AAC media such as M4A and MP4.
+
 ### Files never leave the device
 
 Files are converted on-device; OCR and speech recognition are too, with

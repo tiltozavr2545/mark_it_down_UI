@@ -13,7 +13,7 @@ work document to someone else's server. MarkItDown UI does the same thing
 on the user's own machine:
 
 1. **Open files** — with the "Choose files" button, by dragging them onto the
-   window (Windows), or via "Share" from another app (Android). Or a
+   window (Windows and macOS), or via "Share" from another app (Android). Or a
    **link** — with the "Paste a link" button (it will fill in the link from
    the clipboard) or by sharing a link from YouTube or a browser (Android).
 2. **View the result** — raw Markdown on screen, with warnings alongside if
@@ -66,15 +66,15 @@ The project proceeds in stages ([plan](docs/implementation-plan.md));
 Stages 0–5 are closed, Stage 6 (images, audio, OCR) has shipped, and
 **Stage 7 — polish** is in progress. 0.8 added offline speech recognition.
 0.9 added link conversion, 0.10 added merging, and 0.10.1 added PDF
-tables to the Dart converter. The current source version is `0.10.2+15`.
+tables to the Dart converter. The current source version is `0.11.0+15`.
 The redesigned workspace and batch export are documented in the
-[unreleased 0.10.2 notes](CHANGELOG.md#0102--new-workspace-and-batch-export).
+[unreleased 0.11.0 notes](CHANGELOG.md#0110--new-workspace-and-batch-export).
 
 | platform | status |
 |---|---|
 | **Windows** | works — verified on the author's machine (since 0.5); built in CI (GitHub Actions) with the sidecar. Speech recognition in 0.8 — verified in CI, pending manual check |
 | **Android** | works, verified on the author's phone (APK). Speech recognition in 0.8 — APK builds in CI, pending manual check on the phone |
-| macOS | secondary: the code exists, but Xcode won't install on the author's machine — will be built later on another Mac |
+| macOS | Intel and Apple Silicon DMGs were published for 0.10.1. The 0.11.0 workflow targets macOS 12 Monterey and later on both architectures. The first automated builds and launch checks are pending. |
 | iOS | deferred: the author's machine cannot produce a build the App Store will accept |
 | Linux | deferred: no requests for it so far |
 
@@ -82,23 +82,28 @@ Why that is and what to do about it — [docs/future-development.md](docs/future
 
 ## What it can convert
 
-| format | Windows | Android | how |
-|---|---|---|---|
-| `txt`, `md`, `csv`/`tsv`, `json`, `xml`, `html` | ✅ | ✅ | Dart core; text in Windows-1251 without BOM is recognized |
-| RSS and Atom feeds (`.rss`, `.atom`, `.xml`) | ✅ | ✅ | Dart core: channel, entries, dates, entry text |
-| `docx`, `xlsx`, `pptx` | ✅ | ✅ | Dart core (lists, tables, footnotes, sheets, speaker notes) |
-| `epub`, `ipynb`, `zip` (recursive, with zip-bomb protection) | ✅ | ✅ | Dart core |
-| `pdf` with text | ✅ with tables | ✅ with tables | Dart core via PDFium; tables found the same way as in markitdown |
-| scanned `pdf` | ✅ | ✅ | OCR (Tesseract, Russian and English), up to 20 scanned pages |
-| `xls` (Excel 95–2003), `msg` (Outlook) | ✅ | ✅ | Windows tries the sidecar first and falls back to Dart. Android uses Dart directly. |
-| images: JPEG, PNG, BMP, GIF, WebP, TIFF | ✅ | ✅ | EXIF metadata + recognized text (OCR) |
-| images: HEIC | ✅ | ✅ | metadata only, no OCR |
-| audio: MP3, FLAC, Ogg/Opus, WAV, M4A; video MP4/MOV | ✅ | ✅ | duration, tags, lyrics + **speech transcription** (whisper.cpp, small model: Russian, English, Italian and ~95 other languages; no duration limit) |
-| `doc`, `ppt` (legacy Office) | ❌ | ❌ | not supported — markitdown itself can't either |
-| **via link:** page, file (PDF, docx, … — handled like a file from disk) | ✅ | ✅ | downloaded, then goes through the same pipeline; relative links on a page are resolved against its address |
-| **via link:** Wikipedia article | ✅ | ✅ | article text only, no menus or "edit" buttons |
-| **via link:** YouTube video | ✅ | ✅ | title, views, keywords, description, and subtitles (manual ones in the video's language are preferred over automatic ones) |
-| Bing search, LLM-generated image captions, Azure | ❌ | ❌ | not implemented by design: fragile parsing of someone else's search results; paid clouds the document would have to be sent to |
+The Windows, Android and macOS apps use the same conversion pipeline.
+Platform-specific behavior is listed below.
+
+| Format | Output |
+|---|---|
+| `txt`, `md`, `csv`/`tsv`, `json`, `xml`, `html` | Markdown, including text in Windows-1251 without a BOM |
+| RSS and Atom feeds (`.rss`, `.atom`, `.xml`) | Channel, entries, dates and entry text |
+| `docx`, `xlsx`, `pptx` | Lists, tables, footnotes, sheets and speaker notes |
+| `epub`, `ipynb`, `zip` | Books, notebooks and archive contents, including nested archives |
+| PDF with text | Text and tables via PDFium |
+| Scanned PDF | Russian and English OCR on up to 20 scanned pages |
+| `xls` (Excel 95–2003), `msg` (Outlook) | Windows and macOS try bundled MarkItDown first and fall back to Dart. Android uses Dart directly. |
+| JPEG, PNG, BMP, GIF, WebP, TIFF | Image metadata and recognized text |
+| HEIC | Image metadata |
+| MP3, FLAC, Ogg/Opus, WAV | Metadata and offline speech transcription in Russian, English, Italian and other languages, without a configured duration limit |
+| M4A, MP4 and MOV | Metadata on all three platforms. AAC transcription uses system decoders on Windows and Android. |
+| Link to a page or a file | A page or file converted by the same pipeline, with relative links resolved against the page address |
+| Wikipedia link | Article text with navigation removed |
+| YouTube link | Title, views, keywords, description and available subtitles, with manual subtitles preferred in the same language |
+
+Legacy Word `.doc` and PowerPoint `.ppt`, Bing search, LLM image captions
+and Azure conversion are outside the supported formats.
 
 Local files have no configured size limit. Link downloads are capped at
 1 GiB. Archives have limits of 1 GiB total uncompressed size, 2000 files
@@ -110,7 +115,7 @@ to diverge is in [docs/format-coverage.md](docs/format-coverage.md).
 
 Ready-made builds are on the
 **[Releases](https://github.com/tiltozavr2545/mark_it_down_UI/releases/latest)**
-page: a zip for Windows and an APK for Android.
+page: a ZIP for Windows, an APK for Android and two DMGs for macOS.
 
 ### Windows
 
@@ -151,6 +156,20 @@ A build from any commit (not just a release) is available as the
 
 To build the APK yourself, see "Development" below.
 
+### macOS
+
+1. Download `markitdown_ui-X.Y.Z-macos-x64.dmg` for an Intel Mac or
+   `markitdown_ui-X.Y.Z-macos-arm64.dmg` for a Mac with an Apple M chip.
+   Both builds target macOS 12 Monterey and later.
+2. Open the DMG and drag **MarkItDown UI** into **Applications**.
+3. If macOS blocks the first launch, use **Open Anyway** in **Privacy &
+   Security**. On Monterey, the button is under **System Preferences →
+   Security & Privacy → General**. [Apple's guide](https://support.apple.com/en-us/102445)
+
+PDFium, OCR, the speech models and Python are included. Speech
+transcription on macOS supports MP3, FLAC, Ogg and WAV. AAC audio in M4A
+and MP4 returns metadata only.
+
 ## Development
 
 ### What you need
@@ -171,7 +190,7 @@ To build the APK yourself, see "Development" below.
   it has no secrets. Keys are only needed to sign releases —
   [docs/operations.md](docs/operations.md).
 
-### First run
+### First run on Linux or an Intel Mac
 
 ```bash
 git clone https://github.com/tiltozavr2545/mark_it_down_UI.git
@@ -186,6 +205,9 @@ OCR and speech-recognition tests are skipped without `make tesseract` /
 `make whisper` (see below). A green `make verify` means the environment is
 set up correctly.
 
+On Apple Silicon, use the [macOS test commands](docs/operations.md#local-macos-tests).
+For Windows, see the [Git Bash build recipe](docs/operations.md#windows).
+
 ### Running and building
 
 ```bash
@@ -197,12 +219,15 @@ make fetch-pdfium fetch-tesseract
 ```
 
 For Android development, connect a physical phone over USB and run
-`flutter run` from `app/`. The macOS app requires full Xcode.
+`flutter run` from `app/`.
 
 Windows builds run on the `windows-2022` CI runner. The `windows-sidecar`
 job builds the Python bundle and compares its output with Dart. See
 [Operations](docs/operations.md#windows) for the full Git Bash recipe,
 including Visual Studio 2022 and native libraries.
+
+The [macOS build instructions](docs/operations.md#macos) cover the Intel
+and Apple Silicon runners and local packaging on a Mac with full Xcode.
 
 ### OCR and speech recognition
 
@@ -213,8 +238,8 @@ make whisper                   # whisper.cpp + models (265 MB), ≈10 minutes
 ```
 
 The host builds enable OCR and speech tests. Android also needs the
-native libraries and model assets for those features. Windows requires
-the native libraries at build time. See
+native libraries and model assets for those features. The Windows ZIP
+and macOS DMGs bundle the host libraries and models. See
 [docs/format-coverage.md](docs/format-coverage.md#transcription-decisions-08).
 
 ### Sidecar (real markitdown, desktop only)
@@ -311,8 +336,9 @@ tesseract/                OCR: build.sh (desktop), fetch.sh (models, Android)
 whisper/                  speech recognition: build.sh (host and --android),
                           fetch.sh (models), shim/ — the mdw.h C shim layer
 tool/verify_version.sh    checks the version bump in a PR
+tool/package_macos.sh     adds native dependencies and packages the macOS DMG
 .github/workflows/        ci.yml — verify (Linux), windows-sidecar, windows;
-                          release.yml — tag v* → GitHub Release (zip + APK)
+                          release.yml — tag v* → GitHub Release (ZIP, APK, DMGs)
 docs/                     documentation (below)
 ```
 

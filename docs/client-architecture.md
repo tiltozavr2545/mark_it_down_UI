@@ -64,8 +64,8 @@ Three consequences follow from this, and they're easy to forget:
   the pipeline goes through FFI rather than plugins: PDFium (Stage 3) and
   Tesseract for OCR (Stage 6) are opened directly in the isolate
   (`DynamicLibrary.open`). The one platform-dependent part of OCR that
-  remains is locating the models (assets; on Android they also need to be
-  copied from the APK to disk), and the main isolate does that
+  remains is locating the models. The desktop apps read them in place.
+  On Android the main isolate copies them from the APK to disk
   (`app/lib/src/conversion/ocr_data.dart`), while a path string
   (`OcrSettings`) goes into the isolate. The original plan called for ML Kit
   from the main isolate; ML Kit fell through because it doesn't know
@@ -74,7 +74,8 @@ Three consequences follow from this, and they're easy to forget:
   recognition (0.8) is built the same way: whisper.cpp is FFI inside the
   isolate, the main isolate prepares the models (`speech_data.dart`, only
   when an audio file arrives), and `TranscriptionSettings` goes into the
-  isolate.
+  isolate. On macOS the libraries live in `Contents/Frameworks`, and both
+  sets of models are read from `App.framework/Resources/flutter_assets`.
 - **Cancellation.** A user who drops a gigabyte-sized archive into the
   window needs to be able to press "Cancel." `Isolate.run` can't be
   cancelled — which means long-running formats need a long-lived isolate
@@ -116,7 +117,7 @@ list is handled exactly like a file alone.
 ## Batch conversion and merging
 
 `MergeController` (`app/lib/src/merge/`) owns the queue and its results.
-Selecting several files in the picker, dropping them on Windows, or
+Selecting several files in the picker, dropping them on Windows or macOS, or
 sharing them on Android opens the queue. **Add files** on a single
 preview moves the existing result into the queue.
 
@@ -152,12 +153,17 @@ the same completed results.
   `markitdown_ui/markdown_export` channel opens the system's
   `ACTION_OPEN_DOCUMENT_TREE` picker and creates documents in the
   selected directory through `DocumentsContract`.
-- **Windows** accepts the file picker and drag-and-drop. Batch export
+- **Windows and macOS** accept the file picker and drag-and-drop. Batch export
   opens the directory picker through `file_picker`. The writer in
   `app/lib/src/markdown_export.dart` reserves a new pathname before
-  writing and adds a suffix when a name is already taken.
-- **iOS and macOS** document associations and a possible iOS Share
-  Extension are deferred. See [Future development](future-development.md).
+  writing and adds a suffix when a name is already taken. The macOS
+  sandbox grants read and write access to destinations selected in a
+  native dialog. For file intake, `infoFor` leaves `localPath` unset on
+  macOS so the Python subprocess reads a temporary copy from the app's
+  container. See the [conversion pipeline](conversion-pipeline.md#the-sidecar--just-another-converter).
+- **iOS** and its Share Extension are deferred. Finder document
+  associations and Quick Actions remain open. See
+  [Future development](future-development.md).
 
 Native file dialogs are covered by the
 [manual export checks](operations.md#manual-export-checks).

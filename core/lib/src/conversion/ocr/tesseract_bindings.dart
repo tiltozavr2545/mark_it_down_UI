@@ -14,6 +14,8 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import '../macos_bundle.dart';
+
 /// Environment variable with the directory holding `libtesseract`/
 /// `libleptonica` (and everything they depend on). Needed for `dart test`
 /// and for any machine where the libraries aren't in the platform's
@@ -41,6 +43,7 @@ class TesseractLibraries {
 ///    `tesseract55.dll` imports Leptonica by name — so we search by prefix.
 /// 4. Linux: the system ones from distro packages (that's how CI installs
 ///    them).
+/// 5. macOS: the app bundle's `Contents/Frameworks` directory.
 TesseractLibraries? loadTesseractLibraries() {
   try {
     final dir = Platform.environment[tesseractLibDirEnvVar];
@@ -56,6 +59,7 @@ TesseractLibraries? loadTesseractLibraries() {
     if (Platform.isWindows) {
       return _openFromDirectory(File(Platform.resolvedExecutable).parent.path);
     }
+    if (Platform.isMacOS) return _openFromDirectory(macosBundleFrameworks);
     if (Platform.isLinux) {
       return TesseractLibraries(
         _openFirst(['libtesseract.so.5', 'libtesseract.so']),

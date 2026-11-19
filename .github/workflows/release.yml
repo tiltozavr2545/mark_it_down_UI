@@ -1,7 +1,7 @@
 name: Release
 
-# Tag vX.Y.Z → a GitHub Release with ready-made builds for Windows and
-# Android (docs/operations.md#release). The tag is placed on a commit in
+# Tag vX.Y.Z → a GitHub Release with builds for Windows, Android, and
+# macOS (docs/operations.md#release). The tag is placed on a commit in
 # main, and the version in app/pubspec.yaml must match the tag — checked
 # below.
 #
@@ -13,7 +13,12 @@ on:
   # changes: otherwise a broken APK build would only be discovered after
   # tagging.
   pull_request:
-    paths: ['.github/workflows/release.yml']
+    paths:
+      - '.github/workflows/release.yml'
+      - 'app/macos/**'
+      - 'tool/package_macos.sh'
+      - 'sidecar/locks/macos-*.txt'
+  workflow_dispatch:
 
 env:
   FLUTTER_VERSION: 3.32.8
@@ -23,9 +28,11 @@ jobs:
   # every push: the release is built with exactly what CI checks, not a
   # separate recipe.
   ci:
+    if: github.event_name != 'workflow_dispatch'
     uses: ./.github/workflows/ci.yml
 
   android:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04  # not ubuntu-latest — see verify in ci.yml
     steps:
       - uses: actions/checkout@v7
@@ -129,9 +136,91 @@ jobs:
           path: app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
+  macos:
+    name: macOS (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x64
+            arch: x86_64
+            runner: macos-15-intel
+          - target: arm64
+            arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      FLUTTER_XCODE_ARCHS: ${{ matrix.arch }}
+      FLUTTER_XCODE_MACOSX_DEPLOYMENT_TARGET: '12.0'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          architecture: ${{ matrix.target }}
+
+      - uses: actions/cache@v6
+        with:
+          path: tesseract/native/host
+          key: tesseract-${{ matrix.runner }}-${{ hashFiles('tesseract/build.sh', 'tesseract/versions.sh') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/native/host
+          key: whisper-${{ matrix.runner }}-${{ hashFiles('whisper/build.sh', 'whisper/versions.sh', 'whisper/shim/**') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/models
+          key: whisper-models-${{ hashFiles('whisper/versions.sh') }}
+
+      - name: Build native engines and fetch models
+        run: |
+          test "$(uname -m)" = "$FLUTTER_XCODE_ARCHS"
+          ./tesseract/build.sh
+          ./tesseract/fetch.sh
+          ./whisper/build.sh
+          ./whisper/fetch.sh
+          ./sidecar/build.sh
+
+      - name: Test the bundled conversion engines
+        env:
+          MARKITDOWN_SIDECAR_DIR: ${{ github.workspace }}/sidecar/dist/macos-${{ matrix.arch }}
+          MARKITDOWN_TESSERACT_DIR: ${{ github.workspace }}/tesseract/native/host
+          MARKITDOWN_WHISPER_DIR: ${{ github.workspace }}/whisper/native/host
+        working-directory: core
+        run: |
+          export MARKITDOWN_PDFIUM_PATH="$MARKITDOWN_SIDECAR_DIR/lib/pypdfium2_raw/libpdfium.dylib"
+          dart pub get
+          dart test
+
+      - name: Build the macOS app
+        working-directory: app
+        run: flutter build macos --release
+
+      - name: Package the DMG
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          app_name="$(cat app/macos/Flutter/ephemeral/.app_filename)"
+          bash tool/package_macos.sh "app/build/macos/Build/Products/Release/$app_name" \
+            "dist/markitdown_ui-macos-$TARGET.dmg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: markitdown_ui-macos-${{ matrix.target }}
+          path: dist/markitdown_ui-macos-${{ matrix.target }}.dmg
+          if-no-files-found: error
+          compression-level: 0
+
   publish:
-    needs: [ci, android]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [ci, android, macos]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04  # not ubuntu-latest — see verify in ci.yml
     permissions:
       contents: write
@@ -147,6 +236,12 @@ jobs:
         with:
           name: markitdown_ui-android-arm64
           path: dist/android
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: markitdown_ui-macos-*
+          path: dist/macos
+          merge-multiple: true
 
       # A Windows release without the sidecar isn't the right product (PDF
       # tables would silently disappear, xls/msg would fall back to the
@@ -166,6 +261,9 @@ jobs:
           mv dist/windows "dist/markitdown_ui-$v-windows-x64"
           (cd dist && zip -qr "markitdown_ui-$v-windows-x64.zip" "markitdown_ui-$v-windows-x64")
           mv dist/android/app-release.apk "dist/markitdown_ui-$v-android-arm64.apk"
+          for arch in x64 arm64; do
+            mv "dist/macos/markitdown_ui-macos-$arch.dmg" "dist/markitdown_ui-$v-macos-$arch.dmg"
+          done
           ls -la dist
 
       - name: GitHub Release
@@ -180,4 +278,6 @@ jobs:
             --title "MarkItDown UI $v" \
             --notes-file dist/release-notes.md \
             "dist/markitdown_ui-$v-windows-x64.zip" \
-            "dist/markitdown_ui-$v-android-arm64.apk"
+            "dist/markitdown_ui-$v-android-arm64.apk" \
+            "dist/markitdown_ui-$v-macos-x64.dmg" \
+            "dist/markitdown_ui-$v-macos-arm64.dmg"

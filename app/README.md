@@ -5,7 +5,7 @@ preview, copying and export. It runs the pipeline from `../core/` in a
 worker isolate. The queue supports separate files and a merged document.
 
 - [Install the app or set up development](../README.md)
-- [Build for Windows and Android](../docs/operations.md#build)
+- [Build for Windows, Android and macOS](../docs/operations.md#build)
 - [Client architecture](../docs/client-architecture.md)
 
 English and Russian UI strings are in `lib/l10n/`. After editing the ARB

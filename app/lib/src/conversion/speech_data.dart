@@ -67,7 +67,7 @@ Future<TranscriptionSettings?> _prepare() async {
   }
 }
 
-/// Windows (and Linux): models are read in place, next to the `.exe`.
+/// Desktop: models are read in place from the app's bundled assets.
 (String?, String?) _desktopAssets(_Model model, _Model vad) {
   final dir = desktopAssetDir('whisper');
   String? path(_Model m) {

@@ -59,7 +59,7 @@ are the same as in markitdown:
 | `extension` | from `filename` | **lies regularly** |
 | `mimeType` | from the OS (share/picker) | on Android often `application/octet-stream` |
 | `charset` | determined for text files | absent for binary ones |
-| `localPath` | if the file is on disk (dialog, drag&drop) | needed by the sidecar, see below; Dart converters don't read it |
+| `localPath` | optional path to the selected file | lets the sidecar and the platform audio decoder reopen a local input. The macOS client supplies bytes for sandboxed file intake. |
 | `url` | final URL of a download | selects link-specific converters and resolves relative links |
 
 Detection order goes from cheap to expensive, and the first confident answer
@@ -124,20 +124,17 @@ allowed to touch disk. The "is this my file" decision is made from
 
 ### The sidecar — just another converter
 
-On desktop, `SidecarConverter` is added to the registry with priority
-**-1.0** for the formats listed in its manifest — meaning it's asked before
-the Dart converters wherever the real markitdown is known to be better, and
-it stays out of the way where it isn't. The app above the registry doesn't
-know about the sidecar at all; on mobile it simply isn't registered.
+The Windows and macOS clients discover the bundled `SidecarConverter`.
+It registers at priority **−1.0** for the intersection of the bundle's
+manifest and the app's allowed formats. Android uses the Dart converters.
 
-The only thing that leaks out: the sidecar needs a **file on disk**
-(`localPath`), not bytes in memory — it receives the path as an argument. If
-the file has a `StreamInfo.localPath` (dialog, drag&drop), that's what's
-passed. For data without a path (a download or a file nested in an archive),
-`SidecarConverter` writes the bytes to a temp folder with an extension based
-on the format id, and removes it in `finally`. Deletion is the caller's (the
-converter's) responsibility, not the sidecar's — otherwise it's unclear who
-owns it; a file that came in via someone else's `localPath` is never deleted.
+The sidecar receives a file path as an argument. If `StreamInfo.localPath`
+points to an existing file, the converter passes that path through. On
+macOS, the file picker grants access to the app, so the client leaves
+`localPath` unset for files it opens. The converter then writes the bytes
+to a temporary file in the app's sandbox, with an extension based on the
+format ID. Downloads and nested archive files take the same temporary
+file path. The converter removes its temporary copy in `finally`.
 
 **Which formats it takes.** Only the ones listed in `manifest.json` and known
 to the app (`pdf`, `docx`, `xlsx`, `xls`, `pptx`, `msg`; the `FileKind` ↔ id

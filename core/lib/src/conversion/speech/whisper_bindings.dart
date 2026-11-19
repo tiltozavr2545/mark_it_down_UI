@@ -11,6 +11,8 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
+import '../macos_bundle.dart';
+
 /// Environment variable with the directory holding `markitdown_whisper`,
 /// `whisper`, `ggml*` and the `ggml-cpu-*` variants. Needed for
 /// `dart test` and for any machine where the libraries aren't in the
@@ -59,6 +61,7 @@ class WhisperLibrary {
 ///    and are found on their own (built by `whisper/build.sh --android`).
 /// 3. Windows and Linux: next to the executable (`install(...)` in
 ///    `app/windows/CMakeLists.txt`).
+/// 4. macOS: the app bundle's `Contents/Frameworks` directory.
 WhisperLibrary? loadWhisperLibrary([String? libraryDir]) {
   try {
     final dir = libraryDir ?? Platform.environment[whisperLibDirEnvVar];
@@ -74,6 +77,7 @@ WhisperLibrary? loadWhisperLibrary([String? libraryDir]) {
     if (Platform.isWindows || Platform.isLinux) {
       return _openFromDirectory(File(Platform.resolvedExecutable).parent.path);
     }
+    if (Platform.isMacOS) return _openFromDirectory(macosBundleFrameworks);
   } on ArgumentError {
     return null; // DynamicLibrary.open: file missing or fails to load
   }

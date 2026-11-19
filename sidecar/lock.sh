@@ -25,6 +25,22 @@ set -euo pipefail
 # only deliberately.
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
+# Resolve macOS wheels against the oldest supported version, even on a
+# newer build host. An Intel Mac can also generate the Apple Silicon lock.
+PLATFORM_ARGS=()
+if [[ "${1:-}" == --macos-arm64 && "${HOST}" == macos-* ]]; then
+  LOCK_FILE="${SIDECAR_DIR}/locks/macos-arm64.txt"
+  LOCK_HOST=macos-arm64
+elif [[ $# == 0 ]]; then
+  LOCK_HOST="${HOST}"
+else
+  echo 'Usage: sidecar/lock.sh [--macos-arm64 (on macOS)]' >&2
+  exit 1
+fi
+if [[ "${LOCK_HOST}" == macos-* ]]; then
+  PLATFORM_ARGS=(--platform "macosx_12_0_${LOCK_HOST#macos-}")
+fi
+
 fetch_interpreter
 
 WORK="$(mktemp -d "${CACHE_DIR}/lock.XXXXXX")"
@@ -32,15 +48,16 @@ trap 'rm -rf "${WORK}"' EXIT
 tar xzf "${ARCHIVE}" -C "${WORK}"
 PY="${WORK}/${PY_REL}"
 
-echo "sidecar: разрешаю зависимости markitdown[${MARKITDOWN_EXTRAS}]==${MARKITDOWN_VERSION} для ${HOST}"
+echo "sidecar: resolving markitdown[${MARKITDOWN_EXTRAS}]==${MARKITDOWN_VERSION} for ${LOCK_HOST}"
 "${PY}" -I -m pip install \
   --disable-pip-version-check --no-input --only-binary=:all: \
+  ${PLATFORM_ARGS[@]+"${PLATFORM_ARGS[@]}"} \
   --dry-run --ignore-installed --quiet \
   --report "$(native_path "${WORK}/report.json")" \
   "markitdown[${MARKITDOWN_EXTRAS}]==${MARKITDOWN_VERSION}"
 
 mkdir -p "$(dirname "${LOCK_FILE}")"
-"${PY}" -I -X utf8 - "$(native_path "${WORK}/report.json")" "$(native_path "${LOCK_FILE}")" "${HOST}" "${PY_VERSION}" \
+"${PY}" -I -X utf8 - "$(native_path "${WORK}/report.json")" "$(native_path "${LOCK_FILE}")" "${LOCK_HOST}" "${PY_VERSION}" \
   "${MARKITDOWN_VERSION}[${MARKITDOWN_EXTRAS}]" <<'PYEOF'
 import json, sys
 

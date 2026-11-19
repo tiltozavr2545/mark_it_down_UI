@@ -12,11 +12,9 @@ pipeline's design is in [conversion-pipeline.md](conversion-pipeline.md).
 
 ## Summary
 
-The table is alive: five rows are marked ✅ as of Stage 1, six more as of
-Stage 2, `pdf` as of Stage 3, `xls`/`msg` as of Stage 4, images (EXIF and
-OCR), scanned PDFs and audio metadata as of Stage 6, Dart parsing of
-`xls`/`msg`, RSS/Atom feeds and OCR for GIF/WebP/TIFF in 0.9, the rest is
-still the target state.
+In the table, **all** means Windows, Android and macOS. The macOS release
+recipe bundles PDFium, Tesseract, Whisper and the Python sidecar for each
+architecture. See [macOS build and verification](operations.md#macos).
 
 | format | how markitdown does it | how we do it (Dart core) | sidecar | platforms | status |
 |---|---|---|---|---|---|
@@ -31,15 +29,15 @@ still the target state.
 | `epub` | zip + html converter | `archive` + the Stage 1 `HtmlConverter` via `recurse` | — | all | ✅ Stage 2 |
 | `ipynb` | `_ipynb_converter` | `dart:convert` + our own cell rendering | — | all | ✅ Stage 2 |
 | `pdf` | `pdfminer.six`, `pdfplumber` | PDFium via our own FFI bindings, see below; tables — markitdown's word-alignment heuristic, ported ([0.10.1](#0101-decisions-pdf-tables)) | — (went first on desktop up to 50 pages until 0.10.1) | all | ✅ Stage 3, tables 0.10.1 |
-| `xls` (BIFF8, BIFF5) | `xlrd` | our own CFB and BIFF parsing ([0.9 decisions](#09-decisions-xls-msg-rss)), sheet rendering shared with `xlsx` | goes first on desktop | all | ✅ Stage 4 (sidecar), 0.9 (Dart) |
+| `xls` (BIFF8, BIFF5) | `xlrd` | our own CFB and BIFF parsing ([0.9 decisions](#09-decisions-xls-msg-rss)), sheet rendering shared with `xlsx` | Windows and macOS first, with Dart fallback | all | ✅ Stage 4 (sidecar), 0.9 (Dart) |
 | `doc` (OLE2) | — (not in markitdown either) | recognized as `.doc`, no converter | — | — | ❌ an honest "not supported" |
-| `msg` (Outlook) | `olefile` | our own CFB parsing, output character-for-character matching markitdown | goes first on desktop | all | ✅ Stage 4 (sidecar), 0.9 (Dart); fixtures are synthetic |
+| `msg` (Outlook) | `olefile` | our own CFB parsing, output character-for-character matching markitdown | Windows and macOS first, with Dart fallback | all | ✅ Stage 4 (sidecar), 0.9 (Dart); fixtures are synthetic |
 | `zip` | `_zip_converter` | `archive` + recursion through the registry | — | all | ✅ Stage 2 |
 | images: EXIF | `_exiftool` (external binary) | our own TIFF/EXIF parsing, size from the header; PNG, JPEG, GIF, BMP, WebP, TIFF, HEIC | — (exiftool is not bundled in the sidecar) | all | ✅ Stage 6 |
 | images and scanned PDFs: OCR | via external OCR / LLM | Tesseract via FFI, `rus+eng` (JPEG, PNG, BMP; GIF, WebP, TIFF — first frame via `package:image`; scanned PDF pages — rendered by PDFium) | — | all | ✅ Stage 6, 0.9 |
 | images: LLM caption | `_llm_caption` → OpenAI | — | — | — | ❌ network |
 | audio and video: metadata | `_audio_converter` (exiftool) | our own parsing: ID3v1/v2 + MPEG frames, FLAC, Ogg Vorbis/Opus, WAV, MP4/M4A/MOV/3GP | — | all | ✅ Stage 6 |
-| audio: transcription | `SpeechRecognition` → **Google web API** | whisper.cpp 1.9.5 via FFI, small model (q8_0), multilingual; Silero VAD | — | all | ✅ 0.8 ([decisions](#transcription-decisions-08)) |
+| audio: transcription | `SpeechRecognition` → **Google web API** | whisper.cpp 1.9.5 via FFI, small model (q8_0), multilingual, with Silero VAD | — | all for WAV, MP3, FLAC, Ogg Vorbis and Opus. AAC is supported on Windows and Android. | ✅ 0.8 ([decisions](#transcription-decisions-08)) |
 | PDF/documents via Azure DI | `_doc_intel_converter` | — | — | — | ❌ cloud |
 | Azure Content Understanding | `_cu_converter` | — | — | — | ❌ cloud |
 | YouTube | `_youtube_converter` + `youtube_transcript_api` | port: page metadata + captions via InnerTube ([decisions](#09-decisions-links)) | — | all, via link | ✅ 0.9 |
@@ -636,10 +634,11 @@ small model; bundled in, not a separate package.
   16 kHz mono float; WAV, MP3, FLAC and Ogg Vorbis are decoded by
   miniaudio (dr_wav/dr_mp3/dr_flac + stb_vorbis), Ogg Opus (messenger voice
   notes) by our own Ogg page parsing + libopus. The same code runs on
-  Windows, Android and the test host. **AAC** (M4A from voice recorders,
+  Windows, Android and macOS. **AAC** (M4A from voice recorders,
   audio in MP4) uses the platform decoder: Media Foundation on Windows,
-  NDK MediaCodec on Android. There's no freely licensable AAC decoder that
-  fits our license, while the platform always has one — at zero size cost.
+  NDK MediaCodec on Android. On macOS, M4A and MP4 return metadata and a
+  transcription warning. The pending macOS decoder is tracked in
+  [Future development](future-development.md#macos-release-verification).
   VLC was considered (the author raised the question) and doesn't fit: it's
   a player weighing tens of megabytes with networking modules (http, rtsp,
   UPnP), and its AAC support comes from FFmpeg anyway. If a single AAC
@@ -856,7 +855,7 @@ internet connection"; the answer to "how do we let networking in" was
 - **Verified live** (2026-10-15, from the developer's machine): YouTube
   with English and with Russian automatic captions, `ru.wikipedia.org`, a
   PDF via a direct link, a Habr RSS feed, `example.com`, an arXiv page.
-  The 0.10.2 check covered a Wikipedia title with parentheses, YouTube
+  The 0.11.0 check covered a Wikipedia title with parentheses, YouTube
   with English captions, and `example.com`. Automated tests use a local
   server and a stubbed `WebFetcher`
   (`web_test.dart`).
@@ -865,8 +864,8 @@ internet connection"; the answer to "how do we let networking in" was
 
 ### OCR: what's left
 
-Resolved at Stage 6 (see "Stage 6 decisions" above): Tesseract on both
-platforms. Still open:
+Stage 6 introduced Tesseract. The release packages for Windows, Android
+and macOS now include the OCR libraries and models. Still open:
 
 - **phone speed hasn't been measured** — on a Mac (Intel, 2019), a 1400 ×
   420 image is recognized in 0.3 s once models are loaded (≈2 s on the
@@ -874,9 +873,7 @@ platforms. Still open:
   is needed on the author's phone;
 - **handwriting and poor-quality photos** are read poorly by Tesseract —
   this is an engine limitation, and a low-confidence warning won't fix it;
-- **HEIC** has no OCR (GIF, WebP and TIFF got it in 0.9, see "0.9
-  decisions"); HEIC is the most common photo format from an iPhone, but
-  isn't the primary one on Android or Windows.
+- **HEIC** currently yields metadata. OCR for this format remains open.
 
 ### Transcription: what's left
 
