@@ -6,23 +6,23 @@ versions — in the
 what each platform can do — in the
 [README](https://github.com/tiltozavr2545/mark_it_down_UI#what-it-can-convert).
 
-### Windows — `markitdown_ui-…-windows-x64.zip`
+### Windows — `markitdown_ui-…-windows-x64-setup.exe`
 
-1. Download the zip and unpack it into any folder. Nothing needs to be
-   installed, not even Python — it's already inside (the `sidecar`
-   folder).
-2. Run `markitdown_ui.exe`.
-3. On first launch SmartScreen will show "Windows protected your PC":
-   **"More info" → "Run anyway"**. The build isn't signed (there's no
-   certificate yet) — that's the reason for the warning.
+Requires Windows 10 or later with support for x64 apps.
+
+1. Download and run the installer. It installs for your Windows account
+   without administrator rights and includes Python and the offline models.
+2. If SmartScreen shows "Windows protected your PC" for the unsigned
+   installer, choose **"More info" → "Run anyway"**.
+3. Open **MarkItDown UI** from the Start menu.
 
 The first `xls` or `msg` conversion may take a few seconds while Windows
 Defender scans the bundled Python.
 
 Speech in audio (voice messages, voice-recorder recordings, MP3) is
 transcribed right on the computer — the Whisper model is already inside
-(≈265 MB of the archive's size). A long recording takes minutes; a
-percentage is shown, and it can be stopped at any time.
+(≈265 MB before compression). A long recording takes minutes. The app
+shows progress and lets you stop the transcription at any time.
 
 ### Android — `markitdown_ui-…-android-arm64.apk`
 

@@ -66,9 +66,9 @@ The project proceeds in stages ([plan](docs/implementation-plan.md));
 Stages 0–5 are closed, Stage 6 (images, audio, OCR) has shipped, and
 **Stage 7 — polish** is in progress. 0.8 added offline speech recognition.
 0.9 added link conversion, 0.10 added merging, and 0.10.1 added PDF
-tables to the Dart converter. The current source version is `0.11.0+15`.
-The redesigned workspace and batch export are documented in the
-[unreleased 0.11.0 notes](CHANGELOG.md#0110--new-workspace-and-batch-export).
+tables to the Dart converter. 0.11.0 redesigned the workspace and added
+batch export. The current source version is `0.11.1+16`.
+See [the 0.11.1 notes](CHANGELOG.md#0111--windows-installer).
 
 | platform | status |
 |---|---|
@@ -115,30 +115,30 @@ to diverge is in [docs/format-coverage.md](docs/format-coverage.md).
 
 Ready-made builds are on the
 **[Releases](https://github.com/tiltozavr2545/mark_it_down_UI/releases/latest)**
-page: a ZIP for Windows, an APK for Android and two DMGs for macOS.
+page. Starting with 0.11.1, Windows builds come as an EXE installer.
+Android uses an APK, and macOS has one DMG for each architecture.
 
 ### Windows
 
-1. Download `markitdown_ui-X.Y.Z-windows-x64.zip` (≈370 MB, of which 265 MB
-   is the speech-recognition model) and unpack it into any folder. Nothing
-   needs to be installed, not even Python — it's already inside.
-2. Run `markitdown_ui.exe`. Everything needed sits alongside it:
-   `pdfium.dll`, the OCR DLLs (`tesseract*.dll`, `leptonica*.dll`) and the
-   speech-recognition DLLs (`markitdown_whisper.dll`, `whisper.dll`,
-   `ggml*.dll`), the `data\` folder (models live there too), and `sidecar\`
-   (Python + markitdown, ≈300 MB unpacked) — don't break up the folder.
-3. On first launch SmartScreen will show "Windows protected your PC":
-   **"More info" → "Run anyway"**. That's because the build isn't signed
-   (there's no certificate yet), not because anything is wrong with it.
+Requires Windows 10 or later with support for x64 apps.
+
+1. Download and run `markitdown_ui-X.Y.Z-windows-x64-setup.exe`. The
+   installer includes Python and the offline models and installs for your
+   Windows account without administrator rights.
+2. If SmartScreen shows "Windows protected your PC" for the unsigned
+   installer, choose **"More info" → "Run anyway"**.
+3. Open **MarkItDown UI** from the Start menu.
+
+Earlier Windows releases are ZIP downloads. Extract the whole archive
+and run `markitdown_ui.exe` from the extracted folder.
 
 The first `xls` or `msg` conversion may take a few seconds while Defender
-scans Python. Speech recognition takes minutes on a long
-recording: a percentage is shown, and it can be stopped at any time. Works
-on any 64-bit processor — AVX2/AVX-512 code paths only turn on if the
-processor supports them.
+scans Python. Speech recognition takes minutes on a long recording.
+The app shows progress and lets you stop the transcription at any time.
+AVX2 and AVX-512 code paths are used on processors that support them.
 
-A build from a completed CI run is available as the
-`markitdown_ui-windows-x64` artifact in
+The installer from a completed CI run is available as
+`markitdown_ui-windows-x64-setup.exe` in
 [Actions](https://github.com/tiltozavr2545/mark_it_down_UI/actions/workflows/ci.yml)
 (requires a GitHub sign-in).
 
@@ -238,7 +238,7 @@ make whisper                   # whisper.cpp + models (265 MB), ≈10 minutes
 ```
 
 The host builds enable OCR and speech tests. Android also needs the
-native libraries and model assets for those features. The Windows ZIP
+native libraries and model assets for those features. The Windows installer
 and macOS DMGs bundle the host libraries and models. See
 [docs/format-coverage.md](docs/format-coverage.md#transcription-decisions-08).
 

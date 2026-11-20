@@ -7,7 +7,7 @@ description: Prepare or publish one MarkItDown UI GitHub release. Use for releas
 
 Use the release procedure in [Operations](../../../docs/operations.md#release).
 A release uses one commit on `origin/main` and the version in that commit's
-`app/pubspec.yaml`. CI builds the Windows ZIP, Android APK and both macOS
+`app/pubspec.yaml`. CI builds the Windows EXE installer, Android APK and both macOS
 DMGs, then publishes them together. A request to prepare notes or inspect
 CI authorizes that work. Creating a tag requires authorization to publish.
 
@@ -47,7 +47,7 @@ CI authorizes that work. Creating a tag requires authorization to publish.
    the blocker and get authorization for the next mutation.
 6. Use `gh release view "$tag" --json url,isDraft,assets,body` to verify the
    public release, its notes, and the four uploads:
-   - `markitdown_ui-X.Y.Z-windows-x64.zip`
+   - `markitdown_ui-X.Y.Z-windows-x64-setup.exe`
    - `markitdown_ui-X.Y.Z-android-arm64.apk`
    - `markitdown_ui-X.Y.Z-macos-x64.dmg`
    - `markitdown_ui-X.Y.Z-macos-arm64.dmg`

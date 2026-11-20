@@ -262,8 +262,10 @@ artifact, not just at the end.
    the `make verify` comment that "the Windows job in `ci.yml` must be
    kept in sync".
    **Done:** separate steps in `shell: bash`, the Makefile comment is in
-   place. The first step checks that the checkout used LF. The artifact
-   is `markitdown_ui-windows-x64`.
+   place. The first step checks that the checkout used LF. The original
+   artifact was `markitdown_ui-windows-x64`. See the
+   [current Windows build instructions](operations.md#windows) for the
+   installer artifact introduced in 0.11.1.
 
 3. **PDFium on Windows.** Three things. (a) `pdfium/fetch.sh` learns to
    download `pdfium-win-x64.tgz` from bblanchon/pdfium-binaries (the same
@@ -545,8 +547,7 @@ build for Windows and Android.
    aren't a setting.
 4. Linux — if there's ever something to build it on (Windows will already
    be past Stage 5 by this point).
-5. GitHub Releases distributes a Windows ZIP, Android arm64 APK and two
-   macOS DMGs. The next release recipe automates the macOS builds with
-   ad-hoc signing. See the
+5. GitHub Releases distributes a Windows x64 EXE installer from 0.11.1,
+   an Android arm64 APK and two ad-hoc signed macOS DMGs. See the
    [release checklist](operations.md#release) for the current workflow.
 6. A README with screenshots and an honest bundle size per platform.

@@ -147,7 +147,7 @@ jobs:
       # checked from the .exe's imports — flutter_windows.dll and the Dart VM
       # themselves pull in sockets for the debug service, so that check would
       # always be red. The only thing honestly checkable is that we ourselves
-      # haven't added networking libraries to runner/CMake: a zip build has
+      # haven't added networking libraries to runner/CMake: the installer has
       # no OS-level guarantee (docs/offline-and-privacy.md).
       - name: нет сетевых библиотек в app/windows/
         run: |
@@ -395,13 +395,65 @@ jobs:
           fi
           ls
 
-      # Packaging is a zip for now (Stage 5, item 6: "zip now, decide
-      # later"): upload-artifact hands back the directory as a zip archive
-      # on its own. Unzip and run markitdown_ui.exe — nothing to install.
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $innoVersion = '7.1.1'
+          $innoTag = 'is-' + $innoVersion.Replace('.', '_')
+          $setupPath = Join-Path $env:RUNNER_TEMP "innosetup-$innoVersion-x64.exe"
+          $innoDir = Join-Path $env:RUNNER_TEMP "inno-setup-$innoVersion"
+          $uri = "https://github.com/jrsoftware/issrc/releases/download/$innoTag/innosetup-$innoVersion-x64.exe"
+          Invoke-WebRequest -Uri $uri -OutFile $setupPath
+          $expectedHash = '8a5a6711c3766a6e5fb74f280ba0e3551e719ce94538d901fdbd1f8f9920b3f0'
+          if ((Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash -ne $expectedHash) {
+              throw 'Inno Setup download failed SHA-256 verification.'
+          }
+          $arguments = "/PORTABLE=1 /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$innoDir`""
+          $setup = Start-Process -FilePath $setupPath -ArgumentList $arguments -Wait -PassThru
+          if ($setup.ExitCode -ne 0) {
+              throw "Inno Setup installation exited with code $($setup.ExitCode)."
+          }
+          ./tool/package_windows.ps1 -Compiler (Join-Path $innoDir 'ISCC.exe')
+
+      - name: Verify Windows installer
+        shell: pwsh
+        run: |
+          $installer = 'build/windows-installer/markitdown_ui-windows-x64-setup.exe'
+          $releaseDir = (Resolve-Path 'app/build/windows/x64/runner/Release').Path
+          $installDir = Join-Path $env:RUNNER_TEMP 'MarkItDown UI installer check'
+          $log = Join-Path $env:RUNNER_TEMP 'markitdown-setup.log'
+          $arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$installDir`" /LOG=`"$log`""
+          $setup = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
+          if ($setup.ExitCode -ne 0) {
+              if (Test-Path -LiteralPath $log) {
+                  Get-Content -LiteralPath $log -Tail 80
+              }
+              throw "MarkItDown UI installation exited with code $($setup.ExitCode)."
+          }
+          foreach ($file in (Get-ChildItem -LiteralPath $releaseDir -Recurse -File -Force)) {
+              $relativePath = [IO.Path]::GetRelativePath($releaseDir, $file.FullName)
+              $installedFile = Get-Item -LiteralPath (Join-Path $installDir $relativePath) -Force
+              if ($installedFile.Length -ne $file.Length) {
+                  throw "Installed file differs in size: $relativePath"
+              }
+          }
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+              if (-not (Test-Path -LiteralPath (Join-Path $installDir $dll) -PathType Leaf)) {
+                  throw "The installer did not include $dll."
+              }
+          }
+          $exe = Join-Path $installDir 'markitdown_ui.exe'
+          $uninstaller = Join-Path $installDir 'unins000.exe'
+          $uninstall = Start-Process -FilePath $uninstaller -Wait -PassThru `
+              -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
+          if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath $exe)) {
+              throw "MarkItDown UI uninstall failed (exit code $($uninstall.ExitCode))."
+          }
+
       - uses: actions/upload-artifact@v7
         with:
-          name: markitdown_ui-windows-x64
-          path: app/build/windows/x64/runner/Release
+          path: build/windows-installer/markitdown_ui-windows-x64-setup.exe
+          archive: false
           if-no-files-found: error
 
   android:
@@ -601,7 +653,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: markitdown_ui-windows-x64
+          name: markitdown_ui-windows-x64-setup.exe
           path: dist/windows
 
       - uses: actions/download-artifact@v8
@@ -618,9 +670,7 @@ jobs:
       - name: Prepare release assets
         run: |
           v="${GITHUB_REF_NAME#v}"
-          # Inside the archive — a single folder, not a scattering of files in "Downloads".
-          mv dist/windows "dist/markitdown_ui-$v-windows-x64"
-          (cd dist && zip -qr "markitdown_ui-$v-windows-x64.zip" "markitdown_ui-$v-windows-x64")
+          mv dist/windows/markitdown_ui-windows-x64-setup.exe "dist/markitdown_ui-$v-windows-x64-setup.exe"
           mv dist/android/app-release.apk "dist/markitdown_ui-$v-android-arm64.apk"
           for arch in x64 arm64; do
             mv "dist/macos/markitdown_ui-macos-$arch.dmg" "dist/markitdown_ui-$v-macos-$arch.dmg"
@@ -638,7 +688,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --verify-tag \
             --title "MarkItDown UI $v" \
             --notes-file dist/release-notes.md \
-            "dist/markitdown_ui-$v-windows-x64.zip" \
+            "dist/markitdown_ui-$v-windows-x64-setup.exe" \
             "dist/markitdown_ui-$v-android-arm64.apk" \
             "dist/markitdown_ui-$v-macos-x64.dmg" \
             "dist/markitdown_ui-$v-macos-arm64.dmg"

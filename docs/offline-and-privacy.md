@@ -48,7 +48,7 @@ level — and it's checked in CI just as automatically:
 | Android | `android.permission.INTERNET` is present as of 0.9 ("link" mode); no other network permissions (`ACCESS_NETWORK_STATE`, Wi-Fi) exist. `usesCleartextTraffic` is set so `http://` links also open | `aapt dump permissions app-release.apk` in the Android CI job. On the phone: "App info" → "Permissions". |
 | macOS | App Sandbox is enabled. `Release.entitlements` grants `network.client` for outgoing link requests. | `codesign -d --entitlements - 'MarkItDown UI.app'`; in CI — a grep against `Release.entitlements` |
 | iOS | platform deferred | — |
-| Windows | there's no OS-level guarantee and never was: the zip build doesn't have network permissions as a concept. It rests on the code: network only in `core/lib/src/web/`, no networking packages in `pub deps`, no networking libraries in `app/windows/` | in CI: grep against the code, `dart pub deps`, grep `app/windows/` for `ws2_32`/`winhttp`/`wininet`/`internetClient` |
+| Windows | The offline installer bundles the application and its resources. The network guarantee rests on code checks. Network access is confined to `core/lib/src/web/`. | In CI: scan the source, `dart pub deps`, and scan `app/windows/` for `ws2_32`/`winhttp`/`wininet`/`internetClient` |
 | Linux | platform deferred | — |
 
 Being honest about what's been lost compared to 0.8: on Android, the

@@ -22,6 +22,13 @@ monotonically. Bumped in every PR, see "Working conventions" in
 
 ---
 
+## 0.11.1 — Windows installer
+
+- **Install on Windows from one file.** Download and run the `.exe` to
+  install MarkItDown UI for your account and open it from the Start menu.
+  Python and the models for offline text and speech recognition are
+  included in the installer.
+
 ## 0.11.0 — new workspace and batch export
 
 - **Save a batch as separate Markdown files.** Choose several files,

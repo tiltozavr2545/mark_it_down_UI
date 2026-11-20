@@ -30,10 +30,10 @@ fallback for legacy Excel and Outlook files. Windows and macOS builds bundle a
 Python sidecar for `xls` and `msg`. OCR and speech recognition run on
 device with Tesseract and whisper.cpp.
 
-The project ships through GitHub Releases as a Windows ZIP, an Android APK
-and macOS DMGs for Intel and Apple Silicon. See [the README](README.md) for
-current features and [the implementation plan](docs/implementation-plan.md)
-for stage history.
+The project ships through GitHub Releases as a Windows EXE installer,
+an Android APK and macOS DMGs for Intel and Apple Silicon. See
+[the README](README.md) for current features and
+[the implementation plan](docs/implementation-plan.md) for stage history.
 
 ## Environment constraints
 

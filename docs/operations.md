@@ -50,7 +50,7 @@ workflow** for a manual run on a branch or to preview all four packages.
 | Job | What it checks and builds |
 |---|---|
 | `verify` | Linux runs `make verify` and privacy checks. Pull requests also check the version bump. Tag pushes verify the release version, notes and commit ancestry. |
-| `windows-sidecar` and `windows` | Build the x64 Python bundle, compare fixtures, run Windows tests and check the packaged app. |
+| `windows-sidecar` and `windows` | Build the x64 Python bundle, compare fixtures, run Windows tests and check installation and removal of the EXE package. |
 | `android` | Build the arm64 APK and check its permissions, native libraries and models. |
 | `macos` | Test the native engines and build, sign and verify DMGs for Intel and Apple Silicon. |
 | `publish` | On a version tag push, wait for every job above and publish all four downloads in one GitHub Release. |
@@ -65,10 +65,10 @@ sits next to the `verify` target in the Makefile). Git Bash knows about
 `pdfium/fetch.sh` (`MINGW*|MSYS*` → `pdfium.dll`). The job's first step
 checks that the checkout came out with LF line endings (`.gitattributes`),
 otherwise `dart format` and the byte-for-byte fixtures would fail for a
-reason unrelated to the code. The artifact from this job is exactly what the
-author downloads and checks by hand on their own Windows machine (Actions →
-run → Artifacts → unzip → `markitdown_ui.exe`). The manual check is the
-checklist in item 8 of Stage 5.
+reason unrelated to the code. For a manual check, download
+`markitdown_ui-windows-x64-setup.exe` from Actions → run → Artifacts,
+run the installer, and launch the app from the Start menu. The conversion
+checklist is in item 8 of Stage 5.
 
 **The "network only via a link" check** is not a formality but the
 product's main guarantee (see
@@ -98,7 +98,7 @@ The third step runs in the Android job of `ci.yml` using `aapt` from the
 runner's Android SDK. The first two run on every PR, because that's
 exactly where a transitive network dependency would sneak in. The Windows
 source check scans the runner for added networking libraries and
-capabilities. Windows ZIP distribution relies on source checks and the
+capabilities. The Windows installer relies on source checks and the
 behavior of the bundled libraries. See
 [offline-and-privacy.md](offline-and-privacy.md).
 
@@ -149,7 +149,7 @@ a separate step only on `pull_request` (the base branch is fetched via
 
 ## Conversion dependencies
 
-| Component | Pins for 0.11.0 | Build settings |
+| Component | Pinned version | Build settings |
 |---|---|---|
 | PDFium for Windows, Android and standalone host tests | `160.0.8165.0` (`chromium/8165`) | [`pdfium/fetch.sh`](../pdfium/fetch.sh) |
 | PDFium in the macOS DMGs | Native library from `pypdfium2==5.11.0` | [macOS wheel locks](../sidecar/locks/) and [`tool/package_macos.sh`](../tool/package_macos.sh) |
@@ -180,7 +180,7 @@ nowhere to call. Everything listed below is only needed for signing builds.
 | what | where it lives | what for |
 |---|---|---|
 | Android keystore | **none yet** — Stage 7; will live outside the repo (`android/key.properties` in `.gitignore`) and in GitHub Secrets | APK signing; without a stable key a new version can't install over an old one |
-| Authenticode certificate (Windows) | **none yet** — open question (Stage 5, item 6 → Stage 7) | signing the `.exe`/MSIX; without it, SmartScreen warns on first run |
+| Authenticode certificate (Windows) | **none yet** — open question (Stage 5, item 6 → Stage 7) | signing the Windows EXE installer and app. SmartScreen may warn on first run. |
 
 ## Build
 
@@ -213,16 +213,28 @@ downloaded by `./tesseract/fetch.sh`. The speech-recognition DLLs are
 equally mandatory (`markitdown_whisper.dll`, `whisper.dll`, `ggml*.dll`, the
 various `ggml-cpu-*.dll` variants) — via `./whisper/build.sh`; the models
 travel as assets into `data/flutter_assets/assets/whisper/`
-(`./whisper/fetch.sh`, +265 MB to the zip). `pdfium.dll` is mandatory: without
+(`./whisper/fetch.sh`, 265 MB before packaging). `pdfium.dll` is mandatory: without
 `pdfium/native/host/pdfium.dll` (downloaded by `./pdfium/fetch.sh` in Git
 Bash), CMake fails with a clear error rather than building an app without
 PDF support. The sidecar is optional: without
 `sidecar/dist/windows-x86_64/manifest.json`, you get a Dart-only build
 (item 4 of the plan — the sidecar for Windows is built as a separate job).
 
-CI uploads the `Release/` directory as an artifact. GitHub Releases
-packages it in a ZIP with a versioned top-level folder. The executable
-is unsigned, so SmartScreen may display a warning on first run.
+CI uses Inno Setup 7.1.1 to package the entire `Release/` directory and
+the Visual C++ runtime DLLs from Visual Studio 2022 into one EXE. The
+installer uses the current user's local app directory by default. CI
+installs it into a temporary directory, checks for the built files, and
+runs the uninstaller before uploading the EXE as an artifact.
+
+To package an existing release build locally, run from the repository root
+in PowerShell 7 with the path to your Inno Setup compiler.
+
+```powershell
+./tool/package_windows.ps1 -Compiler 'C:\Program Files\Inno Setup 7\ISCC.exe'
+```
+
+The output is `build/windows-installer/markitdown_ui-windows-x64-setup.exe`.
+The publish job adds the version to the filename.
 
 ### macOS
 
@@ -355,13 +367,13 @@ to prepare and publish one requested version.
    packages, and publishes them with the rendered notes. A failed check
    blocks publication.
 3. Follow the tag run through completion and check the published release
-   for the Windows x64 ZIP, Android arm64 APK, Intel DMG and Apple Silicon
-   DMG. Retry transient failures on the same tag run.
+   for the Windows x64 EXE installer, Android arm64 APK, Intel DMG and
+   Apple Silicon DMG. Retry transient failures on the same tag run.
 
 The Android APK uses the runner's debug key. Installing over an existing
-APK requires matching signatures. Windows uses an unsigned ZIP, and macOS
-uses an ad-hoc signature. First-launch instructions are in the release
-notes for each platform.
+APK requires matching signatures. Windows uses an unsigned EXE installer,
+and macOS uses an ad-hoc signature. First-launch instructions are in the
+release notes for each platform.
 
 ## What's not here
 
