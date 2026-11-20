@@ -74,7 +74,7 @@ The redesigned workspace and batch export are documented in the
 |---|---|
 | **Windows** | works — verified on the author's machine (since 0.5); built in CI (GitHub Actions) with the sidecar. Speech recognition in 0.8 — verified in CI, pending manual check |
 | **Android** | works, verified on the author's phone (APK). Speech recognition in 0.8 — APK builds in CI, pending manual check on the phone |
-| macOS | Intel and Apple Silicon DMGs target macOS 12 Monterey and later. Both 0.11.0 packages passed the automated build and packaging checks. Manual launch checks are pending. |
+| **macOS** | Intel and Apple Silicon DMGs target macOS 12 Monterey and later. Both packages are built and checked in CI. Manual launch checks are pending. |
 | iOS | deferred: the author's machine cannot produce a build the App Store will accept |
 | Linux | deferred: no requests for it so far |
 
@@ -137,7 +137,7 @@ recording: a percentage is shown, and it can be stopped at any time. Works
 on any 64-bit processor — AVX2/AVX-512 code paths only turn on if the
 processor supports them.
 
-A build from any commit (not just a release) is available as the
+A build from a completed CI run is available as the
 `markitdown_ui-windows-x64` artifact in
 [Actions](https://github.com/tiltozavr2545/mark_it_down_UI/actions/workflows/ci.yml)
 (requires a GitHub sign-in).
@@ -261,8 +261,9 @@ Briefly (in full — in [AGENTS.md](AGENTS.md)):
 
 - before committing — `make verify`; every PR bumps the version in
   `app/pubspec.yaml` (CI checks this);
-- release — tag `vX.Y.Z` on main, after which `release.yml` builds and
-  publishes everything ([docs/operations.md](docs/operations.md#release));
+- release — use the [GitHub release skill](.agents/skills/github-release/SKILL.md)
+  to tag the approved commit on `main`. The same CI builds and verifies
+  all four packages before [publishing](docs/operations.md#release);
 - `core/` does not import Flutter — in any file (checked by CI);
 - a new format = a converter + a pair of "source + expected Markdown"
   fixtures in `core/test/fixtures/`, and the fixtures need to be "evil":
@@ -337,8 +338,8 @@ whisper/                  speech recognition: build.sh (host and --android),
                           fetch.sh (models), shim/ — the mdw.h C shim layer
 tool/verify_version.sh    checks the version bump in a PR
 tool/package_macos.sh     adds native dependencies and packages the macOS DMG
-.github/workflows/        ci.yml — verify (Linux), windows-sidecar, windows;
-                          release.yml — tag v* → GitHub Release (ZIP, APK, DMGs)
+.github/workflows/        ci.yml — checks, platform builds and tag releases
+.agents/skills/           repository release skill for Codex
 docs/                     documentation (below)
 ```
 

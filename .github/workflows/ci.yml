@@ -2,11 +2,13 @@ name: CI
 
 on:
   push:
-    # Branches only: tags v* are built by release.yml, which calls this same
-    # workflow via workflow_call — without the filter the tag would run it all twice.
-    branches: ['**']
+    branches: [main]
+    tags: ['v*']
   pull_request:
-  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   FLUTTER_VERSION: 3.32.8
@@ -20,10 +22,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Validate release tag and notes
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        run: |
+          version="$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+[0-9]+[[:space:]]*$/\1/p' app/pubspec.yaml)"
+          if [[ -z "$version" || "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME must match the release version in app/pubspec.yaml"
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::The release tag must point to a commit on main"
+            exit 1
+          fi
+          tool/release_notes.sh "$version" > /dev/null
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
 
       # OCR tests (core/test/ocr_test.dart) run against Tesseract from Ubuntu
       # packages: Linux isn't a target platform, so there's no point building
@@ -355,11 +373,21 @@ jobs:
         working-directory: app
         run: flutter build windows --release
 
-      - name: что в сборке
+      - name: Verify the Windows build contents
+        env:
+          SIDECAR_RESULT: ${{ needs.windows-sidecar.result }}
         run: |
           cd app/build/windows/x64/runner/Release
+          test -f markitdown_ui.exe
+          test -f pdfium.dll
           ls tesseract*.dll leptonica*.dll data/flutter_assets/assets/tessdata/
           ls markitdown_whisper.dll whisper.dll ggml*.dll data/flutter_assets/assets/whisper/
+          test -f data/flutter_assets/assets/tessdata/rus.traineddata
+          test -f data/flutter_assets/assets/whisper/models.json
+          if [[ "$SIDECAR_RESULT" == 'success' && ! -f sidecar/manifest.json ]]; then
+            echo '::error::The Windows build is missing the sidecar manifest'
+            exit 1
+          fi
           if [[ -f sidecar/manifest.json ]]; then
             echo "Сборка **с сайдкаром**: $(du -sh . | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -375,3 +403,242 @@ jobs:
           name: markitdown_ui-windows-x64
           path: app/build/windows/x64/runner/Release
           if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-24.04  # not ubuntu-latest — see verify in ci.yml
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # libpdfium.so in jniLibs/arm64-v8a — without it the APK builds, but
+      # PDF fails at runtime (docs/operations.md#android).
+      - name: PDFium
+        run: ./pdfium/fetch.sh
+
+      # Tesseract for OCR: libtesseract/libleptonica/libjpeg/libpngx.so in
+      # jniLibs/arm64-v8a and the rus/eng models in assets/tessdata. Without
+      # them the APK builds, but OCR is silently unavailable in it — checked
+      # below.
+      - name: Tesseract (модели и .so)
+        run: ./tesseract/fetch.sh
+
+      # Speech recognition (0.8): the .so is built from source with the same
+      # NDK version as the app (whisper/versions.sh) — there's no prebuilt
+      # one, unlike Tesseract4Android. Cache is by recipe hash.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            whisper/cache
+            app/android/app/src/main/jniLibs/arm64-v8a/*whisper*
+            app/android/app/src/main/jniLibs/arm64-v8a/*ggml*
+            app/android/app/src/main/jniLibs/arm64-v8a/.whisper-built-*
+          key: whisper-android-arm64-${{ hashFiles('whisper/build.sh', 'whisper/versions.sh', 'whisper/shim/**') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/models
+          key: whisper-models-${{ hashFiles('whisper/versions.sh') }}
+
+      - name: whisper (NDK, сборка .so и модели)
+        run: |
+          ndk="$(sed -n 's/^ANDROID_NDK_VERSION="\(.*\)"/\1/p' whisper/versions.sh)"
+          # (yes || true): under pipefail, yes getting SIGPIPE would fail the step with 141.
+          (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+          ./whisper/build.sh --android
+          ./whisper/fetch.sh
+
+      # arm64 only: PDFium in the APK only exists for arm64-v8a, and there
+      # are practically no other phones left. Signing uses the debug key
+      # (that's how android/app/build.gradle.kts is configured — there's no
+      # dedicated key yet).
+      - name: flutter build apk
+        working-directory: app
+        run: flutter build apk --release --target-platform android-arm64
+
+      # Permissions are checked on the built APK, not just in the source
+      # manifest: they also arrive from dependencies' manifests. As of 0.9
+      # INTERNET is present ("link" mode, docs/offline-and-privacy.md); no
+      # other networking permission — no network state, no Wi-Fi: the app
+      # doesn't need them.
+      - name: разрешения APK
+        run: |
+          set -o pipefail
+          aapt="$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -n 1)"
+          "$aapt" dump permissions app/build/app/outputs/flutter-apk/app-release.apk | tee permissions.txt
+          if grep -qE 'android.permission.(ACCESS_NETWORK_STATE|ACCESS_WIFI_STATE|CHANGE_NETWORK_STATE|CHANGE_WIFI_STATE)' permissions.txt; then
+            echo "::error::APK запрашивает сетевое разрешение сверх INTERNET"
+            exit 1
+          fi
+
+      - name: Verify the engines and models in the APK
+        run: |
+          source whisper/versions.sh
+          apk=app/build/app/outputs/flutter-apk/app-release.apk
+          unzip -Z1 "$apk" > apk.txt
+          for f in lib/arm64-v8a/libpdfium.so \
+                   lib/arm64-v8a/libtesseract.so lib/arm64-v8a/libleptonica.so \
+                   assets/flutter_assets/assets/tessdata/rus.traineddata \
+                   assets/flutter_assets/assets/tessdata/eng.traineddata \
+                   lib/arm64-v8a/libmarkitdown_whisper.so lib/arm64-v8a/libwhisper.so \
+                   lib/arm64-v8a/libggml-cpu-android_armv8.0_1.so \
+                   assets/flutter_assets/assets/whisper/models.json \
+                   "assets/flutter_assets/assets/whisper/$MODEL_NAME" \
+                   "assets/flutter_assets/assets/whisper/$VAD_NAME"; do
+            grep -Fxq "$f" apk.txt || { echo "::error::Missing file in the APK: $f"; exit 1; }
+          done
+          echo "APK: $(du -h "$apk" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: markitdown_ui-android-arm64
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  macos:
+    name: macOS (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x64
+            arch: x86_64
+            runner: macos-15-intel
+          - target: arm64
+            arch: arm64
+            runner: macos-26
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      FLUTTER_XCODE_ARCHS: ${{ matrix.arch }}
+      FLUTTER_XCODE_MACOSX_DEPLOYMENT_TARGET: '12.0'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          architecture: ${{ matrix.target }}
+          cache: true
+
+      - uses: actions/cache@v6
+        with:
+          path: tesseract/native/host
+          key: tesseract-${{ matrix.runner }}-${{ hashFiles('tesseract/build.sh', 'tesseract/versions.sh') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/native/host
+          key: whisper-${{ matrix.runner }}-${{ hashFiles('whisper/build.sh', 'whisper/versions.sh', 'whisper/shim/**') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: whisper/models
+          key: whisper-models-${{ hashFiles('whisper/versions.sh') }}
+
+      - name: Build native engines and fetch models
+        run: |
+          test "$(uname -m)" = "$FLUTTER_XCODE_ARCHS"
+          ./tesseract/build.sh
+          ./tesseract/fetch.sh
+          ./whisper/build.sh
+          ./whisper/fetch.sh
+          ./sidecar/build.sh
+
+      - name: Test the bundled conversion engines
+        timeout-minutes: 12
+        env:
+          MARKITDOWN_SIDECAR_DIR: ${{ github.workspace }}/sidecar/dist/macos-${{ matrix.arch }}
+          MARKITDOWN_TESSERACT_DIR: ${{ github.workspace }}/tesseract/native/host
+          MARKITDOWN_WHISPER_DIR: ${{ github.workspace }}/whisper/native/host
+        working-directory: core
+        run: |
+          export MARKITDOWN_PDFIUM_PATH="$MARKITDOWN_SIDECAR_DIR/lib/pypdfium2_raw/libpdfium.dylib"
+          dart pub get
+          # CI runs the long Whisper fixtures on Linux and Windows. Short
+          # recordings exercise the native engine on both macOS runners.
+          dart test --exclude-tags=long-transcription --reporter expanded
+
+      - name: Build the macOS app
+        working-directory: app
+        run: flutter build macos --release
+
+      - name: Package the DMG
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          app_name="$(cat app/macos/Flutter/ephemeral/.app_filename)"
+          bash tool/package_macos.sh "app/build/macos/Build/Products/Release/$app_name" \
+            "dist/markitdown_ui-macos-$TARGET.dmg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: markitdown_ui-macos-${{ matrix.target }}
+          path: dist/markitdown_ui-macos-${{ matrix.target }}.dmg
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: [verify, windows-sidecar, windows, android, macos]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04  # not ubuntu-latest — see verify in ci.yml
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: markitdown_ui-windows-x64
+          path: dist/windows
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: markitdown_ui-android-arm64
+          path: dist/android
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: markitdown_ui-macos-*
+          path: dist/macos
+          merge-multiple: true
+
+      - name: Prepare release assets
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          # Inside the archive — a single folder, not a scattering of files in "Downloads".
+          mv dist/windows "dist/markitdown_ui-$v-windows-x64"
+          (cd dist && zip -qr "markitdown_ui-$v-windows-x64.zip" "markitdown_ui-$v-windows-x64")
+          mv dist/android/app-release.apk "dist/markitdown_ui-$v-android-arm64.apk"
+          for arch in x64 arm64; do
+            mv "dist/macos/markitdown_ui-macos-$arch.dmg" "dist/markitdown_ui-$v-macos-$arch.dmg"
+          done
+          ls -la dist
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          # "What's new" from CHANGELOG.md + install instructions, unwrapped
+          # into single lines — see the script's header.
+          tool/release_notes.sh "$v" > dist/release-notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "MarkItDown UI $v" \
+            --notes-file dist/release-notes.md \
+            "dist/markitdown_ui-$v-windows-x64.zip" \
+            "dist/markitdown_ui-$v-android-arm64.apk" \
+            "dist/markitdown_ui-$v-macos-x64.dmg" \
+            "dist/markitdown_ui-$v-macos-arm64.dmg"

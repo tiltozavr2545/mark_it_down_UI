@@ -24,14 +24,17 @@ as work proceeds. What landed in which version — see
   GitHub Releases packaging configured for Windows, Android and macOS
 - [ ] Speech recognition (0.8) — outside the original plan, requested by the author: done, manual verification (item 6) isn't checked off
 
-Windows and Android became the primary targets after Stage 4. The
-Windows build runs on `windows-2022` and is checked manually on the
-author's Windows machine. Android is checked on the author's phone.
+Windows and Android became the primary targets after Stage 4. Current
+releases include Windows, Android and macOS. The Windows build runs on
+`windows-2022` and is checked manually on the author's Windows machine.
+Android is checked on the author's phone.
 
 The 0.10.1 release included macOS DMGs for Intel and Apple Silicon.
 Starting with the 0.11.0 recipe, those builds are configured in GitHub
 Actions. Both target macOS 12 Monterey and later. Packaging embeds the
 sidecar and uses ad-hoc signing. Both automated builds passed for 0.11.0.
+The [shared CI](operations.md#ci) builds all three platforms and
+publishes the four packages together on a release tag.
 Manual launch checks are tracked in
 [Future development](future-development.md#macos-release-verification).
 
@@ -513,7 +516,7 @@ author answered "yes." All the "whys" are in
    progress and a "Stop" button, copying the model to disk on Android.
    **Done.**
 5. **CI:** build and tests on Linux and Windows (`speech_test.dart`),
-   building `.so` for Android, and checking the APK in `release.yml`.
+   building `.so` for Android, and checking the APK in CI.
    **Done**, green in PR #4; the first run caught AAC on Windows
    transcribing to nothing (the Media Foundation format wasn't being
    re-read) — fixed, and M4A is now checked on the `windows-2022` runner.

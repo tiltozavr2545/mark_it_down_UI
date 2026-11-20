@@ -17,6 +17,7 @@ read:
 | the Python sidecar: packaging, protocol, signing | [docs/python-sidecar.md](docs/python-sidecar.md) |
 | what "offline" means and how to verify it | [docs/offline-and-privacy.md](docs/offline-and-privacy.md) |
 | build, signing, release, CI checks | [docs/operations.md](docs/operations.md) |
+| prepare or publish a GitHub release | [github-release skill](.agents/skills/github-release/SKILL.md) |
 | deferred work, open questions | [docs/future-development.md](docs/future-development.md) |
 | **why** a decision was made the way it was | the comment next to the code, then `git log` |
 | historical: the original concept and stage plan | [docs/project-brief.md](docs/project-brief.md), [docs/implementation-plan.md](docs/implementation-plan.md) |
@@ -48,14 +49,10 @@ for stage history.
   [docs/offline-and-privacy.md](docs/offline-and-privacy.md). Don't propose
   it; if it seems unavoidable, that's a reason to discuss it, not to work
   around it.
-- **Windows and Android are the primary targets.** Development happens on an
-  Intel MacBook Pro (macOS 12.7.6), and Flutter only builds a Windows app
-  on Windows, so Windows is built and tested in CI on `windows-2022`
-  ([Stage 5](docs/implementation-plan.md#stage-5--windows-05)). Manual
-  verification ("dropped a file — saw the result") happens on the
-  **author's own Windows machine**, using the CI artifact; it's fine and
-  worth suggesting. Android is verified via APK on the author's phone.
-  Linux is deferred.
+- **Windows builds run on `windows-2022`.** Flutter builds Windows apps
+  on Windows. Use the CI artifact for manual checks on the author's
+  Windows machine, and the APK for checks on the author's phone. Linux
+  app packaging is deferred.
 - **There is no second pair of eyes reviewing the code** — that's why
   checks are pushed into CI rather than relying on agreements between
   people.
@@ -64,8 +61,8 @@ for stage history.
   the Intel machine physically cannot run a newer macOS — this is a dead
   end, don't suggest upgrading. The number was verified at Stage 0
   (`flutter --version`) and still matches.
-- **macOS release builds are configured in GitHub Actions** on Intel and
-  Apple Silicon runners. Both DMGs target macOS 12 Monterey and use
+- **macOS builds run in the same CI as Windows and Android**, on Intel
+  and Apple Silicon runners. Both DMGs target macOS 12 Monterey and use
   ad-hoc signing. The author's Mac can test the Intel artifact and has
   Command Line Tools 14.2. `flutter build macos` needs full Xcode. See
   [docs/operations.md](docs/operations.md#macos).
@@ -339,7 +336,7 @@ properties of the formats. The list grows as work continues.
   needs to be checked. Without this, M4A on Windows "decoded" into noise
   and the transcription came out empty — caught by CI.
 - **`yes | sdkmanager` under `pipefail` is exit code 141**, same as
-  `| head`. In `release.yml`, use `(yes || true) | …`.
+  `| head`. In the Android job, use `(yes || true) | …`.
 - **`archive` 4 doesn't throw on a corrupted zip — it returns an empty
   archive.** A corrupted file would silently become a "silently empty
   archive" — that's why all zip reads go through `decodeZip`

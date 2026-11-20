@@ -98,8 +98,8 @@ sidecar's self-check.
 
 ### macOS release verification
 
-The [Release workflow](operations.md#macos) is configured for Intel and
-Apple Silicon DMGs. Both packages built successfully in GitHub Actions.
+The [CI workflow](operations.md#macos) builds Intel and Apple Silicon
+DMGs alongside the Windows and Android packages.
 Manual checks of Gatekeeper launch, native conversion and Markdown export
 are still pending on the automated artifacts. See the
 [macOS smoke checks](operations.md#macos-smoke-checks).

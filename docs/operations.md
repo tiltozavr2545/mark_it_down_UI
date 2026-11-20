@@ -42,14 +42,18 @@ decoder and skip on the macOS host.
 
 ## CI
 
-GitHub Actions
-([repository](https://github.com/tiltozavr2545/mark_it_down_UI)), two
-workflows:
+The [CI workflow](../.github/workflows/ci.yml) runs on pushes to `main`,
+pull requests, release tag pushes and manual dispatch. A feature branch
+gets automatic CI when it has a pull request. Use **Actions → CI → Run
+workflow** for a manual run on a branch or to preview all four packages.
 
-| workflow | when | what it does |
-|---|---|---|
-| `ci.yml` | Branch push, pull request, or call from `release.yml` | `verify` on `ubuntu-24.04` runs `make verify`, privacy checks and the PR version check. `windows-sidecar` builds and tests the Python bundle on `windows-2022`. `windows` runs the Dart and Flutter checks, bundles the sidecar and uploads `markitdown_ui-windows-x64`. |
-| `release.yml` | Tag `v*`, relevant pull request, or manual run | Tag and PR runs call `ci.yml` and build Android and both macOS packages. A tag publishes the Windows ZIP, Android APK and macOS DMGs. A manual run builds the macOS artifacts. |
+| Job | What it checks and builds |
+|---|---|
+| `verify` | Linux runs `make verify` and privacy checks. Pull requests also check the version bump. Tag pushes verify the release version, notes and commit ancestry. |
+| `windows-sidecar` and `windows` | Build the x64 Python bundle, compare fixtures, run Windows tests and check the packaged app. |
+| `android` | Build the arm64 APK and check its permissions, native libraries and models. |
+| `macos` | Test the native engines and build, sign and verify DMGs for Intel and Apple Silicon. |
+| `publish` | On a version tag push, wait for every job above and publish all four downloads in one GitHub Release. |
 
 **Windows job** (plan — [implementation-plan.md](implementation-plan.md#stage-5--windows-05),
 item 2): steps run under `shell: bash` (Git Bash), because `run:` on
@@ -90,8 +94,8 @@ aapt dump permissions app/build/app/outputs/flutter-apk/app-release.apk \
   | grep -qE 'ACCESS_NETWORK_STATE|ACCESS_WIFI_STATE|CHANGE_NETWORK_STATE|CHANGE_WIFI_STATE' && exit 1
 ```
 
-The third step runs at build time, i.e. in `release.yml` (using `aapt` from
-the runner's Android SDK); the first two run on every PR, because that's
+The third step runs in the Android job of `ci.yml` using `aapt` from the
+runner's Android SDK. The first two run on every PR, because that's
 exactly where a transitive network dependency would sneak in. The Windows
 source check scans the runner for added networking libraries and
 capabilities. Windows ZIP distribution relies on source checks and the
@@ -222,11 +226,11 @@ is unsigned, so SmartScreen may display a warning on first run.
 
 ### macOS
 
-The Release workflow is configured to build two packages targeting
+CI builds two packages targeting
 macOS 12 Monterey and later. It uses `macos-15-intel` for `x64` and
-`macos-26` for `arm64`. A manual **Actions → Release → Run workflow**
-build uploads `markitdown_ui-macos-x64` and `markitdown_ui-macos-arm64` as
-artifacts. A successful tag build attaches the matching
+`macos-26` for `arm64`. The workflow uploads `markitdown_ui-macos-x64`
+and `markitdown_ui-macos-arm64` as artifacts. A successful tag build
+attaches the matching
 `markitdown_ui-X.Y.Z-macos-x64.dmg` and
 `markitdown_ui-X.Y.Z-macos-arm64.dmg` to GitHub Releases.
 
@@ -242,7 +246,7 @@ bash tool/package_macos.sh "app/build/macos/Build/Products/Release/$app_name" \
 ```
 
 The macOS packages use the PDFium binary from the locked `pypdfium2`
-wheel for Monterey compatibility. The release workflow tests the
+wheel for Monterey compatibility. CI tests the
 bundled PDFium, OCR, speech and Python components. It uses short speech
 fixtures on macOS. The full suite, including the long-transcription
 fixtures, runs on Linux and Windows CI. Packaging checks the
@@ -287,8 +291,8 @@ directory because access granted by a file picker belongs to the app.
 
 The Intel host passed the conversion tests with the bundled PDFium
 and Python components. A test app with the native libraries and models
-also passed signing and DMG checksum checks on macOS 12.7.6. The 0.11.0
-Release workflow built and verified both DMGs. The following manual
+also passed signing and DMG checksum checks on macOS 12.7.6. GitHub
+Actions built and verified both DMGs for 0.11.0. The following manual
 checks on the automated artifacts are pending.
 
 1. Install the matching DMG on an Intel Mac running Monterey and on an
@@ -338,38 +342,26 @@ needed, is Xcode Cloud; details and what that would entail are in
 
 ## Release
 
-1. `make verify` is green, changes are on main.
-2. Version bumped, `CHANGELOG.md` updated.
-3. Tag the commit on main — `release.yml` builds everything itself and
-   publishes the release:
+Use the repository's [GitHub release skill](../.agents/skills/github-release/SKILL.md)
+to prepare and publish one requested version.
 
-   ```bash
-   git tag v0.5.0 && git push origin v0.5.0
-   ```
+1. Confirm the commit on `origin/main` and read its version from
+   `app/pubspec.yaml`. Prepare the version's English **What's new** section
+   in `CHANGELOG.md`. `tool/release_notes.sh X.Y.Z` renders that section
+   with the shared install instructions from `.github/release-notes.md`.
+2. After approval, create `vX.Y.Z` at the confirmed commit and push the
+   tag. The tag starts one CI run. CI checks that the tag matches the app
+   version and points to a commit on `main`, builds and checks the four
+   packages, and publishes them with the rendered notes. A failed check
+   blocks publication.
+3. Follow the tag run through completion and check the published release
+   for the Windows x64 ZIP, Android arm64 APK, Intel DMG and Apple Silicon
+   DMG. Retry transient failures on the same tag run.
 
-   It fails if the version in `app/pubspec.yaml` doesn't match the tag, if
-   the APK ended up with a network permission beyond `INTERNET`, or if the
-   Windows build is missing the sidecar. Both macOS DMGs must pass
-   packaging checks and be present. The release text is built by
-   `tool/release_notes.sh`. It appends the install instructions from
-   `.github/release-notes.md` to the version's "What's new" section from
-   `CHANGELOG.md`. The changelog section is required for publishing.
-   The script joins hard-wrapped paragraphs for GitHub Releases. Preview
-   the result with `tool/release_notes.sh 0.10.0`. To edit a published
-   release, run `tool/release_notes.sh X.Y.Z > /tmp/notes.md && gh release
-   edit vX.Y.Z --notes-file /tmp/notes.md`.
-
-   **Signing is still temporary.** The APK is signed with the runner's debug
-   key (there's no own key yet) — enough for installing from a file, but
-   in-place updates require matching signatures. The permanent release
-   key is tracked in Stage 7.
-   The Windows build isn't signed at all — SmartScreen warns. Both issues
-   are Stage 7.
-4. **Record the bundle size per platform in the README.** It's the honest
-   price of being offline, and the user has the right to see it before
-   downloading, not after.
-5. Windows ZIPs, Android APKs and macOS DMGs are distributed through
-   GitHub Releases.
+The Android APK uses the runner's debug key. Installing over an existing
+APK requires matching signatures. Windows uses an unsigned ZIP, and macOS
+uses an ad-hoc signature. First-launch instructions are in the release
+notes for each platform.
 
 ## What's not here
 
